@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env.local
+.env.*.local
+*.user
+*.suo
+bin/
+obj/
+services/test-api/data/
+services/test-api/uploads/
+artifacts/
+data/

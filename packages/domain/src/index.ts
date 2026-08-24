@@ -1,0 +1,208 @@
+export type SupportedLocale = "zh-CN" | "en-US";
+
+export interface CurrentUser {
+  id: string;
+  username?: string;
+  displayName: string;
+  avatarUrl?: string;
+  email?: string;
+  organization?: { id: string; name: string };
+  roles: string[];
+  permissions: string[];
+  locale?: SupportedLocale;
+  timeZone?: string;
+}
+
+export interface ConfigOption {
+  id: string;
+  label: string;
+  description?: string;
+  tone?: "neutral" | "info" | "warning" | "success" | "danger";
+  previewColor?: string;
+}
+
+export interface ReferenceCategory extends ConfigOption {
+  accept: string[];
+  maxBytes: number;
+  maxFiles: number;
+  allowsUrl: boolean;
+  required: boolean;
+}
+
+export interface VoiceReference {
+  id: string;
+  name: string;
+  description: string;
+  audioUrl?: string;
+  tagIds: string[];
+  recommended: boolean;
+  enabled: boolean;
+}
+
+export interface FormOptions {
+  brands: ConfigOption[];
+  videoGoals: ConfigOption[];
+  audiences: ConfigOption[];
+  genres: ConfigOption[];
+  contentLanguages: ConfigOption[];
+  videoDurations: ConfigOption[];
+  publishingPlatforms: ConfigOption[];
+  taskStatuses: ConfigOption[];
+  roleTypes: ConfigOption[];
+  ageRanges: ConfigOption[];
+  genders: ConfigOption[];
+  visualStyles: ConfigOption[];
+  moodTags: ConfigOption[];
+  imageStyleTags: ConfigOption[];
+  paceTags: ConfigOption[];
+  narrationTones: ConfigOption[];
+  speechRates: ConfigOption[];
+  voiceGenders: ConfigOption[];
+  voiceAges: ConfigOption[];
+  accents: ConfigOption[];
+  voiceEmotions: ConfigOption[];
+  voiceTags: ConfigOption[];
+  sourceCategories: ReferenceCategory[];
+  referenceCategories: ReferenceCategory[];
+  maxSelectedVoices: number;
+}
+
+export interface UploadReferenceResult {
+  draft: TaskDraft;
+  asset: ReferenceAsset;
+}
+
+export interface ProjectInfo {
+  clientName: string;
+  contactName: string;
+  email: string;
+  phone?: string;
+  brandId?: string;
+  projectName: string;
+  videoGoalId?: string;
+  deadline?: string;
+  audienceIds: string[];
+}
+
+export interface BookInfo {
+  title: string;
+  subtitle?: string;
+  authorName: string;
+  genreId?: string;
+  sellingPoint: string;
+  synopsis: string;
+  contentLanguageId?: string;
+  videoDurationId?: string;
+  publishingPlatformIds: string[];
+  sourceAssets: ReferenceAsset[];
+}
+
+export interface CharacterInfo {
+  id: string;
+  roleTypeId?: string;
+  name: string;
+  storyRole: string;
+  personality: string;
+  appearance: string;
+  ageRangeId?: string;
+  genderId?: string;
+  clothing?: string;
+  emotion?: string;
+  voiceHint?: string;
+  referenceImageUrls: string[];
+}
+
+export interface CreativeInfo {
+  characters: CharacterInfo[];
+  visualStyleId?: string;
+  moodTagIds: string[];
+  imageStyleTagIds: string[];
+  paceTagIds: string[];
+  styleReferenceImageUrls: string[];
+}
+
+export interface ReferenceAsset {
+  id: string;
+  categoryId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  url: string;
+}
+
+export interface VoiceoverInfo {
+  contentLanguageId?: string;
+  narrationToneId?: string;
+  speechRateId?: string;
+  pronunciationNotes?: string;
+  voiceGenderId?: string;
+  voiceAgeId?: string;
+  accentId?: string;
+  emotionStyleId?: string;
+  selectedVoiceIds: string[];
+  preferredVoiceId?: string;
+  customVoiceDescription?: string;
+}
+
+export interface CreativeDirectionInfo {
+  coreMessage: string;
+  requiredScenes?: string;
+  authorPreferences?: string;
+  closingMessage?: string;
+  musicMood?: string;
+  avoidContent?: string;
+}
+
+export interface VoiceAndReferencesInfo {
+  voiceover: VoiceoverInfo;
+  assets: ReferenceAsset[];
+  competitorUrls: string[];
+  creativeDirection: CreativeDirectionInfo;
+}
+
+export interface TaskDraft {
+  id: string;
+  taskNumber?: string;
+  status: string;
+  version: number;
+  project: ProjectInfo;
+  book: BookInfo;
+  creative: CreativeInfo;
+  voiceAndReferences: VoiceAndReferencesInfo;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskSummary {
+  id: string;
+  taskNumber?: string;
+  projectName: string;
+  bookTitle: string;
+  authorName: string;
+  coverUrl?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface ProjectValidationResult {
+  valid: boolean;
+  fieldErrors: Array<{ field: string; code: string; messageKey?: string }>;
+}
+
+export interface AppErrorShape {
+  code: string;
+  messageKey?: string;
+  fallbackMessage?: string;
+  fieldErrors?: Array<{ field: string; code: string; messageKey?: string }>;
+  retryable: boolean;
+  requestId?: string;
+  currentVersion?: number;
+}

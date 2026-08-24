@@ -1,0 +1,123 @@
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { localizedApiError, optionService, projectService } from "@lifewood/api-client";
+import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+
+export function TaskListPage() {
+  const { t } = useTranslation();
+  const { locale } = useParams();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const search = searchParams.get("q")?.trim() ?? "";
+  const status = searchParams.get("status") ?? "";
+  const parsedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const [searchInput, setSearchInput] = useState(search);
+  const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
+
+  const options = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
+  const tasks = useQuery({
+    queryKey: ["projects", validLocale, status, search, page],
+    queryFn: () => projectService.listProjects({ locale: validLocale, status: status || undefined, search: search || undefined, page, pageSize: 10 }),
+  });
+  const createDraft = useMutation({
+    mutationFn: () => projectService.createDraft(validLocale),
+    onSuccess: async (draft) => {
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
+    },
+  });
+  const statusMap = useMemo(() => new Map(options.data?.taskStatuses.map((item) => [item.id, item]) ?? []), [options.data]);
+  const totalPages = Math.max(1, Math.ceil((tasks.data?.total ?? 0) / (tasks.data?.pageSize ?? 10)));
+  const formatter = useMemo(() => new Intl.DateTimeFormat(validLocale, { dateStyle: "medium", timeStyle: "short" }), [validLocale]);
+
+  useEffect(() => setSearchInput(search), [search]);
+  const updateFilters = (values: { q?: string; status?: string; page?: number }) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (values.q !== undefined) values.q ? next.set("q", values.q) : next.delete("q");
+      if (values.status !== undefined) values.status ? next.set("status", values.status) : next.delete("status");
+      if (values.page !== undefined) values.page > 1 ? next.set("page", String(values.page)) : next.delete("page");
+      return next;
+    });
+  };
+  const pageHref = (targetPage: number) => {
+    const next = new URLSearchParams(searchParams);
+    targetPage > 1 ? next.set("page", String(targetPage)) : next.delete("page");
+    const query = next.toString();
+    return query ? `?${query}` : "";
+  };
+
+  if (!isSupportedLocale(locale)) return null;
+
+  return (
+    <div className="page page-list">
+      <h1 className="sr-only">{t("nav.tasks")}</h1>
+      <section className="list-toolbar" aria-label={t("nav.tasks")}>
+        <form className="search-form" role="search" onSubmit={(event) => { event.preventDefault(); updateFilters({ q: searchInput.trim(), page: 1 }); }}>
+          <label className="sr-only" htmlFor="task-search">{t("tasks.searchLabel")}</label>
+          <input id="task-search" name="q" type="search" autoComplete="off" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={t("tasks.searchPlaceholder")} />
+          <button className="button button-secondary" type="submit">{t("tasks.searchAction")}</button>
+        </form>
+        <label className="filter-control">
+          <span className="sr-only">{t("tasks.filterLabel")}</span>
+          <select name="status" autoComplete="off" value={status} onChange={(event) => updateFilters({ status: event.target.value, page: 1 })}>
+            <option value="">{t("common.all")}</option>
+            {options.data?.taskStatuses.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        <span className="result-count" aria-live="polite">{t("tasks.count", { count: tasks.data?.total ?? 0 })}</span>
+        <button className="button button-primary toolbar-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
+          {!createDraft.isPending && <span aria-hidden="true">＋</span>}{createDraft.isPending ? t("common.creating") : t("common.createTask")}
+        </button>
+      </section>
+
+      <section className="task-surface" aria-busy={tasks.isPending}>
+        {createDraft.isError && <div className="inline-error" role="alert">{localizedApiError(createDraft.error, t)}</div>}
+        {options.isError && <div className="inline-error" role="alert">{localizedApiError(options.error, t)} <button className="button button-secondary" type="button" onClick={() => void options.refetch()}>{t("common.retry")}</button></div>}
+        {tasks.isPending && <span className="sr-only" role="status">{t("common.loading")}</span>}
+        {tasks.isError && <div className="inline-error" role="alert">{localizedApiError(tasks.error, t)} <button className="button button-secondary" type="button" onClick={() => void tasks.refetch()}>{t("common.retry")}</button></div>}
+        {!tasks.isPending && tasks.data?.items.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-folio" aria-hidden="true">01</div>
+            <div><h2>{t("tasks.emptyTitle")}</h2><p>{t("tasks.emptyDescription")}</p></div>
+            <button className="button button-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>{createDraft.isPending ? t("common.creating") : t("common.createTask")}</button>
+          </div>
+        )}
+        {(tasks.data?.items.length ?? 0) > 0 && (
+          <div className="table-scroll">
+            <table className="task-table">
+              <thead><tr>
+                <th>{t("tasks.columns.project")}</th><th>{t("tasks.columns.book")}</th><th>{t("tasks.columns.status")}</th>
+                <th>{t("tasks.columns.updated")}</th><th><span className="sr-only">{t("tasks.columns.action")}</span></th>
+              </tr></thead>
+              <tbody>{tasks.data?.items.map((task) => {
+                const statusOption = statusMap.get(task.status);
+                const target = task.status === "draft" ? `/tasks/${task.id}/edit/project` : `/tasks/${task.id}`;
+                return <tr key={task.id}>
+                  <td><Link className="task-identity" to={localizedPath(locale, target)}>
+                    {task.coverUrl && <img className="list-cover" src={task.coverUrl} alt="" />}
+                    <span><strong>{task.projectName}</strong><small translate="no">{task.taskNumber ?? task.id.slice(0, 8)}</small></span>
+                  </Link></td>
+                  <td data-label={t("tasks.columns.book")}><strong>{task.bookTitle}</strong><small>{task.authorName}</small></td>
+                  <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${statusOption?.tone ?? "neutral"}`}>{statusOption?.label ?? task.status}</span></td>
+                  <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
+                  <td data-label={t("tasks.columns.action")}><Link className="button button-secondary" to={localizedPath(locale, target)}>{task.status === "draft" ? t("tasks.continueEditing") : t("tasks.view")}</Link></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {totalPages > 1 && <nav className="pagination" aria-label={t("common.pageOf", { page, pages: totalPages })}>
+        {page <= 1 ? <span className="button button-secondary disabled" aria-disabled="true">{t("common.previous")}</span> : <Link className="button button-secondary" to={pageHref(page - 1)}>{t("common.previous")}</Link>}
+        <span aria-current="page">{t("common.pageOf", { page, pages: totalPages })}</span>
+        {page >= totalPages ? <span className="button button-secondary disabled" aria-disabled="true">{t("common.next")}</span> : <Link className="button button-secondary" to={pageHref(page + 1)}>{t("common.next")}</Link>}
+      </nav>}
+    </div>
+  );
+}

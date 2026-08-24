@@ -1,0 +1,21 @@
+{
+  "name": "lifewood-task-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1",
+    "stop:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1 -Stop",
+    "dev:web": "npm run dev --workspace @lifewood/task-entry-web",
+    "dev:test-console": "npm run dev --workspace @lifewood/test-console-removable",
+    "build:web": "npm run build --workspace @lifewood/task-entry-web",
+    "build:test-console": "npm run build --workspace @lifewood/test-console-removable",
+    "test:web": "npm run test --workspace @lifewood/task-entry-web"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

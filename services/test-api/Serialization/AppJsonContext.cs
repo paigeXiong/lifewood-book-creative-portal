@@ -1,0 +1,44 @@
+using System.Text.Json.Serialization;
+using Lifewood.TestApi.Contracts;
+
+namespace Lifewood.TestApi.Serialization;
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(CurrentUserDto))]
+[JsonSerializable(typeof(HealthDto))]
+[JsonSerializable(typeof(CurrentUserDto[]))]
+[JsonSerializable(typeof(LoginRequest))]
+[JsonSerializable(typeof(ConfigOptionDto))]
+[JsonSerializable(typeof(ConfigOptionDto[]))]
+[JsonSerializable(typeof(ReferenceCategoryDto))]
+[JsonSerializable(typeof(ReferenceCategoryDto[]))]
+[JsonSerializable(typeof(VoiceReferenceDto))]
+[JsonSerializable(typeof(VoiceReferenceDto[]))]
+[JsonSerializable(typeof(FormOptionsDto))]
+[JsonSerializable(typeof(ProjectInfoDto))]
+[JsonSerializable(typeof(BookInfoDto))]
+[JsonSerializable(typeof(CharacterInfoDto))]
+[JsonSerializable(typeof(CharacterInfoDto[]))]
+[JsonSerializable(typeof(CreativeInfoDto))]
+[JsonSerializable(typeof(ReferenceAssetDto))]
+[JsonSerializable(typeof(ReferenceAssetDto[]))]
+[JsonSerializable(typeof(VoiceoverInfoDto))]
+[JsonSerializable(typeof(CreativeDirectionDto))]
+[JsonSerializable(typeof(VoiceAndReferencesInfoDto))]
+[JsonSerializable(typeof(TaskDraftDto))]
+[JsonSerializable(typeof(ProjectSummaryDto))]
+[JsonSerializable(typeof(ProjectSummaryDto[]))]
+[JsonSerializable(typeof(PagedProjectsDto))]
+[JsonSerializable(typeof(SaveDraftRequest))]
+[JsonSerializable(typeof(SaveCreativeRequest))]
+[JsonSerializable(typeof(SaveVoiceAndReferencesRequest))]
+[JsonSerializable(typeof(ValidateProjectRequest))]
+[JsonSerializable(typeof(ValidationResultDto))]
+[JsonSerializable(typeof(SubmitProjectRequest))]
+[JsonSerializable(typeof(UploadReferenceResultDto))]
+[JsonSerializable(typeof(FieldErrorDto))]
+[JsonSerializable(typeof(FieldErrorDto[]))]
+[JsonSerializable(typeof(ApiErrorDto))]
+internal partial class AppJsonContext : JsonSerializerContext;

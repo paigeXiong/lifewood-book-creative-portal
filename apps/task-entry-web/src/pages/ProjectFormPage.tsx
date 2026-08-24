@@ -1,0 +1,307 @@
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForm, useWatch, type Control } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
+import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+import type { ConfigOption, ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
+import { Field } from "../components/Field";
+import { ChoiceField } from "../components/ChoiceField";
+import { StepProgress } from "../components/StepProgress";
+import { createDraftSchema, createStepSchema, type ProjectFormValues } from "./projectFormSchema";
+
+function SelectOptions({ items }: { items?: ConfigOption[] }) {
+  return <>{items?.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</>;
+}
+
+type SourceTransfer = { id: string; categoryId: string; file: File; status: "uploading" | "error" | "cancelled"; error?: string };
+
+function formatBytes(bytes: number, locale: string) {
+  return new Intl.NumberFormat(locale, { style: "unit", unit: bytes >= 1_000_000 ? "megabyte" : "kilobyte", unitDisplay: "short", maximumFractionDigits: 1 }).format(bytes / (bytes >= 1_000_000 ? 1_000_000 : 1_000));
+}
+
+function SourceFilesSection({ categories, assets, locale, uploadCategory, transfers, uploadError, onUpload, onRemove, onCancel, onRetry }: {
+  categories: ReferenceCategory[]; assets: ReferenceAsset[]; locale: string; uploadCategory?: string; transfers: SourceTransfer[]; uploadError?: string;
+  onUpload: (category: ReferenceCategory, files: FileList | null) => Promise<void>; onRemove: (id: string) => Promise<void>; onCancel: (id: string) => void; onRetry: (item: SourceTransfer) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return <section className="form-panel source-files-panel">
+    <h2><span>1.3</span>{t("wizard.sections.sources")}</h2>
+    <p className="section-hint">{t("sourceFiles.hint")}</p>
+    <div className="upload-grid source-upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <div className="upload-card" key={category.id}>
+      <div><strong>{category.label}{category.required && <em className="required-badge">{t("sourceFiles.required")}</em>}</strong><small>{category.description}</small><small>{t("voice.fileLimit", { size: formatBytes(category.maxBytes, locale), count: category.maxFiles })}</small></div>
+      {category.id === "book-cover" && files[0] && <img className="source-cover-preview" src={files[0].url} alt={t("sourceFiles.coverAlt", { title: files[0].fileName })} />}
+      <label className={`button button-secondary ${uploadCategory ? "disabled" : ""}`} htmlFor={`source-upload-${category.id}`} aria-label={t("sourceFiles.chooseFor", { category: category.label })}>{uploadCategory === category.id ? t("voice.uploading") : t("voice.chooseFiles")}</label>
+      <input id={`source-upload-${category.id}`} className="visually-hidden" type="file" multiple={category.maxFiles > 1} accept={category.accept.join(",")} disabled={Boolean(uploadCategory) || files.length >= category.maxFiles} onChange={(event) => { void onUpload(category, event.target.files); event.target.value = ""; }} />
+      {files.length > 0 && <ul className="uploaded-files">{files.map((asset) => <li key={asset.id}><span title={asset.fileName}>{asset.fileName}</span><small>{formatBytes(asset.sizeBytes, locale)}</small><button type="button" aria-label={t("sourceFiles.removeFile", { fileName: asset.fileName })} onClick={() => void onRemove(asset.id)}>{t("voice.remove")}</button></li>)}</ul>}
+    </div>; })}</div>
+    {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancel(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetry(item)}>{t("common.retry")}</button>}</li>)}</ul>}
+    {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
+  </section>;
+}
+
+function ProjectSummaryRail({ control, cover }: { control: Control<ProjectFormValues>; cover?: ReferenceAsset }) {
+  const { t } = useTranslation();
+  const [clientName, contactName, email, projectName, title, authorName, genreId, videoGoalId, audienceIds, contentLanguageId] = useWatch({
+    control,
+    name: ["clientName", "contactName", "email", "projectName", "title", "authorName", "genreId", "videoGoalId", "audienceIds", "contentLanguageId"],
+  });
+  const clientDone = Boolean(clientName && contactName && email);
+  const bookDone = Boolean(title && authorName && genreId);
+  const directionDone = Boolean(videoGoalId && audienceIds.length && contentLanguageId);
+  return <aside className="context-rail">
+    <div className="folio-card"><div className="folio-label">{t("wizard.summary.title")}</div>{cover && <img className="summary-cover" src={cover.url} alt={t("sourceFiles.coverAlt", { title: title || cover.fileName })} />}<h2>{projectName || t("wizard.summary.untitled")}</h2><p>{title || t("wizard.summary.noBook")}</p>{authorName && <small>{authorName}</small>}</div>
+    <div className="check-card"><h3>{t("wizard.summary.checklist")}</h3><ul><li className={clientDone ? "done" : ""}><span>{clientDone ? "✓" : "○"}</span>{t("wizard.summary.client")}</li><li className={bookDone ? "done" : ""}><span>{bookDone ? "✓" : "○"}</span>{t("wizard.summary.book")}</li><li className={directionDone ? "done" : ""}><span>{directionDone ? "✓" : "○"}</span>{t("wizard.summary.direction")}</li></ul></div>
+    <div className="next-card"><span className="next-mark" aria-hidden="true">→</span><div><h3>{t("wizard.summary.nextTitle")}</h3><p>{t("wizard.summary.nextBody")}</p></div></div>
+  </aside>;
+}
+
+export function ProjectFormPage() {
+  const { t } = useTranslation();
+  const { locale, taskId } = useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [uploadCategory, setUploadCategory] = useState<string>();
+  const [uploadError, setUploadError] = useState<string>();
+  const [transfers, setTransfers] = useState<SourceTransfer[]>([]);
+  const uploadControllers = useRef(new Map<string, AbortController>());
+  const uploadingRef = useRef(false);
+  const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
+
+  const schema = useMemo(() => createDraftSchema(t), [t]);
+  const stepSchema = useMemo(() => createStepSchema(t), [t]);
+
+  const draftQuery = useQuery({
+    queryKey: ["project", taskId],
+    queryFn: () => projectService.getProject(taskId!, validLocale),
+    enabled: Boolean(taskId),
+  });
+  const optionsQuery = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
+  const form = useForm<ProjectFormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      clientName: "", contactName: "", email: "", phone: "", brandId: "", projectName: "", videoGoalId: "", deadline: "",
+      audienceIds: [], title: "", subtitle: "", authorName: "", genreId: "", sellingPoint: "", synopsis: "",
+      contentLanguageId: "", videoDurationId: "", publishingPlatformIds: [],
+    },
+  });
+
+  useEffect(() => {
+    const draft = draftQuery.data;
+    if (!draft || form.formState.isDirty) return;
+    form.reset({
+      clientName: draft.project.clientName, contactName: draft.project.contactName, email: draft.project.email,
+      phone: draft.project.phone ?? "", brandId: draft.project.brandId ?? "", projectName: draft.project.projectName,
+      videoGoalId: draft.project.videoGoalId ?? "", deadline: draft.project.deadline ?? "", audienceIds: draft.project.audienceIds,
+      title: draft.book.title, subtitle: draft.book.subtitle ?? "", authorName: draft.book.authorName, genreId: draft.book.genreId ?? "",
+      sellingPoint: draft.book.sellingPoint, synopsis: draft.book.synopsis, contentLanguageId: draft.book.contentLanguageId ?? "",
+      videoDurationId: draft.book.videoDurationId ?? "", publishingPlatformIds: draft.book.publishingPlatformIds,
+    });
+  }, [draftQuery.data, form, form.formState.isDirty]);
+
+  useEffect(() => {
+    const dirty = form.formState.isDirty;
+    const preventLoss = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
+    const preventBackLoss = () => { if (dirty && !window.confirm(t("wizard.unsavedChanges"))) window.history.go(1); };
+    document.body.dataset.unsavedChanges = String(dirty);
+    window.addEventListener("beforeunload", preventLoss);
+    window.addEventListener("popstate", preventBackLoss);
+    return () => {
+      window.removeEventListener("beforeunload", preventLoss);
+      window.removeEventListener("popstate", preventBackLoss);
+      delete document.body.dataset.unsavedChanges;
+    };
+  }, [form.formState.isDirty, t]);
+
+  const saveDraft = useMutation({
+    mutationFn: async ({ values, continueAfter }: { values: ProjectFormValues; continueAfter: boolean }) => {
+      setSaveState("saving");
+      const current = draftQuery.data!;
+      const next: TaskDraft = {
+        ...current,
+        project: {
+          clientName: values.clientName, contactName: values.contactName, email: values.email, phone: values.phone || undefined,
+          brandId: values.brandId || undefined, projectName: values.projectName, videoGoalId: values.videoGoalId || undefined,
+          deadline: values.deadline || undefined, audienceIds: values.audienceIds,
+        },
+        book: {
+          title: values.title, subtitle: values.subtitle || undefined, authorName: values.authorName, genreId: values.genreId || undefined,
+          sellingPoint: values.sellingPoint, synopsis: values.synopsis, contentLanguageId: values.contentLanguageId || undefined,
+          videoDurationId: values.videoDurationId || undefined, publishingPlatformIds: values.publishingPlatformIds,
+          sourceAssets: current.book.sourceAssets,
+        },
+      };
+      const saved = await projectService.saveDraft(current.id, next, validLocale);
+      return { saved, continueAfter };
+    },
+    onSuccess: ({ saved, continueAfter }) => {
+      queryClient.setQueryData(["project", taskId], saved);
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      form.reset(form.getValues());
+      setSaveState("saved");
+      if (continueAfter) navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/characters`));
+    },
+    onError: () => setSaveState("error"),
+  });
+
+  if (!taskId || !isSupportedLocale(locale)) return null;
+  if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
+  if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) {
+    return <div className="screen-status" role="alert">{localizedApiError(draftQuery.error ?? optionsQuery.error, t)}</div>;
+  }
+  if (draftQuery.data.status !== "draft") {
+    return <Navigate replace to={localizedPath(validLocale, `/tasks/${draftQuery.data.id}`)} />;
+  }
+
+  const options = optionsQuery.data;
+  const sourceAssets = draftQuery.data.book.sourceAssets;
+  const cover = sourceAssets.find((asset) => asset.categoryId === "book-cover");
+  const conflict = saveDraft.error instanceof ApiError && saveDraft.error.details.code === "project.version_conflict";
+  const statusText = saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
+  const continueStep = form.handleSubmit((values) => {
+    if (options.sourceCategories.some((category) => category.required && !sourceAssets.some((asset) => asset.categoryId === category.id))) {
+      setUploadError(t("sourceFiles.missingRequired"));
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(".source-files-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
+    const checked = stepSchema.safeParse(values);
+    if (!checked.success) {
+      checked.error.issues.forEach((issue) => form.setError(issue.path[0] as keyof ProjectFormValues, { message: issue.message }));
+      const first = checked.error.issues[0]?.path.join(".");
+      if (first) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[name="${first}"]`)?.focus());
+      return;
+    }
+    saveDraft.mutate({ values: checked.data, continueAfter: true });
+  });
+  const guardLink = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (form.formState.isDirty && !window.confirm(t("wizard.unsavedChanges"))) event.preventDefault();
+  };
+
+  const uploadOne = async (item: SourceTransfer) => {
+    const controller = new AbortController();
+    uploadControllers.current.set(item.id, controller);
+    setTransfers((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "uploading", error: undefined } : entry));
+    try {
+      const current = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
+      const result = await projectService.uploadAsset(taskId!, current.version, item.categoryId, item.file, validLocale, controller.signal);
+      queryClient.setQueryData(["project", taskId], result.draft);
+      setTransfers((currentTransfers) => currentTransfers.filter((entry) => entry.id !== item.id));
+      setUploadError(undefined);
+    } catch (error) {
+      const cancelled = controller.signal.aborted;
+      const message = cancelled ? t("voice.uploadCancelled") : localizedApiError(error, t);
+      setTransfers((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: cancelled ? "cancelled" : "error", error: message } : entry));
+      if (error instanceof ApiError && error.details.code === "project.version_conflict") {
+        const latest = await projectService.getProject(taskId!, validLocale);
+        queryClient.setQueryData(["project", taskId], latest);
+      }
+    } finally {
+      uploadControllers.current.delete(item.id);
+    }
+  };
+  const upload = async (category: ReferenceCategory, files: FileList | null) => {
+    if (!files?.length || uploadingRef.current) return;
+    uploadingRef.current = true;
+    setUploadError(undefined);
+    setUploadCategory(category.id);
+    const available = Math.max(0, category.maxFiles - sourceAssets.filter((asset) => asset.categoryId === category.id).length);
+    const queue = Array.from(files).slice(0, available).map((file) => ({ id: crypto.randomUUID(), categoryId: category.id, file, status: "uploading" as const }));
+    setTransfers((current) => [...current, ...queue]);
+    for (const item of queue) await uploadOne(item);
+    uploadingRef.current = false;
+    setUploadCategory(undefined);
+  };
+  const retryUpload = async (item: SourceTransfer) => {
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
+    setUploadCategory(item.categoryId);
+    await uploadOne(item);
+    uploadingRef.current = false;
+    setUploadCategory(undefined);
+  };
+  const cancelUpload = (id: string) => uploadControllers.current.get(id)?.abort();
+  const removeAsset = async (id: string) => {
+    if (!window.confirm(t("sourceFiles.removeConfirm"))) return;
+    setUploadError(undefined);
+    try {
+      const current = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
+      const saved = await projectService.deleteAsset(taskId!, id, current.version, validLocale);
+      queryClient.setQueryData(["project", taskId], saved);
+    } catch (error) {
+      setUploadError(localizedApiError(error, t));
+    }
+  };
+
+  return (
+    <div className="wizard-page">
+      <StepProgress current={1} />
+      <div className="wizard-heading">
+        <div><h1>{t("wizard.steps.project")}</h1><p>{t("wizard.projectIntro")}</p></div>
+        <span className={`save-state save-${saveState}`} role={saveState === "error" ? "alert" : "status"}>{statusText}</span>
+      </div>
+
+      <form autoComplete="off" onSubmit={continueStep}>
+        <div className="wizard-layout">
+          <div className="form-stack">
+            <section className="form-panel">
+              <h2><span>1.1</span>{t("wizard.sections.project")}</h2>
+              <div className="form-grid">
+                <Field label={t("wizard.fields.clientName")} htmlFor="clientName" required error={form.formState.errors.clientName?.message}>
+                  <input id="clientName" className="input-medium" autoComplete="organization" {...form.register("clientName")} />
+                </Field>
+                <Field label={t("wizard.fields.contactName")} htmlFor="contactName" required error={form.formState.errors.contactName?.message}>
+                  <input id="contactName" className="input-medium" autoComplete="name" {...form.register("contactName")} />
+                </Field>
+                <Field label={t("wizard.fields.email")} htmlFor="email" required error={form.formState.errors.email?.message}>
+                  <input id="email" type="email" inputMode="email" spellCheck={false} autoComplete="email" className="input-medium" {...form.register("email")} />
+                </Field>
+                <Field label={t("wizard.fields.phone")} htmlFor="phone"><input id="phone" type="tel" inputMode="tel" autoComplete="tel" className="input-short" {...form.register("phone")} /></Field>
+                <Field label={t("wizard.fields.brand")} htmlFor="brandId">
+                  <select id="brandId" className="input-medium" {...form.register("brandId")}><option value="" /><SelectOptions items={options.brands} /></select>
+                </Field>
+                <Field label={t("wizard.fields.projectName")} htmlFor="projectName" required error={form.formState.errors.projectName?.message}>
+                  <input id="projectName" className="input-long" {...form.register("projectName")} />
+                </Field>
+                <Field label={t("wizard.fields.videoGoal")} htmlFor="videoGoalId" required error={form.formState.errors.videoGoalId?.message}>
+                  <select id="videoGoalId" className="input-medium" {...form.register("videoGoalId")}><option value="" /><SelectOptions items={options.videoGoals} /></select>
+                </Field>
+                <Field label={t("wizard.fields.deadline")} htmlFor="deadline"><input id="deadline" type="date" className="input-short" {...form.register("deadline")} /></Field>
+                <ChoiceField label={t("wizard.fields.audiences")} id="audience-group" required error={form.formState.errors.audienceIds?.message}>
+                  <div className="choice-row" id="audience-group">{options.audiences.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} {...form.register("audienceIds")} /><span>{item.label}</span></label>)}</div>
+                </ChoiceField>
+              </div>
+            </section>
+
+            <section className="form-panel">
+              <h2><span>1.2</span>{t("wizard.sections.book")}</h2>
+              <div className="form-grid">
+                <Field label={t("wizard.fields.bookTitle")} htmlFor="title" required error={form.formState.errors.title?.message}><input id="title" className="input-long" {...form.register("title")} /></Field>
+                <Field label={t("wizard.fields.subtitle")} htmlFor="subtitle"><input id="subtitle" className="input-long" {...form.register("subtitle")} /></Field>
+                <Field label={t("wizard.fields.authorName")} htmlFor="authorName" required error={form.formState.errors.authorName?.message}><input id="authorName" className="input-medium" {...form.register("authorName")} /></Field>
+                <Field label={t("wizard.fields.genre")} htmlFor="genreId" required error={form.formState.errors.genreId?.message}><select id="genreId" className="input-medium" {...form.register("genreId")}><option value="" /><SelectOptions items={options.genres} /></select></Field>
+                <Field label={t("wizard.fields.sellingPoint")} htmlFor="sellingPoint" required className="field-wide" error={form.formState.errors.sellingPoint?.message}><textarea id="sellingPoint" rows={2} maxLength={150} {...form.register("sellingPoint")} /></Field>
+                <Field label={t("wizard.fields.synopsis")} htmlFor="synopsis" required className="field-wide" error={form.formState.errors.synopsis?.message}><textarea id="synopsis" rows={4} maxLength={600} {...form.register("synopsis")} /></Field>
+                <Field label={t("wizard.fields.contentLanguage")} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message}><select id="contentLanguageId" className="input-medium" {...form.register("contentLanguageId")}><option value="" /><SelectOptions items={options.contentLanguages} /></select></Field>
+                <Field label={t("wizard.fields.duration")} htmlFor="videoDurationId" required error={form.formState.errors.videoDurationId?.message}><select id="videoDurationId" className="input-short" {...form.register("videoDurationId")}><option value="" /><SelectOptions items={options.videoDurations} /></select></Field>
+                <ChoiceField label={t("wizard.fields.platforms")} id="platform-group"><div className="choice-row" id="platform-group">{options.publishingPlatforms.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} {...form.register("publishingPlatformIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
+              </div>
+            </section>
+            <SourceFilesSection categories={options.sourceCategories} assets={sourceAssets} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemove={removeAsset} onCancel={cancelUpload} onRetry={retryUpload} />
+          </div>
+
+          <ProjectSummaryRail control={form.control} cover={cover} />
+        </div>
+
+        <div className="sticky-actions">
+          <Link className="button button-secondary" to={localizedPath(validLocale, "/tasks")} onClick={guardLink}>{t("common.back")}</Link>
+          <div><button className="button button-secondary" type="button" disabled={saveDraft.isPending || Boolean(uploadCategory)} onClick={form.handleSubmit((values) => saveDraft.mutate({ values, continueAfter: false }))}>{saveDraft.isPending ? t("common.saving") : t("common.saveDraft")}</button>
+          {conflict && <button className="button button-secondary" type="button" onClick={() => { form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}
+          <button className="button button-primary" type="submit" disabled={saveDraft.isPending || Boolean(uploadCategory)}>{saveDraft.isPending ? t("common.saving") : t("common.continue")}<span aria-hidden="true">→</span></button></div>
+        </div>
+      </form>
+    </div>
+  );
+}

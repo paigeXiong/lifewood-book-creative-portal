@@ -1,0 +1,25 @@
+:root {
+  color-scheme: light;
+  --lw-canvas: #f2f5f3;
+  --lw-paper: #f5eedb;
+  --lw-white: #ffffff;
+  --lw-sea-salt: #f9f7f7;
+  --lw-dark-serpent: #133020;
+  --lw-castleton: #034e34;
+  --lw-saffron: #ffb347;
+  --lw-text-secondary: #526158;
+  --lw-text-muted: #77847c;
+  --lw-border: #dce3dd;
+  --lw-border-strong: #a9b5ad;
+  --lw-error: #b42318;
+  --lw-error-bg: #fef3f2;
+  --lw-info: #175cd3;
+  --lw-warning: #9a5b00;
+  --lw-success-bg: #edf7f1;
+  --lw-radius-control: 7px;
+  --lw-radius-panel: 11px;
+  --lw-radius-media: 16px;
+  --lw-shadow-float: 0 14px 36px -28px rgb(19 48 32 / 34%);
+  --lw-font-body: "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --lw-font-editorial: Georgia, "Noto Serif SC", "Songti SC", serif;
+}

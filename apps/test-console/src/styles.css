@@ -1,0 +1,76 @@
+:root { color: var(--lw-color-text, #173026); background: #edf1ee; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, select { font: inherit; }
+button, select, input { border: 1px solid #cbd5cf; border-radius: 7px; background: white; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgb(251 172 42 / 35%); outline-offset: 1px; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+.console-shell { min-height: 100vh; display: grid; grid-template-rows: 48px minmax(0, 1fr); }
+.console-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: #0d442f; color: white; }
+.console-header > div, .header-actions, .header-actions label { display: flex; align-items: center; gap: 10px; }
+.console-header button, .console-header select { min-height: 32px; padding: 5px 9px; color: #173026; }
+.console-header select { min-width: 92px; font-size: 14px; }
+.header-actions label { font-size: 0; }
+.test-flag { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border-radius: 4px; background: #f7a81b; color: #173026; font-size: 11px; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
+.console-main { min-height: 0; display: grid; grid-template-columns: minmax(540px, 1.15fr) minmax(360px, .85fr); gap: 10px; padding: 10px; }
+.list-panel, .detail-panel { min-height: 0; overflow: auto; border-radius: 10px; background: white; box-shadow: 0 3px 16px rgb(20 48 35 / 7%); }
+.list-panel { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.console-toolbar { display: flex; align-items: end; gap: 7px; padding: 10px; background: #f7f9f7; }
+.console-toolbar label { display: grid; gap: 3px; font-size: 11px; font-weight: 700; }
+.console-toolbar input, .console-toolbar select, .console-toolbar button { height: 34px; padding: 6px 9px; }
+.search-field { width: min(320px, 38vw); }
+.console-toolbar button { font-weight: 700; }
+.list-meta { display: flex; justify-content: space-between; min-height: 34px; padding: 8px 12px; font-size: 12px; color: #52665c; }
+.project-list { overflow: auto; padding: 0 6px; }
+.project-list > button { width: 100%; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 64px; padding: 7px; border: 0; border-radius: 7px; text-align: left; background: transparent; }
+.project-list > button:hover { background: #f4f7f5; }
+.project-list > button.selected { background: #e6f0ea; box-shadow: inset 3px 0 #087a52; }
+.project-list img, .cover-space { width: 36px; height: 48px; border-radius: 4px; object-fit: cover; background: #e9eeeb; }
+.project-copy { min-width: 0; display: grid; gap: 2px; }
+.project-copy strong, .project-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-copy small { color: #67786f; }
+.status-pill { display: inline-flex; width: max-content; padding: 3px 7px; border-radius: 999px; background: #edf1ef; color: #42564b; font-size: 11px; font-weight: 750; }
+.status-success { background: #e3f2e9; color: #05633e; }
+.status-warning { background: #fff0d4; color: #7a5410; }
+.status-danger { background: #fee8e4; color: #963b2d; }
+.status-info { background: #e4eef7; color: #285b82; }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 8px 10px; background: #f7f9f7; font-size: 12px; }
+.pager button { min-height: 30px; padding: 4px 9px; }
+.detail-panel { padding: 13px; }
+.detail-heading { display: flex; justify-content: space-between; align-items: start; gap: 10px; padding-bottom: 10px; }
+.detail-heading > div { display: grid; gap: 7px; }
+.detail-heading h2 { margin: 0; font-size: 20px; }
+.detail-heading > small { color: #697b71; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0; overflow: hidden; border-radius: 8px; background: #dfe6e2; }
+.detail-grid > div { min-width: 0; padding: 8px 9px; background: #f7f9f7; }
+.detail-grid dt { color: #65776d; font-size: 11px; }
+.detail-grid dd { margin: 3px 0 0; overflow-wrap: anywhere; font-weight: 650; }
+.asset-section { margin-top: 12px; }
+.asset-section h3 { margin: 0 0 6px; font-size: 14px; }
+.asset-section ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.asset-section li { display: flex; justify-content: space-between; gap: 10px; padding: 7px 8px; border-radius: 6px; background: #f3f6f4; }
+.asset-section a { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #086744; }
+.asset-section small { flex: none; color: #708078; }
+.readonly-note { margin-top: 12px; padding: 9px; border-radius: 7px; background: #fff4df; }
+.readonly-note p { margin: 3px 0 0; color: #66563c; font-size: 12px; line-height: 1.45; }
+.identity-screen, .center-state { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.identity-panel { width: min(520px, 100%); padding: 18px; border-radius: 12px; background: white; box-shadow: 0 10px 35px rgb(22 51 37 / 12%); }
+.identity-panel h1 { margin: 12px 0 4px; font-size: 22px; }
+.identity-panel p { margin: 0 0 12px; color: #66786e; }
+.identity-list { display: grid; gap: 6px; }
+.identity-list button { display: flex; align-items: center; gap: 10px; padding: 8px; text-align: left; }
+.identity-list button > span:last-child { display: grid; }
+.identity-list small { color: #687a70; }
+.identity-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #0d442f; color: white; font-weight: 800; }
+.console-error, .empty-note { margin: 8px; padding: 9px; border-radius: 7px; background: #fff0ee; color: #8c3024; }
+.empty-detail { display: grid; place-items: center; color: #66786e; }
+@media (max-width: 880px) {
+  .console-shell { grid-template-rows: auto 1fr; }
+  .console-header { align-items: flex-start; padding: 8px 10px; }
+  .console-header, .header-actions { flex-wrap: wrap; }
+  .console-main { grid-template-columns: 1fr; overflow: auto; }
+  .list-panel { min-height: 520px; }
+  .console-toolbar { flex-wrap: wrap; }
+  .search-field { width: 100%; }
+}
