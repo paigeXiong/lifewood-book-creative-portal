@@ -29,6 +29,7 @@ describe("API client", () => {
 
   it("runs preflight validation and sends the idempotency key on submit", async () => {
     const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: "csrf-token" }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ valid: true, fieldErrors: [] }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "p1", status: "submitted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
@@ -36,9 +37,12 @@ describe("API client", () => {
     await projectService.validateProject("p1", 7, "zh-CN");
     await projectService.submitProject("p1", 7, "0123456789abcdef0123456789abcdef", "zh-CN");
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/projects/p1/validate");
-    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({ version: 7 });
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/projects/p1/submit");
-    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({ version: 7, idempotencyKey: "0123456789abcdef0123456789abcdef" });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/auth/csrf");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/projects/p1/validate");
+    expect(new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).get("X-CSRF-TOKEN")).toBe("csrf-token");
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({ version: 7 });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/projects/p1/submit");
+    expect(new Headers((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).get("X-CSRF-TOKEN")).toBe("csrf-token");
+    expect(JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit).body))).toEqual({ version: 7, idempotencyKey: "0123456789abcdef0123456789abcdef" });
   });
 });

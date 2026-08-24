@@ -1,6 +1,6 @@
-using Lifewood.TestApi.Contracts;
+using Lifewood.PlatformApi.Contracts;
 
-namespace Lifewood.TestApi.Features;
+namespace Lifewood.PlatformApi.Features;
 
 internal static class FormOptionCatalog
 {
@@ -128,21 +128,21 @@ internal static class FormOptionCatalog
             VoiceTags: [Option("warm", en ? "Warm" : "温暖"), Option("natural", en ? "Natural" : "自然"), Option("grounded", en ? "Grounded" : "沉稳"), Option("professional", en ? "Professional" : "专业"), Option("bright", en ? "Bright" : "明亮"), Option("clear", en ? "Clear" : "清晰")],
             SourceCategories:
             [
-                Category("book-cover", en ? "Book cover" : "书籍封面", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 10_000_000, 1, required: true),
-                Category("manuscript", en ? "Full manuscript or excerpt" : "完整手稿或节选", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 200_000_000, 1, required: true),
-                Category("key-chapters", en ? "Key chapters" : "重点章节", en ? "PDF or DOCX" : "PDF 或 DOCX", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], 50_000_000, 5),
-                Category("brand-guidelines", en ? "Brand guidelines" : "品牌规范", "PDF", ["application/pdf"], 50_000_000, 1),
-                Category("authorization", en ? "Authorization document" : "授权确认文件", en ? "PDF or DOCX" : "PDF 或 DOCX", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], 20_000_000, 1),
-                Category("supplemental-images", en ? "Supplemental images" : "补充图片或手机照片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10)
+                Category("book-cover", en ? "Book cover" : "图书封面", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 10_000_000, 1, required: true),
+                Category("manuscript", en ? "Manuscript or excerpt" : "全书或节选", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 200_000_000, 1, required: true),
+                Category("key-chapters", en ? "Chapter highlights" : "章节要点", en ? "PDF or DOCX" : "PDF 或 DOCX", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], 50_000_000, 5),
+                Category("brand-guidelines", en ? "Brand guide" : "品牌规范", "PDF", ["application/pdf"], 50_000_000, 1),
+                Category("authorization", en ? "Rights / approval confirmation" : "授权确认", en ? "PDF or DOCX" : "PDF 或 DOCX", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], 20_000_000, 1),
+                Category("supplemental-images", en ? "Optional images / phone photos" : "补充图片 / 手机照片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 8)
             ],
             ReferenceCategories:
             [
-                Category("sample-video", en ? "Sample video" : "示例视频", en ? "MP4 or MOV" : "MP4 或 MOV", ["video/mp4", "video/quicktime"], 500_000_000, 3),
-                Category("sample-image", en ? "Sample images" : "示例图片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),
+                Category("sample-video", en ? "Example video" : "示例视频", en ? "MP4 or MOV" : "MP4 或 MOV", ["video/mp4", "video/quicktime"], 500_000_000, 3),
+                Category("sample-image", en ? "Example images" : "示例图片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),
                 Category("moodboard", en ? "Moodboard" : "情绪板", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),
-                Category("competitor", en ? "Competitor reference" : "竞品案例", en ? "PDF or image; links are also supported" : "PDF 或图片；也支持链接", ["application/pdf", "image/jpeg", "image/png"], 20_000_000, 5, true),
+                Category("competitor", en ? "Competitive examples / links" : "竞品示例 / 链接", en ? "PDF or image; links are also supported" : "PDF 或图片；也支持链接", ["application/pdf", "image/jpeg", "image/png"], 20_000_000, 5, true),
                 Category("scene-notes", en ? "Scene notes" : "场景说明", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 10_000_000, 5),
-                Category("dos-donts", en ? "Must include / avoid" : "必须做／不能做", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 10_000_000, 5)
+                Category("dos-donts", en ? "Do / Don't notes" : "注意事项", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 10_000_000, 5)
             ],
             MaxSelectedVoices: MaxSelectedVoices);
     }

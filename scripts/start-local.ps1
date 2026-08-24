@@ -14,8 +14,8 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $webUrl = "http://127.0.0.1:$WebPort"
 $apiUrl = "http://127.0.0.1:$ApiPort"
 $consoleUrl = "http://127.0.0.1:$ConsolePort"
-$apiProject = Join-Path $repositoryRoot "services\test-api\Lifewood.TestApi.csproj"
-$apiExecutable = Join-Path $repositoryRoot "services\test-api\bin\Debug\net10.0\Lifewood.TestApi.exe"
+$apiProject = Join-Path $repositoryRoot "services\platform-api\Lifewood.PlatformApi.csproj"
+$apiExecutable = Join-Path $repositoryRoot "services\platform-api\bin\Debug\net10.0\Lifewood.PlatformApi.exe"
 $nodeModules = Join-Path $repositoryRoot "node_modules"
 $viteEntry = Join-Path $repositoryRoot "node_modules\vite\bin\vite.js"
 $logDirectory = Join-Path $repositoryRoot "artifacts\dev-logs"
@@ -111,6 +111,9 @@ try {
         $recordedProcesses = @($existing.processes)
         $runningProcesses = @($recordedProcesses | Where-Object { Test-RecordedProcess $_ })
         $allProcessesRunning = $recordedProcesses.Count -gt 0 -and $runningProcesses.Count -eq $recordedProcesses.Count
+        $recordedApi = $recordedProcesses | Where-Object { $_.name -eq "API" } | Select-Object -First 1
+        $apiMatchesCurrentLauncher = $null -ne $recordedApi -and $recordedApi.path -eq $apiExecutable
+        $allProcessesRunning = $allProcessesRunning -and $apiMatchesCurrentLauncher
         $allEndpointsHealthy = (Test-HttpEndpoint "$apiUrl/api/health") -and
             (Test-HttpEndpoint $webUrl) -and
             (Test-HttpEndpoint $consoleUrl)
@@ -126,15 +129,16 @@ try {
         Write-Host "A stale or incomplete service record was found. Restarting local services..." -ForegroundColor DarkYellow
         Stop-LocalServices
     }
+    & (Join-Path $PSScriptRoot "migrate-test-api-data.ps1")
     Set-Location -LiteralPath $repositoryRoot
 
     if (-not $SkipBuild) {
-        Write-Host "Checking the local test API..." -ForegroundColor DarkGreen
+        Write-Host "Checking the platform API..." -ForegroundColor DarkGreen
         & dotnet build $apiProject --no-restore
-        if ($LASTEXITCODE -ne 0) { throw "The local test API build failed." }
+        if ($LASTEXITCODE -ne 0) { throw "The platform API build failed." }
     }
     if (-not (Test-Path -LiteralPath $apiExecutable)) {
-        throw "The test API executable was not found. Retry without -SkipBuild."
+        throw "The platform API executable was not found. Retry without -SkipBuild."
     }
 
     $env:ASPNETCORE_ENVIRONMENT = "Development"
@@ -160,7 +164,7 @@ try {
         -RedirectStandardOutput $consoleLog -RedirectStandardError $consoleErrorLog
     $startedProcesses.Add($consoleProcess)
 
-    Wait-ForHttp "$apiUrl/api/health" "Local test API" $apiProcess $apiErrorLog
+    Wait-ForHttp "$apiUrl/api/health" "Platform API" $apiProcess $apiErrorLog
     Wait-ForHttp $webUrl "Web application" $webProcess $webErrorLog
     Wait-ForHttp $consoleUrl "Removable local test console" $consoleProcess $consoleErrorLog
 

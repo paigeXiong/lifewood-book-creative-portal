@@ -33,6 +33,7 @@ export function UpcomingStepPage() {
       setValidationIssues([]);
       queryClient.setQueryData(["project", taskId], submitted);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["project-count"] });
       navigate(localizedPath(validLocale, `/tasks/${submitted.id}/submitted`), { replace: true });
     },
   });
@@ -60,18 +61,18 @@ export function UpcomingStepPage() {
   ].map((group) => ({ ...group, count: validationIssues.filter((issue) => group.keys.some((key) => issue.field.startsWith(key))).length })).filter((group) => group.count > 0);
 
   return <div className="wizard-page review-page">
+    <div className="wizard-heading"><div><h1>{t("wizard.pageTitles.review")}</h1><p>{t("wizard.pageSubtitles.review")}</p></div></div>
     <StepProgress current={4} />
-    <div className="wizard-heading"><div><h1>{t("wizard.steps.review")}</h1><p>{t("review.intro")}</p></div></div>
     {submit.isError && <div className="inline-error review-error" role="alert">{localizedApiError(submit.error, t)}{conflict && <button className="button button-secondary" type="button" onClick={() => void project.refetch()}>{t("common.reload")}</button>}</div>}
     {validationIssues.length > 0 && <section className="validation-summary" role="alert"><div><strong>{t("review.validationTitle")}</strong><p>{t("review.validationBody")}</p></div><ul>{validationGroups.map((group) => <li key={group.path}><Link to={localizedPath(validLocale, `/tasks/${taskId}/edit/${group.path}`)}>{group.label}<span>{t("review.validationCount", { count: group.count })}</span></Link></li>)}</ul></section>}
-    <div className="review-grid">
+    <div className="review-layout"><div className="review-main-stack">
       <section className="form-panel review-section">
         <div className="review-section-heading"><h2><span>1</span>{t("taskDetail.project")}</h2><Link to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>{t("review.edit")}</Link></div>
         <dl className="data-grid"><div><dt>{t("wizard.fields.projectName")}</dt><dd>{draft.project.projectName}</dd></div><div><dt>{t("wizard.fields.clientName")}</dt><dd>{draft.project.clientName}</dd></div><div><dt>{t("wizard.fields.contactName")}</dt><dd>{draft.project.contactName}</dd></div><div><dt>{t("wizard.fields.email")}</dt><dd>{draft.project.email}</dd></div><div><dt>{t("wizard.fields.phone")}</dt><dd>{draft.project.phone || "—"}</dd></div><div><dt>{t("wizard.fields.brand")}</dt><dd>{label(catalog.brands, draft.project.brandId)}</dd></div><div><dt>{t("wizard.fields.videoGoal")}</dt><dd>{label(catalog.videoGoals, draft.project.videoGoalId)}</dd></div><div><dt>{t("wizard.fields.deadline")}</dt><dd>{draft.project.deadline ? <time dateTime={draft.project.deadline}>{dateOnly.format(new Date(`${draft.project.deadline}T00:00:00`))}</time> : "—"}</dd></div><div className="data-wide"><dt>{t("wizard.fields.audiences")}</dt><dd>{labels(catalog.audiences, draft.project.audienceIds)}</dd></div></dl>
       </section>
       <section className="form-panel review-section">
         <div className="review-section-heading"><h2><span>2</span>{t("taskDetail.book")}</h2><Link to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>{t("review.edit")}</Link></div>
-        {bookCover && <img className="review-cover" src={bookCover.url} alt={t("sourceFiles.coverAlt", { title: draft.book.title })} />}
+        {bookCover && <img className="review-cover" src={bookCover.url} alt={t("sourceFiles.coverAlt", { title: draft.book.title })} width="130" height="170" />}
         <dl className="data-grid"><div><dt>{t("wizard.fields.bookTitle")}</dt><dd>{draft.book.title}</dd></div><div><dt>{t("wizard.fields.subtitle")}</dt><dd>{draft.book.subtitle || "—"}</dd></div><div><dt>{t("wizard.fields.authorName")}</dt><dd>{draft.book.authorName}</dd></div><div><dt>{t("wizard.fields.genre")}</dt><dd>{label(catalog.genres, draft.book.genreId)}</dd></div><div><dt>{t("wizard.fields.contentLanguage")}</dt><dd>{label(catalog.contentLanguages, draft.book.contentLanguageId)}</dd></div><div><dt>{t("wizard.fields.duration")}</dt><dd>{label(catalog.videoDurations, draft.book.videoDurationId)}</dd></div><div className="data-wide"><dt>{t("wizard.fields.platforms")}</dt><dd>{labels(catalog.publishingPlatforms, draft.book.publishingPlatformIds)}</dd></div><div className="data-wide"><dt>{t("wizard.fields.sellingPoint")}</dt><dd>{draft.book.sellingPoint}</dd></div><div className="data-wide"><dt>{t("wizard.fields.synopsis")}</dt><dd>{draft.book.synopsis}</dd></div><div className="data-wide"><dt>{t("taskDetail.sourceFiles")}</dt><dd><ul className="receipt-links">{draft.book.sourceAssets.map((asset) => <li key={asset.id}><a href={asset.url}>{asset.fileName}</a></li>)}</ul></dd></div></dl>
       </section>
       <section className="form-panel review-section">
@@ -84,7 +85,28 @@ export function UpcomingStepPage() {
       </section>
       <section className="form-panel review-section review-wide"><div className="review-section-heading"><h2><span>5</span>{t("taskDetail.direction")}</h2><Link to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>{t("review.edit")}</Link></div><dl className="data-grid"><div className="data-wide"><dt>{t("voice.fields.coreMessage")}</dt><dd>{draft.voiceAndReferences.creativeDirection.coreMessage}</dd></div><div><dt>{t("voice.fields.requiredScenes")}</dt><dd>{draft.voiceAndReferences.creativeDirection.requiredScenes || "—"}</dd></div><div><dt>{t("voice.fields.authorPreferences")}</dt><dd>{draft.voiceAndReferences.creativeDirection.authorPreferences || "—"}</dd></div><div><dt>{t("voice.fields.closingMessage")}</dt><dd>{draft.voiceAndReferences.creativeDirection.closingMessage || "—"}</dd></div><div><dt>{t("voice.fields.musicMood")}</dt><dd>{draft.voiceAndReferences.creativeDirection.musicMood || "—"}</dd></div><div className="data-wide"><dt>{t("voice.fields.avoidContent")}</dt><dd>{draft.voiceAndReferences.creativeDirection.avoidContent || "—"}</dd></div></dl></section>
     </div>
-    <aside className="submit-notice"><div><strong>{t("review.noticeTitle")}</strong><p>{t("review.noticeBody")}</p></div></aside>
-    <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>{t("common.back")}</Link><button className="button button-primary" type="button" disabled={submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? t("review.submitting") : t("review.submit")}</button></div>
+      <aside className="review-summary-rail">
+        <div className="folio-card">
+          <h3 className="summary-title">{t("wizard.summary.title")}</h3>
+          {bookCover && <img className="summary-cover" src={bookCover.url} alt={t("sourceFiles.coverAlt", { title: draft.book.title })} width="240" height="180" />}
+          <dl className="summary-meta">
+            <div><dt>{t("wizard.fields.bookTitle")}</dt><dd>{draft.book.title}</dd></div>
+            <div><dt>{t("wizard.fields.authorName")}</dt><dd>{draft.book.authorName}</dd></div>
+            <div><dt>{t("wizard.fields.genre")}</dt><dd>{label(catalog.genres, draft.book.genreId)}</dd></div>
+            <div><dt>{t("wizard.summary.status")}</dt><dd><span className="status-badge">{label(catalog.taskStatuses, draft.status)}</span></dd></div>
+            <div><dt>{t("wizard.summary.created")}</dt><dd>{dateOnly.format(new Date(draft.createdAt))}</dd></div>
+          </dl>
+        </div>
+        <div className="check-card"><h3>{t("wizard.summary.checklist")}</h3><ul>
+          <li className="done"><span>✓</span>{t("wizard.summary.client")}</li>
+          <li className="done"><span>✓</span>{t("wizard.summary.book")}</li>
+          <li className="done"><span>✓</span>{t("creative.sections.characters")}</li>
+          <li className="done"><span>✓</span>{t("creative.sections.style")}</li>
+          <li className="done"><span>✓</span>{t("voice.sections.settings")}</li>
+        </ul></div>
+        <div className="submit-notice"><div><strong>{t("review.noticeTitle")}</strong><p>{t("review.noticeBody")}</p></div></div>
+      </aside>
+    </div>
+    <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>{t("wizard.actions.backVoice")}</Link><p className="sticky-note">{t("wizard.footerNotes.review")}</p><div><button className="button button-primary" type="button" disabled={submit.isPending} onClick={() => submit.mutate()}>{submit.isPending ? t("review.submitting") : t("review.submit")}</button></div></div>
   </div>;
 }

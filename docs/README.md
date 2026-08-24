@@ -12,7 +12,7 @@ Windows 用户可以直接双击项目根目录的 `启动本地环境.bat`。�
 npm run start:local
 ```
 
-启动后访问 `http://127.0.0.1:5173/zh-CN/tasks`。测试 API 运行在 `http://127.0.0.1:5077`。另有一个只读、仅限本地且可整体移除的验收控制台：`http://127.0.0.1:5174/zh-CN`。日志写入 `artifacts/dev-logs/`。
+启动后访问 `http://127.0.0.1:5173/zh-CN/tasks`。平台 API 运行在 `http://127.0.0.1:5077`。另有一个只读、仅限本地且可整体移除的验收控制台：`http://127.0.0.1:5174/zh-CN`。日志写入 `artifacts/dev-logs/`。
 
 停止三个本地服务：
 
@@ -20,14 +20,14 @@ npm run start:local
 npm run stop:local
 ```
 
-脚本仅启动开发环境的本地测试登录和测试 API，不属于正式发布流程。
+脚本启动正式平台 API、客户登记前端和可移除验收控制台。两个前端共用平台真实账号与会话；正式发布只包含客户前端和平台 API。
 
-`apps/test-console/` 是明确隔离的测试工具，不属于客户产品。它仅用于按测试客户身份检查项目是否被 API 正确接收，不提供业务工单处理能力。正式发布流程只能构建 `apps/task-entry-web`；移除方法见 `apps/test-console/TEST_ONLY_REMOVABLE.md`。
+`apps/test-console/` 是明确隔离的测试工具，不属于客户产品。它使用真实账号只读检查项目是否被 API 正确接收，不提供假身份或业务工单处理能力。正式发布流程只能构建 `apps/task-entry-web`；移除方法见 `apps/test-console/TEST_ONLY_REMOVABLE.md`。
 
 ## 开始开发前必读
 
 1. [产品需求](./product-requirements.md)：范围、用户、字段、流程、状态和验收标准。
-2. [技术架构](./technical-architecture.md)：React 前端、API 适配层、独立测试服务及 Native AOT 限制。
+2. [技术架构](./technical-architecture.md)：React 前端、API 适配层、正式平台服务及 Native AOT 限制。
 3. [UI 设计规范](./ui-design-specification.md)：品牌化项目资料提交体验、紧凑布局、组件和 i18n 规则。
 4. [开发准备与实施基线](./development-readiness.md)：仓库结构、路由、API、组件清单和第一轮顺序。
 
@@ -42,9 +42,9 @@ npm run stop:local
 
 - 第一阶段实现客户使用的书籍视频项目创建、草稿、文件上传、校验、提交和项目提交记录。
 - 不实现任何 AI 分析、推荐、生成或实时预览能力。
-- 正式环境接入客户登录系统；本地测试登录和测试工单服务独立运行且不进入正式发布物。
+- 平台自带真实账号与 Cookie 会话；不包含默认账号、假登录或 Mock Token，验收控制台保持可移除。
 - 前端使用 React 19、TypeScript 和 Vite。
-- 本地测试 API 使用 C#、.NET 10、ASP.NET Core Minimal API、SQLite 和 Native AOT。
+- 正式平台 API 使用 C#、.NET 10、ASP.NET Core Minimal API、SQLite 和 Native AOT。
 - 所有用户页面使用 locale 路由，首期为 `zh-CN` 和 `en-US`。
 - 业务选项、视觉示例、参考音色和文件限制全部通过 API 配置。
 - 正式客户前端不是工单管理系统；已提交项目资料包冻结，只提供项目提交记录与受理状态。

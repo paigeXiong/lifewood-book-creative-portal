@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch, type Control } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { ConfigOption, ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
@@ -32,9 +32,9 @@ function SourceFilesSection({ categories, assets, locale, uploadCategory, transf
     <p className="section-hint">{t("sourceFiles.hint")}</p>
     <div className="upload-grid source-upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <div className="upload-card" key={category.id}>
       <div><strong>{category.label}{category.required && <em className="required-badge">{t("sourceFiles.required")}</em>}</strong><small>{category.description}</small><small>{t("voice.fileLimit", { size: formatBytes(category.maxBytes, locale), count: category.maxFiles })}</small></div>
-      {category.id === "book-cover" && files[0] && <img className="source-cover-preview" src={files[0].url} alt={t("sourceFiles.coverAlt", { title: files[0].fileName })} />}
-      <label className={`button button-secondary ${uploadCategory ? "disabled" : ""}`} htmlFor={`source-upload-${category.id}`} aria-label={t("sourceFiles.chooseFor", { category: category.label })}>{uploadCategory === category.id ? t("voice.uploading") : t("voice.chooseFiles")}</label>
-      <input id={`source-upload-${category.id}`} className="visually-hidden" type="file" multiple={category.maxFiles > 1} accept={category.accept.join(",")} disabled={Boolean(uploadCategory) || files.length >= category.maxFiles} onChange={(event) => { void onUpload(category, event.target.files); event.target.value = ""; }} />
+      {category.id === "book-cover" && files[0] && <img className="source-cover-preview" src={files[0].url} alt={t("sourceFiles.coverAlt", { title: files[0].fileName })} width="320" height="128" />}
+      <label className={`button button-secondary ${uploadCategory || files.length >= category.maxFiles ? "disabled" : ""}`} aria-disabled={Boolean(uploadCategory) || files.length >= category.maxFiles} htmlFor={`source-upload-${category.id}`} aria-label={t("sourceFiles.chooseFor", { category: category.label })}>{uploadCategory === category.id ? t("voice.uploading") : t("voice.chooseFiles")}</label>
+      <input id={`source-upload-${category.id}`} name={`source-upload-${category.id}`} autoComplete="off" className="visually-hidden" type="file" multiple={category.maxFiles > 1} accept={category.accept.join(",")} disabled={Boolean(uploadCategory) || files.length >= category.maxFiles} onChange={(event) => { void onUpload(category, event.target.files); event.target.value = ""; }} />
       {files.length > 0 && <ul className="uploaded-files">{files.map((asset) => <li key={asset.id}><span title={asset.fileName}>{asset.fileName}</span><small>{formatBytes(asset.sizeBytes, locale)}</small><button type="button" aria-label={t("sourceFiles.removeFile", { fileName: asset.fileName })} onClick={() => void onRemove(asset.id)}>{t("voice.remove")}</button></li>)}</ul>}
     </div>; })}</div>
     {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancel(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetry(item)}>{t("common.retry")}</button>}</li>)}</ul>}
@@ -42,7 +42,15 @@ function SourceFilesSection({ categories, assets, locale, uploadCategory, transf
   </section>;
 }
 
-function ProjectSummaryRail({ control, cover }: { control: Control<ProjectFormValues>; cover?: ReferenceAsset }) {
+function ProjectSummaryRail({ control, cover, assets, genres, statusLabel, createdAt, locale }: {
+  control: Control<ProjectFormValues>;
+  cover?: ReferenceAsset;
+  assets: ReferenceAsset[];
+  genres: Array<{ id: string; label: string }>;
+  statusLabel: string;
+  createdAt?: string;
+  locale: string;
+}) {
   const { t } = useTranslation();
   const [clientName, contactName, email, projectName, title, authorName, genreId, videoGoalId, audienceIds, contentLanguageId] = useWatch({
     control,
@@ -51,9 +59,28 @@ function ProjectSummaryRail({ control, cover }: { control: Control<ProjectFormVa
   const clientDone = Boolean(clientName && contactName && email);
   const bookDone = Boolean(title && authorName && genreId);
   const directionDone = Boolean(videoGoalId && audienceIds.length && contentLanguageId);
+  const manuscriptDone = assets.some((asset) => asset.categoryId === "manuscript");
+  const genreLabel = genres.find((genre) => genre.id === genreId)?.label ?? "—";
+  const createdLabel = createdAt ? new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(createdAt)) : "—";
   return <aside className="context-rail">
-    <div className="folio-card"><div className="folio-label">{t("wizard.summary.title")}</div>{cover && <img className="summary-cover" src={cover.url} alt={t("sourceFiles.coverAlt", { title: title || cover.fileName })} />}<h2>{projectName || t("wizard.summary.untitled")}</h2><p>{title || t("wizard.summary.noBook")}</p>{authorName && <small>{authorName}</small>}</div>
-    <div className="check-card"><h3>{t("wizard.summary.checklist")}</h3><ul><li className={clientDone ? "done" : ""}><span>{clientDone ? "✓" : "○"}</span>{t("wizard.summary.client")}</li><li className={bookDone ? "done" : ""}><span>{bookDone ? "✓" : "○"}</span>{t("wizard.summary.book")}</li><li className={directionDone ? "done" : ""}><span>{directionDone ? "✓" : "○"}</span>{t("wizard.summary.direction")}</li></ul></div>
+    <div className="folio-card">
+      <h3 className="summary-title">{t("wizard.summary.title")}</h3>
+      {cover && <img className="summary-cover" src={cover.url} alt={t("sourceFiles.coverAlt", { title: title || cover.fileName })} width="240" height="180" />}
+      <dl className="summary-meta">
+        <div><dt>{t("wizard.fields.bookTitle")}</dt><dd>{title || projectName || t("wizard.summary.untitled")}</dd></div>
+        <div><dt>{t("wizard.fields.authorName")}</dt><dd>{authorName || "—"}</dd></div>
+        <div><dt>{t("wizard.fields.genre")}</dt><dd>{genreLabel}</dd></div>
+        <div><dt>{t("wizard.summary.status")}</dt><dd><span className="status-badge">{statusLabel}</span></dd></div>
+        <div><dt>{t("wizard.summary.created")}</dt><dd>{createdLabel}</dd></div>
+      </dl>
+    </div>
+    <div className="check-card"><h3>{t("wizard.summary.checklist")}</h3><ul>
+      <li className={clientDone ? "done" : ""}><span>{clientDone ? "✓" : "○"}</span>{t("wizard.summary.client")}</li>
+      <li className={bookDone ? "done" : ""}><span>{bookDone ? "✓" : "○"}</span>{t("wizard.summary.book")}</li>
+      <li className={cover ? "done" : ""}><span>{cover ? "✓" : "○"}</span>{t("wizard.summary.cover")}</li>
+      <li className={manuscriptDone ? "done" : ""}><span>{manuscriptDone ? "✓" : "○"}</span>{t("wizard.summary.manuscript")}</li>
+      <li className={directionDone ? "done" : ""}><span>{directionDone ? "✓" : "○"}</span>{t("wizard.summary.direction")}</li>
+    </ul></div>
     <div className="next-card"><span className="next-mark" aria-hidden="true">→</span><div><h3>{t("wizard.summary.nextTitle")}</h3><p>{t("wizard.summary.nextBody")}</p></div></div>
   </aside>;
 }
@@ -176,9 +203,6 @@ export function ProjectFormPage() {
     }
     saveDraft.mutate({ values: checked.data, continueAfter: true });
   });
-  const guardLink = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (form.formState.isDirty && !window.confirm(t("wizard.unsavedChanges"))) event.preventDefault();
-  };
 
   const uploadOne = async (item: SourceTransfer) => {
     const controller = new AbortController();
@@ -237,17 +261,18 @@ export function ProjectFormPage() {
 
   return (
     <div className="wizard-page">
-      <StepProgress current={1} />
       <div className="wizard-heading">
-        <div><h1>{t("wizard.steps.project")}</h1><p>{t("wizard.projectIntro")}</p></div>
+        <div><h1>{t("wizard.pageTitles.project")}</h1><p>{t("wizard.pageSubtitles.project")}</p></div>
         <span className={`save-state save-${saveState}`} role={saveState === "error" ? "alert" : "status"}>{statusText}</span>
       </div>
+      <StepProgress current={1} />
 
       <form autoComplete="off" onSubmit={continueStep}>
         <div className="wizard-layout">
           <div className="form-stack">
             <section className="form-panel">
               <h2><span>1.1</span>{t("wizard.sections.project")}</h2>
+              <p className="section-hint reference-section-hint">{t("wizard.sectionHints.project")}</p>
               <div className="form-grid">
                 <Field label={t("wizard.fields.clientName")} htmlFor="clientName" required error={form.formState.errors.clientName?.message}>
                   <input id="clientName" className="input-medium" autoComplete="organization" {...form.register("clientName")} />
@@ -277,6 +302,7 @@ export function ProjectFormPage() {
 
             <section className="form-panel">
               <h2><span>1.2</span>{t("wizard.sections.book")}</h2>
+              <p className="section-hint reference-section-hint">{t("wizard.sectionHints.book")}</p>
               <div className="form-grid">
                 <Field label={t("wizard.fields.bookTitle")} htmlFor="title" required error={form.formState.errors.title?.message}><input id="title" className="input-long" {...form.register("title")} /></Field>
                 <Field label={t("wizard.fields.subtitle")} htmlFor="subtitle"><input id="subtitle" className="input-long" {...form.register("subtitle")} /></Field>
@@ -292,14 +318,15 @@ export function ProjectFormPage() {
             <SourceFilesSection categories={options.sourceCategories} assets={sourceAssets} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemove={removeAsset} onCancel={cancelUpload} onRetry={retryUpload} />
           </div>
 
-          <ProjectSummaryRail control={form.control} cover={cover} />
+          <ProjectSummaryRail control={form.control} cover={cover} assets={sourceAssets} genres={options.genres} statusLabel={options.taskStatuses.find((item) => item.id === draftQuery.data.status)?.label ?? draftQuery.data.status} createdAt={draftQuery.data.createdAt} locale={validLocale} />
         </div>
 
         <div className="sticky-actions">
-          <Link className="button button-secondary" to={localizedPath(validLocale, "/tasks")} onClick={guardLink}>{t("common.back")}</Link>
-          <div><button className="button button-secondary" type="button" disabled={saveDraft.isPending || Boolean(uploadCategory)} onClick={form.handleSubmit((values) => saveDraft.mutate({ values, continueAfter: false }))}>{saveDraft.isPending ? t("common.saving") : t("common.saveDraft")}</button>
+          <button className="button button-secondary" type="button" disabled={saveDraft.isPending || Boolean(uploadCategory)} onClick={form.handleSubmit((values) => saveDraft.mutate({ values, continueAfter: false }))}>{saveDraft.isPending ? t("common.saving") : t("common.saveDraft")}</button>
+          <p className="sticky-note">{t("wizard.footerNotes.project")}</p>
+          <div>
           {conflict && <button className="button button-secondary" type="button" onClick={() => { form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}
-          <button className="button button-primary" type="submit" disabled={saveDraft.isPending || Boolean(uploadCategory)}>{saveDraft.isPending ? t("common.saving") : t("common.continue")}<span aria-hidden="true">→</span></button></div>
+          <button className="button button-primary" type="submit" disabled={saveDraft.isPending || Boolean(uploadCategory)}>{saveDraft.isPending ? t("common.saving") : t("wizard.actions.toCharacters")}<span aria-hidden="true">→</span></button></div>
         </div>
       </form>
     </div>

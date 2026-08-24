@@ -1,7 +1,17 @@
-using Lifewood.TestApi.Contracts;
-using Lifewood.TestApi.Features;
-using Lifewood.TestApi.Persistence;
-using Lifewood.TestApi.Serialization;
+using System.Net;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
+using Lifewood.PlatformApi.Contracts;
+using Lifewood.PlatformApi.Features;
+using Lifewood.PlatformApi.Persistence;
+using Lifewood.PlatformApi.Serialization;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 510_000_000);
@@ -10,19 +20,101 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddOpenApi();
+var trustedProxyAddresses = builder.Configuration.GetSection("Network:TrustedProxies")
+    .GetChildren().Select(item => item.Value).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownProxies.Clear();
+    options.KnownIPNetworks.Clear();
+    foreach (var value in trustedProxyAddresses)
+        if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
+});
 
 var dataDirectory = Path.Combine(builder.Environment.ContentRootPath, "data");
+var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db")}";
 var voiceSampleDirectory = Path.Combine(AppContext.BaseDirectory, "assets", "voice-samples");
 Directory.CreateDirectory(dataDirectory);
-var repository = new ProjectRepository($"Data Source={Path.Combine(dataDirectory, "test-tasks.db")}");
+var keyDirectory = Path.Combine(dataDirectory, "data-protection-keys");
+Directory.CreateDirectory(keyDirectory);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keyDirectory))
+    .SetApplicationName("Lifewood.BookVideoPlatform");
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "lw_session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+        options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
+        options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.Name = "lw_csrf";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("authentication", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
+
+var repository = new ProjectRepository(databaseConnection);
 repository.Initialize();
 builder.Services.AddSingleton(repository);
+var users = new UserRepository(databaseConnection, dataDirectory);
+users.Initialize();
+builder.Services.AddSingleton(users);
 
 var app = builder.Build();
+app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
+    context.Response.Headers.XContentTypeOptions = "nosniff";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    if ((context.Request.Path.StartsWithSegments("/api/auth") && context.Request.Path != "/api/auth/csrf") || context.Request.Path == "/api/me")
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers.Pragma = "no-cache";
+    }
+    var requestSize = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (requestSize is { IsReadOnly: false })
+    {
+        var isUpload = HttpMethods.IsPost(context.Request.Method) && context.Request.Path.Value?.EndsWith("/files", StringComparison.Ordinal) == true;
+        var isAuthWrite = context.Request.Path.StartsWithSegments("/api/auth") && !HttpMethods.IsGet(context.Request.Method);
+        requestSize.MaxRequestBodySize = isUpload ? 510_000_000 : isAuthWrite ? 16_384 : 2_000_000;
+    }
     context.Response.Headers.Append("X-Request-Id", context.TraceIdentifier);
     try { await next(); }
+    catch (AntiforgeryValidationException)
+    {
+        if (!context.Response.HasStarted)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(
+                new ApiErrorDto("auth.csrf", "errors.auth.csrf", "The security token is missing or expired. Refresh and try again.", null, true, context.TraceIdentifier),
+                AppJsonContext.Default.ApiErrorDto);
+        }
+    }
     catch (Exception exception)
     {
         app.Logger.LogError(exception, "Unhandled request failure {RequestId}", context.TraceIdentifier);
@@ -36,30 +128,56 @@ app.Use(async (context, next) =>
     }
 });
 
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api") &&
+        !HttpMethods.IsGet(context.Request.Method) &&
+        !HttpMethods.IsHead(context.Request.Method) &&
+        !HttpMethods.IsOptions(context.Request.Method))
+    {
+        await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context);
+    }
+    await next();
+});
+
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 var api = app.MapGroup("/api");
 
 api.MapGet("/health", () => TypedResults.Ok(new HealthDto("ok")));
-if (app.Environment.IsDevelopment())
+api.MapGet("/auth/status", (UserRepository accounts) => Results.Ok(new AuthStatusDto(accounts.RequiresBootstrap())));
+api.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
+    Results.Ok(new CsrfTokenDto(antiforgery.GetAndStoreTokens(context).RequestToken!)));
+api.MapPost("/auth/bootstrap", async (BootstrapAccountRequest? request, HttpContext context, UserRepository accounts) =>
 {
-    api.MapGet("/auth/test-users", (HttpContext context) => IsLoopback(context)
-        ? Results.Ok(TestUsers.All())
-        : Error(context, 404, "http.not_found", "errors.http.notFound", "Not found.", false));
-    api.MapPost("/auth/login", (LoginRequest request, HttpContext context) =>
-    {
-        if (!IsLoopback(context)) return Error(context, 404, "http.not_found", "errors.http.notFound", "Not found.", false);
-        var user = TestUsers.Find(request.UserId);
-        if (user is null) return Error(context, 400, "auth.unknown_user", "errors.auth.unknownUser", "Unknown local test user.", false);
-        context.Response.Cookies.Append("lw_test_user", user.Id, new CookieOptions
-        {
-            HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = false, IsEssential = true, MaxAge = TimeSpan.FromHours(8)
-        });
-        return Results.Ok(user);
-    });
-    api.MapPost("/auth/logout", (HttpContext context) => { context.Response.Cookies.Delete("lw_test_user"); return Results.NoContent(); });
-}
-
+    if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
+    var result = accounts.CreateOwner(request.DisplayName, request.Email, request.Password);
+    if (result.Outcome == AccountCreateOutcome.AlreadyInitialized)
+        return Error(context, 409, "auth.already_initialized", "errors.auth.alreadyInitialized", "The platform owner account already exists.", false);
+    if (result.Outcome == AccountCreateOutcome.Invalid)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "The account details are invalid.", false,
+            [new FieldErrorDto(result.Field ?? "request", "invalid", $"errors.auth.fields.{result.Field ?? "request"}")]);
+    await SignIn(context, result.User!, false);
+    return Results.Ok(result.User);
+}).RequireRateLimiting("authentication");
+api.MapPost("/auth/login", async (LoginRequest? request, HttpContext context, UserRepository accounts) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrEmpty(request.Password))
+        return Error(context, 400, "auth.invalid_credentials", "errors.auth.invalidCredentials", "The email or password is incorrect.", false);
+    var result = accounts.Authenticate(request.Email, request.Password);
+    if (result.Outcome != AccountLoginOutcome.Success)
+        return Error(context, 401, "auth.invalid_credentials", "errors.auth.invalidCredentials", "The email or password is incorrect.", false);
+    await SignIn(context, result.User!, request.RememberMe);
+    return Results.Ok(result.User);
+}).RequireRateLimiting("authentication");
+api.MapPost("/auth/logout", async (HttpContext context) =>
+{
+    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.NoContent();
+});
 api.MapGet("/me", (HttpContext context) =>
 {
     var user = CurrentUser(context);
@@ -325,13 +443,24 @@ app.Run();
 
 static CurrentUserDto? CurrentUser(HttpContext context)
 {
-    if (!context.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment() || !IsLoopback(context)) return null;
-    return context.Request.Cookies.TryGetValue("lw_test_user", out var id) ? TestUsers.Find(id) : null;
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    return string.IsNullOrWhiteSpace(userId) ? null : context.RequestServices.GetRequiredService<UserRepository>().Get(userId);
 }
 
+static Task SignIn(HttpContext context, CurrentUserDto user, bool persistent)
+{
+    var identity = new ClaimsIdentity(
+        [new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(ClaimTypes.Name, user.DisplayName)],
+        CookieAuthenticationDefaults.AuthenticationScheme);
+    var properties = new AuthenticationProperties
+    {
+        IsPersistent = persistent,
+        AllowRefresh = true,
+        ExpiresUtc = DateTimeOffset.UtcNow.Add(persistent ? TimeSpan.FromDays(30) : TimeSpan.FromHours(8))
+    };
+    return context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+}
 static bool Can(CurrentUserDto user, string permission) => user.Permissions.Contains(permission, StringComparer.Ordinal);
-static bool IsLoopback(HttpContext context) => context.Connection.RemoteIpAddress is { } ip && System.Net.IPAddress.IsLoopback(ip);
-
 static string Locale(HttpContext context)
 {
     var value = context.Request.Headers.AcceptLanguage.ToString();

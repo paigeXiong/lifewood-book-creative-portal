@@ -6,6 +6,7 @@ import "@lifewood/ui/tokens.css";
 import "@lifewood/i18n";
 import { App } from "./App";
 import "./styles.css";
+import "./reference-ui.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

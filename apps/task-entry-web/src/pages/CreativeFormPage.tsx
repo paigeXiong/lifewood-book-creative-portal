@@ -130,8 +130,8 @@ export function CreativeFormPage() {
   });
 
   return <div className="wizard-page creative-page">
+    <div className="wizard-heading"><div><h1>{t("wizard.pageTitles.characters")}</h1><p>{t("wizard.pageSubtitles.characters")}</p></div><span className={`save-state save-${saveState}`} role={saveState === "error" ? "alert" : "status"}>{statusText}</span></div>
     <StepProgress current={2} />
-    <div className="wizard-heading"><div><h1>{t("wizard.steps.characters")}</h1><p>{t("creative.intro")}</p></div><span className={`save-state save-${saveState}`} role={saveState === "error" ? "alert" : "status"}>{statusText}</span></div>
     <form autoComplete="off" onSubmit={continueStep}>
       <div className="creative-layout">
         <div className="form-stack">
@@ -170,7 +170,7 @@ export function CreativeFormPage() {
 
         <CreativeSummary control={form.control} visualStyles={options.visualStyles} roleTypes={options.roleTypes} styleTagMap={styleTagMap} />
       </div>
-      <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/project`)} onClick={guardLink}>{t("common.back")}</Link><div><button className="button button-secondary" type="button" disabled={saveCreative.isPending} onClick={form.handleSubmit((values) => saveCreative.mutate({ values, continueAfter: false }))}>{saveCreative.isPending ? t("common.saving") : t("common.saveDraft")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={saveCreative.isPending}>{saveCreative.isPending ? t("common.saving") : t("common.continue")}<span aria-hidden="true">→</span></button></div></div>
+      <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/project`)} onClick={guardLink}>{t("wizard.actions.backUpload")}</Link><p className="sticky-note">{t("wizard.footerNotes.characters")}</p><div><button className="button button-secondary" type="button" disabled={saveCreative.isPending} onClick={form.handleSubmit((values) => saveCreative.mutate({ values, continueAfter: false }))}>{saveCreative.isPending ? t("common.saving") : t("common.save")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={saveCreative.isPending}>{saveCreative.isPending ? t("common.saving") : t("wizard.actions.toVoice")}<span aria-hidden="true">→</span></button></div></div>
     </form>
   </div>;
 }

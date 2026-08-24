@@ -177,6 +177,7 @@ export interface TaskSummary {
   id: string;
   taskNumber?: string;
   projectName: string;
+  clientName: string;
   bookTitle: string;
   authorName: string;
   coverUrl?: string;

@@ -9,6 +9,7 @@ coverage/
 bin/
 obj/
 services/test-api/data/
+services/platform-api/data/
 services/test-api/uploads/
 artifacts/
 data/

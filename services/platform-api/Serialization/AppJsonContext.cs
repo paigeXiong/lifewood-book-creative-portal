@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
-using Lifewood.TestApi.Contracts;
+using Lifewood.PlatformApi.Contracts;
 
-namespace Lifewood.TestApi.Serialization;
+namespace Lifewood.PlatformApi.Serialization;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
@@ -9,6 +9,9 @@ namespace Lifewood.TestApi.Serialization;
 [JsonSerializable(typeof(CurrentUserDto))]
 [JsonSerializable(typeof(HealthDto))]
 [JsonSerializable(typeof(CurrentUserDto[]))]
+[JsonSerializable(typeof(AuthStatusDto))]
+[JsonSerializable(typeof(CsrfTokenDto))]
+[JsonSerializable(typeof(BootstrapAccountRequest))]
 [JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(ConfigOptionDto))]
 [JsonSerializable(typeof(ConfigOptionDto[]))]

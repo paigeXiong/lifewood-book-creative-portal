@@ -1,5 +1,7 @@
 # Lifewood AIGC Story Studio 技术架构与 Native AOT 开发规范
 
+> 架构更新（2026-08-24）：登记 API 已正式化为 `services/platform-api`。本文中“独立测试服务”的旧方案仅作为历史设计记录；当前架构边界以 `docs/scope-registration-platform.md` 和 `services/platform-api/README.md` 为准。
+
 > 文档状态：初稿  
 > 版本：v0.6  
 > 更新日期：2026-08-21  
@@ -89,7 +91,7 @@ apps/task-entry-web
 packages/api-client
   业务服务 + API 适配器
         │
-        ├── local/test ──► services/test-api
+        ├── local/test ──► services/platform-api
         │                    .NET Native AOT
         │                    SQLite + 本地文件
         │
@@ -98,7 +100,7 @@ packages/api-client
 apps/test-console
   React 测试管理页面
         │
-        └───────────────► services/test-api/test-admin/*
+        └───────────────► services/platform-api/test-admin/*
 ```
 
 客户端页面不得区分当前连接的是测试服务还是正式服务。环境差异由配置和 API 适配层处理。
@@ -111,7 +113,7 @@ Aigc/
 │   ├── task-entry-web/
 │   └── test-console/
 ├── services/
-│   └── test-api/
+│   └── platform-api/
 │       ├── Contracts/
 │       ├── Endpoints/
 │       ├── Features/
@@ -437,7 +439,6 @@ localizedPath({
 以下技术路由不添加 locale 前缀：
 
 - 正式登录系统认证回调。
-- 本地测试登录回调。
 - API 路由。
 - OpenAPI。
 - 健康检查。
@@ -458,52 +459,31 @@ localizedPath({
 
 ### 14.0 标准用户模型
 
-认证适配层必须将客户登录系统或本地测试登录服务返回的身份信息转换为统一模型：
+业务页面只依赖统一 `CurrentUser` 模型：稳定用户 ID、昵称、可选真实头像 URL、邮箱、组织、角色、权限、locale 和时区。页面不得直接解析 Cookie 或 Claims，也不得根据显示名称决定权限和数据归属。
 
-```ts
-interface CurrentUser {
-  id: string
-  username?: string
-  displayName: string
-  avatarUrl?: string
-  email?: string
-  organization?: {
-    id: string
-    name: string
-  }
-  roles: string[]
-  permissions: string[]
-  locale?: SupportedLocale
-  timeZone?: string
-}
-```
+### 14.1 账户存储与密码
 
-约束：
+- `users` 表与项目表保存在平台 SQLite 数据库中，邮箱使用规范化唯一索引。
+- 首次设置在即时事务中确认用户表为空并创建唯一负责人账号，避免并发创建多个首位账号。
+- 密码使用 ASP.NET Core `PasswordHasher<TUser>`；验证结果要求重新哈希时自动升级哈希。
+- 不存在的邮箱仍执行一次虚拟密码验证，减少通过响应时间枚举账号的差异。
+- 连续失败 5 次锁定 15 分钟；登录错误统一返回“邮箱或密码不正确”。
 
-- 页面组件只依赖 `CurrentUser`，不直接读取具体 Token Claims。
-- 外部字段名、Claim 名称和嵌套结构由认证适配器转换。
-- 用户 ID 是权限、审计和数据关联使用的稳定值；昵称只用于显示。
-- 角色和权限使用稳定代码，不使用本地化显示文字作为判断条件。
-- `avatarUrl` 视为不可信外部资源，需要限制协议、处理加载失败并遵守内容安全策略。
-- 用户 locale 仅用于首次选择路由语言；进入页面后以路由 locale 为准。
-- 时区必须使用 IANA 时区标识或通过适配器转换为前端统一格式。
-- 不把完整 Token、原始 Claims 或无关个人资料持久化到浏览器本地存储。
-- 本地测试服务返回相同模型，页面不得为测试用户编写特殊分支。
+### 14.2 Cookie 与 CSRF
 
-### 14.1 本地测试认证
+- 使用 ASP.NET Core Cookie Authentication，Cookie 为 HttpOnly、SameSite=Strict，并在 HTTPS 下使用 Secure。
+- 普通会话 8 小时；只有用户勾选保持登录时才创建最长 30 天的持久 Cookie。
+- Data Protection 密钥持久化到平台数据目录，并与数据库一起备份和保护。
+- 所有非 GET/HEAD/OPTIONS 的 `/api` 请求都通过 `X-CSRF-TOKEN` 校验 antiforgery token。
+- 登录、首次建号、退出和项目修改使用同一 CSRF 机制；认证状态变化后前端必须丢弃旧 token 并重新获取。
+- 登录和首次建号按来源 IP 限流；Cookie 只保存用户 ID Claims，每次请求重新从用户库读取当前权限。
 
-- 本地测试认证只在测试服务中实现。
-- 使用显式注册的认证处理器。
-- 优先使用简单、可撤销的本地会话或已验证为 AOT 兼容的签名 Token。
-- 测试账号和凭证从本地开发配置加载，不写入源代码。
-- 支持登录、退出、过期、无权限和用户切换测试。
+### 14.3 页面与头像
 
-### 14.2 正式认证
-
-- 正式工单填写前端通过认证适配器接入客户现有登录系统。
-- 测试认证代码不包含在正式工单填写前端发布物中。
-- 正式认证失败时不得回退到本地测试身份。
-- 客户正式认证协议确定后，需要单独审查相关 SDK 的浏览器兼容性；它不影响测试服务的 Native AOT 编译。
+- `/zh-CN/login` 与 `/en-US/login` 共用组件和真实认证 API，首次设置与正常登录文案均完整国际化。
+- 没有真实头像图片时不生成文字头像或假图片，只显示昵称和邮箱。
+- 账户区域必须是可交互按钮，支持键盘、Escape 关闭、点击外部关闭和明确退出状态。
+- 未来企业 SSO 只能通过替换认证适配层接入，不得在认证失败时降级为假用户。
 
 ## 15. OpenAPI
 

@@ -6,9 +6,7 @@ import { authService, ApiError, localizedApiError } from "@lifewood/api-client";
 import { i18n, isSupportedLocale, localizedPath, setLocale } from "@lifewood/i18n";
 import type { SupportedLocale } from "@lifewood/domain";
 import { AppShell } from "./components/AppShell";
-const LocalLoginPage = __LOCAL_AUTH__
-  ? lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })))
-  : null;
+const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
 const VoiceAndReferencesPage = lazy(() => import("./pages/VoiceAndReferencesPage").then((module) => ({ default: module.VoiceAndReferencesPage })));
 const TaskListPage = lazy(() => import("./pages/TaskListPage").then((module) => ({ default: module.TaskListPage })));
 const ProjectFormPage = lazy(() => import("./pages/ProjectFormPage").then((module) => ({ default: module.ProjectFormPage })));
@@ -23,20 +21,7 @@ function ScreenLoading() {
 }
 
 function LoginRoute() {
-  const location = useLocation();
-  const { t } = useTranslation();
-  const loginUrl = import.meta.env.VITE_EXTERNAL_LOGIN_URL as string | undefined;
-  useEffect(() => {
-    if (!LocalLoginPage && loginUrl) {
-      const returnUrl = `${window.location.origin}${location.pathname.replace(/\/login$/, "/tasks")}`;
-      window.location.replace(`${loginUrl}?returnUrl=${encodeURIComponent(returnUrl)}`);
-    }
-  }, [location.pathname, loginUrl]);
-  if (LocalLoginPage) {
-    return <Suspense fallback={<ScreenLoading />}><LocalLoginPage /></Suspense>;
-  }
-  if (loginUrl) return <ScreenLoading />;
-  return <div className="screen-status" role="alert">{t("auth.externalMissing")}</div>;
+  return <Suspense fallback={<ScreenLoading />}><LoginPage /></Suspense>;
 }
 
 function RootRedirect() {

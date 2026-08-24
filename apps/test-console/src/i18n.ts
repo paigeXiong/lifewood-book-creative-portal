@@ -16,7 +16,7 @@ i18n.addResourceBundle("zh-CN", "translation", {
     noFiles: "未接收到文件",
     characters: "角色数量",
     readonlyTitle: "只读测试工具",
-    readonlyBody: "这里仅验证客户提交内容是否被测试 API 正确接收，不改变项目状态，也不属于正式产品发布物。",
+    readonlyBody: "这里仅验证客户提交内容是否被平台 API 正确接收，不改变项目状态，也不属于正式产品发布物。",
     empty: "当前筛选条件下没有项目。",
   },
 }, true, true);
@@ -37,7 +37,7 @@ i18n.addResourceBundle("en-US", "translation", {
     noFiles: "No files received",
     characters: "Characters",
     readonlyTitle: "Read-only test tool",
-    readonlyBody: "This console only verifies that the local test API received the customer submission. It does not change workflow state and is excluded from production releases.",
+    readonlyBody: "This console only verifies that the local platform API received the customer submission. It does not change workflow state and is excluded from production releases.",
     empty: "No projects match the current filters.",
   },
 }, true, true);

@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Lifewood.TestApi.Contracts;
-using Lifewood.TestApi.Features;
-using Lifewood.TestApi.Serialization;
+using Lifewood.PlatformApi.Contracts;
+using Lifewood.PlatformApi.Features;
+using Lifewood.PlatformApi.Serialization;
 using Microsoft.Data.Sqlite;
 
-namespace Lifewood.TestApi.Persistence;
+namespace Lifewood.PlatformApi.Persistence;
 
 internal sealed class ProjectRepository(string connectionString)
 {
@@ -97,13 +97,6 @@ internal sealed class ProjectRepository(string connectionString)
             markMigration.ExecuteNonQuery();
         }
 
-        using var countCommand = connection.CreateCommand();
-        countCommand.Transaction = transaction;
-        countCommand.CommandText = "SELECT COUNT(*) FROM projects;";
-        if (Convert.ToInt32(countCommand.ExecuteScalar()) == 0)
-        {
-            Seed(connection, transaction);
-        }
         transaction.Commit();
     }
 
@@ -331,25 +324,6 @@ internal sealed class ProjectRepository(string connectionString)
             : new SaveResult(SaveOutcome.VersionConflict, current, current.Version);
     }
 
-    private void Seed(SqliteConnection connection, SqliteTransaction transaction)
-    {
-        var now = DateTimeOffset.UtcNow;
-        Insert("admin-1", new TaskDraftDto(
-            Guid.NewGuid().ToString("N"), null, "draft", 1,
-            new ProjectInfoDto("Deseret Book", "Alex Morgan", "alex@example.test", null, "deseret-book", "Beyond the Horizon", "book-trailer", now.AddDays(30).ToString("yyyy-MM-dd"), ["young-adults", "families"]),
-            new BookInfoDto("Beyond the Horizon", null, "Alex Morgan", "adventure", "A single decision opens a path beyond the familiar.", "A cinematic adventure about courage, discovery, and choosing the unknown.", "en-US", "60s", ["youtube", "instagram"], []),
-            new CreativeInfoDto([new CharacterInfoDto("seed-alex", "protagonist", "Mara", "The explorer who chooses to cross the horizon.", "Curious, resilient, quietly brave.", "Weathered traveler with a red field journal.", "young-adult", "female", "Layered travel clothes", "Wonder held beneath caution", null, [])], "cinematic", ["hopeful", "mysterious"], ["natural-light"], ["measured"], []),
-            new VoiceAndReferencesInfoDto(new VoiceoverInfoDto("en-US", "warm", "medium", null, "female", "adult", "neutral-us", "warm", ["warm-storyteller"], "warm-storyteller", null), [], [], new CreativeDirectionDto("Invite readers to choose courage over certainty.", null, null, null, null, null)),
-            now.AddDays(-2), now.AddHours(-3)), connection, transaction);
-        Insert("admin-1", new TaskDraftDto(
-            Guid.NewGuid().ToString("N"), "LW-260821-0042", "submitted", 3,
-            new ProjectInfoDto("Northline Press", "Jamie Lee", "jamie@example.test", null, "independent", "A Map of Small Wonders", "social-promotion", null, ["general"]),
-            new BookInfoDto("A Map of Small Wonders", null, "Jamie Lee", "inspirational", "Small places can change the direction of a life.", "A reflective collection of stories about memory and belonging.", "en-US", "30s", ["instagram"], []),
-            new CreativeInfoDto([new CharacterInfoDto("seed-jamie", "narrator", "The Traveler", "Observes the small places that shape a life.", "Reflective and attentive.", "An understated traveler carrying a folded map.", "adult", "unspecified", null, null, null, [])], "storybook", ["warm", "reflective"], ["soft-texture"], ["slow"], []),
-            new VoiceAndReferencesInfoDto(new VoiceoverInfoDto("en-US", "calm", "slow", "Keep place names unhurried.", "neutral", "mature", "neutral-us", "reflective", ["grounded-narrator"], "grounded-narrator", null), [], ["https://example.com/reference"], new CreativeDirectionDto("Small places can redirect a life.", null, "Keep the tone intimate.", null, "Sparse and reflective.", null)),
-            now.AddDays(-8), now.AddDays(-1)), connection, transaction);
-    }
-
     private void Insert(string ownerId, TaskDraftDto draft, SqliteConnection? existingConnection = null, SqliteTransaction? transaction = null)
     {
         var ownsConnection = existingConnection is null;
@@ -448,6 +422,7 @@ internal sealed class ProjectRepository(string connectionString)
     private static ProjectSummaryDto ToSummary(TaskDraftDto task) => new(
         task.Id, task.TaskNumber,
         string.IsNullOrWhiteSpace(task.Project.ProjectName) ? "—" : task.Project.ProjectName,
+        string.IsNullOrWhiteSpace(task.Project.ClientName) ? "—" : task.Project.ClientName,
         string.IsNullOrWhiteSpace(task.Book.Title) ? "—" : task.Book.Title,
         string.IsNullOrWhiteSpace(task.Book.AuthorName) ? "—" : task.Book.AuthorName,
         task.Book.SourceAssets?.FirstOrDefault(asset => asset.CategoryId == "book-cover")?.Url,

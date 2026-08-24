@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ApiError, authService, localAuthService, localizedApiError, optionService, projectService } from "@lifewood/api-client";
+import { authService, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath, setLocale } from "@lifewood/i18n";
-import type { ConfigOption, CurrentUser, SupportedLocale, TaskDraft, TaskSummary } from "@lifewood/domain";
+import type { ConfigOption, SupportedLocale, TaskDraft, TaskSummary } from "@lifewood/domain";
 
 const PAGE_SIZE = 12;
 
@@ -16,18 +16,33 @@ function optionLabel(items: ConfigOption[] | undefined, id: string | undefined) 
   return items?.find((item) => item.id === id)?.label ?? id ?? "—";
 }
 
-function IdentityGate({ users, busy, error, onLogin }: { users: CurrentUser[]; busy: boolean; error?: string; onLogin: (id: string) => void }) {
+function IdentityGate({ requiresBootstrap, busy, error, onAuthenticate }: { requiresBootstrap: boolean; busy: boolean; error?: string; onAuthenticate: (account: { displayName: string; email: string; password: string; rememberMe: boolean }) => void }) {
   const { t } = useTranslation();
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [clientError, setClientError] = useState<string>();
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (requiresBootstrap && password !== confirmPassword) { setClientError(t("auth.passwordMismatch")); return; }
+    setClientError(undefined);
+    onAuthenticate({ displayName, email, password, rememberMe });
+  };
   return <main className="identity-screen">
     <section className="identity-panel" aria-labelledby="identity-title">
       <div className="test-flag">{t("testConsole.removable")}</div>
-      <h1 id="identity-title">{t("testConsole.identityTitle")}</h1>
-      <p>{t("testConsole.identityHint")}</p>
-      {error && <div className="console-error" role="alert">{error}</div>}
-      <div className="identity-list">{users.map((user) => <button key={user.id} disabled={busy} onClick={() => onLogin(user.id)}>
-        <span className="identity-avatar">{user.displayName.slice(0, 1)}</span><span><strong>{user.displayName}</strong><small>{user.organization?.name ?? user.email ?? user.id}</small></span>
-      </button>)}</div>
-      {!users.length && <div className="empty-note">{t("auth.noUsers")}</div>}
+      <h1 id="identity-title">{t(requiresBootstrap ? "auth.bootstrapTitle" : "auth.title")}</h1>
+      <p>{t(requiresBootstrap ? "auth.bootstrapDescription" : "auth.description")}</p>
+      <form className="identity-login-form" onSubmit={submit} aria-busy={busy}>
+        {requiresBootstrap ? <label><span>{t("auth.displayName")}</span><input type="text" autoComplete="name" minLength={2} maxLength={100} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label> : null}
+        <label><span>{t("auth.email")}</span><input type="email" inputMode="email" autoComplete="username" maxLength={254} required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label><span>{t("auth.password")}</span><input type="password" autoComplete={requiresBootstrap ? "new-password" : "current-password"} minLength={requiresBootstrap ? 12 : undefined} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        {requiresBootstrap ? <label><span>{t("auth.confirmPassword")}</span><input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label> : <label className="identity-remember"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>{t("auth.rememberMe")}</span></label>}
+        {(clientError || error) ? <div className="console-error" role="alert">{clientError ?? error}</div> : null}
+        <button type="submit" disabled={busy}>{t(busy ? (requiresBootstrap ? "auth.creatingAccount" : "auth.signingIn") : (requiresBootstrap ? "auth.createAccount" : "auth.signIn"))}</button>
+      </form>
     </section>
   </main>;
 }
@@ -71,8 +86,8 @@ function ConsolePage() {
   const [loginError, setLoginError] = useState<string>();
 
   useEffect(() => { void setLocale(locale); document.title = t("testConsole.documentTitle"); }, [locale, t]);
-  const me = useQuery({ queryKey: ["test-console-user"], queryFn: authService.getCurrentUser });
-  const users = useQuery({ queryKey: ["test-console-users"], queryFn: localAuthService.listUsers, enabled: me.error instanceof ApiError && me.error.details.code === "auth.unauthorized" });
+  const me = useQuery({ queryKey: ["test-console-user"], queryFn: authService.getCurrentUser, retry: false });
+  const authStatus = useQuery({ queryKey: ["auth-status"], queryFn: authService.getStatus, enabled: me.isError, retry: false });
   const options = useQuery({ queryKey: ["test-console-options", locale], queryFn: () => optionService.getFormOptions(locale), enabled: Boolean(me.data) });
   const projects = useQuery({ queryKey: ["test-console-projects", locale, status, search, page], queryFn: () => projectService.listProjects({ locale, status: status || undefined, search: search || undefined, page, pageSize: PAGE_SIZE }), enabled: Boolean(me.data) });
   const detail = useQuery({ queryKey: ["test-console-project", selectedId, locale], queryFn: () => projectService.getProject(selectedId!, locale), enabled: Boolean(me.data && selectedId) });
@@ -86,18 +101,21 @@ function ConsolePage() {
   const pages = Math.max(1, Math.ceil((projects.data?.total ?? 0) / PAGE_SIZE));
   const statusMap = useMemo(() => new Map(options.data?.taskStatuses.map((item) => [item.id, item]) ?? []), [options.data?.taskStatuses]);
 
-  const login = async (id: string) => {
+  const login = async (account: { displayName: string; email: string; password: string; rememberMe: boolean }) => {
     setLoginBusy(true); setLoginError(undefined);
-    try { await localAuthService.login(id); await queryClient.invalidateQueries(); }
-    catch (error) { setLoginError(localizedApiError(error, t)); }
+    try {
+      if (authStatus.data?.requiresBootstrap) await authService.bootstrap(account);
+      else await authService.login(account);
+      await queryClient.invalidateQueries();
+    } catch (error) { setLoginError(localizedApiError(error, t)); }
     finally { setLoginBusy(false); }
   };
-  const logout = async () => { await localAuthService.logout(); queryClient.clear(); window.location.reload(); };
+  const logout = async () => { await authService.logout(); queryClient.clear(); window.location.reload(); };
   const submitSearch = (event: FormEvent) => { event.preventDefault(); setPage(1); setSearch(searchInput.trim()); };
   const changeLocale = (next: string) => { if (isSupportedLocale(next)) navigate(localizedPath(next, "")); };
 
-  if (me.isPending) return <main className="center-state">{t("common.loading")}</main>;
-  if (!me.data) return <IdentityGate users={users.data ?? []} busy={loginBusy} error={loginError ?? (users.error ? localizedApiError(users.error, t) : undefined)} onLogin={(id) => void login(id)} />;
+  if (me.isPending || (me.isError && authStatus.isPending)) return <main className="center-state">{t("common.loading")}</main>;
+  if (!me.data) return <IdentityGate requiresBootstrap={authStatus.data?.requiresBootstrap === true} busy={loginBusy} error={loginError ?? (authStatus.error ? localizedApiError(authStatus.error, t) : undefined)} onAuthenticate={(account) => void login(account)} />;
 
   return <div className="console-shell">
     <header className="console-header"><div><strong>{t("testConsole.title")}</strong><span className="test-flag">{t("testConsole.removable")}</span></div><div className="header-actions"><label>{t("nav.language")}<select value={locale} onChange={(event) => changeLocale(event.target.value)}><option value="zh-CN">中文</option><option value="en-US">English</option></select></label><span>{me.data.displayName}</span><button onClick={() => void logout()}>{t("nav.logout")}</button></div></header>

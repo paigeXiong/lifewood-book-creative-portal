@@ -6,7 +6,8 @@
     <PublishAot>true</PublishAot>
     <IsAotCompatible>true</IsAotCompatible>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <RootNamespace>Lifewood.TestApi</RootNamespace>
+    <RootNamespace>Lifewood.PlatformApi</RootNamespace>
+    <AssemblyName>Lifewood.PlatformApi</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />

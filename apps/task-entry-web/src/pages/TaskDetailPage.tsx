@@ -36,7 +36,7 @@ export function TaskDetailPage() {
     </header>
     <div className="detail-layout">
       <aside className="detail-cover">
-        {bookCover && <img className="detail-cover-image" src={bookCover.url} alt={t("sourceFiles.coverAlt", { title: task.data.book.title })} />}
+        {bookCover && <img className="detail-cover-image" src={bookCover.url} alt={t("sourceFiles.coverAlt", { title: task.data.book.title })} width="360" height="280" />}
         <dl><div><dt>{t("taskDetail.taskNumber")}</dt><dd translate="no">{task.data.taskNumber ?? task.data.id}</dd></div><div><dt>{t("taskDetail.created")}</dt><dd><time dateTime={task.data.createdAt}>{date.format(new Date(task.data.createdAt))}</time></dd></div><div><dt>{t("taskDetail.updated")}</dt><dd><time dateTime={task.data.updatedAt}>{date.format(new Date(task.data.updatedAt))}</time></dd></div></dl>
       </aside>
       <div className="detail-sections">

@@ -33,8 +33,27 @@ interface RequestOptions extends RequestInit {
 }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
+let csrfToken: string | undefined;
+let csrfRequest: Promise<string> | undefined;
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+function clearCsrfToken() {
+  csrfToken = undefined;
+  csrfRequest = undefined;
+}
+
+async function getCsrfToken(): Promise<string> {
+  if (csrfToken) return csrfToken;
+  csrfRequest ??= (async () => {
+    const response = await fetch(`${apiBaseUrl}/auth/csrf`, { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!response.ok) throw new ApiError({ code: "auth.csrf", messageKey: "errors.auth.csrf", fallbackMessage: "The secure session could not be initialized.", retryable: true });
+    csrfToken = ((await response.json()) as { token: string }).token;
+    return csrfToken;
+  })();
+  try { return await csrfRequest; }
+  finally { csrfRequest = undefined; }
+}
+
+async function request<T>(path: string, options: RequestOptions = {}, retryCsrf = true): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -42,6 +61,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
   if (options.locale) {
     headers.set("Accept-Language", options.locale);
+  }
+  const method = (options.method ?? "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    headers.set("X-CSRF-TOKEN", await getCsrfToken());
   }
 
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -61,6 +84,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     } catch {
       // Keep the safe HTTP fallback when the response is not JSON.
     }
+    if (details.code === "auth.csrf" && retryCsrf) {
+      clearCsrfToken();
+      return request<T>(path, options, false);
+    }
     throw new ApiError(details);
   }
 
@@ -70,22 +97,26 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return (await response.json()) as T;
 }
 
-export const authService = {
-  getCurrentUser: () => request<CurrentUser>("/me"),
-  logout: async () => {
-    const logoutUrl = import.meta.env.VITE_EXTERNAL_LOGOUT_URL as string | undefined;
-    if (logoutUrl) window.location.assign(logoutUrl);
-  },
-};
+export interface LoginCredentials { email: string; password: string; rememberMe: boolean }
+export interface BootstrapAccount { displayName: string; email: string; password: string }
 
-export const localAuthService = {
-  listUsers: () => request<CurrentUser[]>("/auth/test-users"),
-  login: (userId: string) =>
-    request<CurrentUser>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ userId }),
-    }),
-  logout: () => request<void>("/auth/logout", { method: "POST" }),
+export const authService = {
+  getStatus: () => request<{ requiresBootstrap: boolean }>("/auth/status"),
+  getCurrentUser: () => request<CurrentUser>("/me"),
+  login: async (credentials: LoginCredentials) => {
+    const user = await request<CurrentUser>("/auth/login", { method: "POST", body: JSON.stringify(credentials) });
+    clearCsrfToken();
+    return user;
+  },
+  bootstrap: async (account: BootstrapAccount) => {
+    const user = await request<CurrentUser>("/auth/bootstrap", { method: "POST", body: JSON.stringify(account) });
+    clearCsrfToken();
+    return user;
+  },
+  logout: async () => {
+    await request<void>("/auth/logout", { method: "POST" });
+    clearCsrfToken();
+  },
 };
 
 export interface TaskListQuery {

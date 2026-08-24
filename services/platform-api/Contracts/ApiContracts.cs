@@ -1,4 +1,4 @@
-namespace Lifewood.TestApi.Contracts;
+namespace Lifewood.PlatformApi.Contracts;
 
 public sealed record HealthDto(string Status);
 
@@ -16,7 +16,10 @@ public sealed record CurrentUserDto(
     string? Locale,
     string? TimeZone);
 
-public sealed record LoginRequest(string UserId);
+public sealed record AuthStatusDto(bool RequiresBootstrap);
+public sealed record CsrfTokenDto(string Token);
+public sealed record BootstrapAccountRequest(string DisplayName, string Email, string Password);
+public sealed record LoginRequest(string Email, string Password, bool RememberMe);
 
 public sealed record ConfigOptionDto(
     string Id,
@@ -167,6 +170,7 @@ public sealed record ProjectSummaryDto(
     string Id,
     string? TaskNumber,
     string ProjectName,
+    string ClientName,
     string BookTitle,
     string AuthorName,
     string? CoverUrl,

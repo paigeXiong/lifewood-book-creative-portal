@@ -1,0 +1,26 @@
+# Lifewood Platform API
+
+This is the production backend for the customer book-project intake portal. It owns accounts, sessions, project drafts, submitted registrations, configurable form options, uploaded files, validation, and submission records.
+
+It is not a mock API and it does not implement production, review, or delivery workflows.
+
+## Authentication
+
+- The first visit creates the platform owner account; no default account or password is shipped.
+- Accounts are stored in SQLite and passwords use ASP.NET Core `PasswordHasher<TUser>`.
+- Authentication uses an HttpOnly, SameSite=Strict cookie. Persistent sessions are created only when the user selects “keep me signed in”.
+- Unsafe `/api` requests require an antiforgery token in `X-CSRF-TOKEN`.
+- Sign-in and first-account creation are rate-limited per IP. Five failed password attempts lock the account for 15 minutes.
+- Data-protection keys persist under `data/data-protection-keys`; protect and back up this directory together with `data/platform.db`.
+- Deploy the service behind HTTPS. Complete first-account setup before exposing an uninitialized instance to untrusted networks.
+- When TLS terminates at a reverse proxy, list only that proxy's IP addresses under `Network:TrustedProxies`; forwarded scheme and client IP headers from any other source are ignored.
+- Legacy projects and upload folders are copied to the first real owner during first-account creation. The legacy owner folders remain untouched as a recoverable source copy.
+
+## Scope
+
+- Customer-owned draft creation and editing
+- Real file upload and download
+- Server-managed form options and voices
+- Validation and idempotent submission
+- Submitted records are read-only to customers
+- Chinese and English response data selected through `Accept-Language`

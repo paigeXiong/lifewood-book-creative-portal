@@ -1,6 +1,6 @@
-using Lifewood.TestApi.Contracts;
+using Lifewood.PlatformApi.Contracts;
 
-namespace Lifewood.TestApi.Features;
+namespace Lifewood.PlatformApi.Features;
 
 internal static class VoiceAndReferencesValidator
 {

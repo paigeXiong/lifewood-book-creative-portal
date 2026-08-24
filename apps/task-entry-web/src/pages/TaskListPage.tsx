@@ -23,10 +23,25 @@ export function TaskListPage() {
     queryKey: ["projects", validLocale, status, search, page],
     queryFn: () => projectService.listProjects({ locale: validLocale, status: status || undefined, search: search || undefined, page, pageSize: 10 }),
   });
+  const totalCount = useQuery({
+    queryKey: ["project-count", validLocale, "all"],
+    queryFn: () => projectService.listProjects({ locale: validLocale, page: 1, pageSize: 1 }),
+  });
+  const draftCount = useQuery({
+    queryKey: ["project-count", validLocale, "draft"],
+    queryFn: () => projectService.listProjects({ locale: validLocale, status: "draft", page: 1, pageSize: 1 }),
+  });
+  const submittedCount = useQuery({
+    queryKey: ["project-count", validLocale, "submitted"],
+    queryFn: () => projectService.listProjects({ locale: validLocale, status: "submitted", page: 1, pageSize: 1 }),
+  });
   const createDraft = useMutation({
     mutationFn: () => projectService.createDraft(validLocale),
     onSuccess: async (draft) => {
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["project-count"] }),
+      ]);
       navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
     },
   });
@@ -54,9 +69,28 @@ export function TaskListPage() {
   if (!isSupportedLocale(locale)) return null;
 
   return (
-    <div className="page page-list">
-      <h1 className="sr-only">{t("nav.tasks")}</h1>
-      <section className="list-toolbar" aria-label={t("nav.tasks")}>
+    <div className="page page-list reference-dashboard">
+      <div className="page-header page-header-row">
+        <div>
+          <h1>{t("tasks.title")}</h1>
+          <p>{t("tasks.subtitle")}</p>
+        </div>
+        <button className="button button-primary header-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
+          {!createDraft.isPending && <span aria-hidden="true">＋</span>}
+          {createDraft.isPending ? t("common.creating") : t("common.createTask")}
+        </button>
+      </div>
+
+      <section className="reference-stat-row" aria-label={t("tasks.stats.label")}>
+        <div className="reference-stat-card"><span>{t("tasks.stats.total")}</span><strong>{totalCount.data?.total ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.drafts")}</span><strong>{draftCount.data?.total ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.submitted")}</span><strong>{submittedCount.data?.total ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.pageRecords")}</span><strong>{tasks.data?.items.length ?? "—"}</strong></div>
+      </section>
+
+      {(totalCount.isError || draftCount.isError || submittedCount.isError) && <div className="inline-error stat-error" role="alert">{localizedApiError(totalCount.error ?? draftCount.error ?? submittedCount.error, t)} <button className="button button-secondary" type="button" onClick={() => { void totalCount.refetch(); void draftCount.refetch(); void submittedCount.refetch(); }}>{t("common.retry")}</button></div>}
+
+      <section className="list-toolbar reference-toolbar" aria-label={t("nav.tasks")}>
         <form className="search-form" role="search" onSubmit={(event) => { event.preventDefault(); updateFilters({ q: searchInput.trim(), page: 1 }); }}>
           <label className="sr-only" htmlFor="task-search">{t("tasks.searchLabel")}</label>
           <input id="task-search" name="q" type="search" autoComplete="off" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={t("tasks.searchPlaceholder")} />
@@ -70,12 +104,9 @@ export function TaskListPage() {
           </select>
         </label>
         <span className="result-count" aria-live="polite">{t("tasks.count", { count: tasks.data?.total ?? 0 })}</span>
-        <button className="button button-primary toolbar-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
-          {!createDraft.isPending && <span aria-hidden="true">＋</span>}{createDraft.isPending ? t("common.creating") : t("common.createTask")}
-        </button>
       </section>
 
-      <section className="task-surface" aria-busy={tasks.isPending}>
+      <section className="task-surface main-panel reference-table-panel" aria-busy={tasks.isPending}>
         {createDraft.isError && <div className="inline-error" role="alert">{localizedApiError(createDraft.error, t)}</div>}
         {options.isError && <div className="inline-error" role="alert">{localizedApiError(options.error, t)} <button className="button button-secondary" type="button" onClick={() => void options.refetch()}>{t("common.retry")}</button></div>}
         {tasks.isPending && <span className="sr-only" role="status">{t("common.loading")}</span>}
@@ -89,7 +120,7 @@ export function TaskListPage() {
         )}
         {(tasks.data?.items.length ?? 0) > 0 && (
           <div className="table-scroll">
-            <table className="task-table">
+            <table className="task-table data-table">
               <thead><tr>
                 <th>{t("tasks.columns.project")}</th><th>{t("tasks.columns.book")}</th><th>{t("tasks.columns.status")}</th>
                 <th>{t("tasks.columns.updated")}</th><th><span className="sr-only">{t("tasks.columns.action")}</span></th>
@@ -99,13 +130,13 @@ export function TaskListPage() {
                 const target = task.status === "draft" ? `/tasks/${task.id}/edit/project` : `/tasks/${task.id}`;
                 return <tr key={task.id}>
                   <td><Link className="task-identity" to={localizedPath(locale, target)}>
-                    {task.coverUrl && <img className="list-cover" src={task.coverUrl} alt="" />}
-                    <span><strong>{task.projectName}</strong><small translate="no">{task.taskNumber ?? task.id.slice(0, 8)}</small></span>
+                    {task.coverUrl ? <img className="list-cover" src={task.coverUrl} alt="" width="40" height="52" loading="lazy" /> : null}
+                    <span><strong>{task.bookTitle || task.projectName}</strong><small>{task.clientName || task.projectName}</small></span>
                   </Link></td>
-                  <td data-label={t("tasks.columns.book")}><strong>{task.bookTitle}</strong><small>{task.authorName}</small></td>
+                  <td data-label={t("tasks.columns.book")}>{task.authorName || "—"}</td>
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${statusOption?.tone ?? "neutral"}`}>{statusOption?.label ?? task.status}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><Link className="button button-secondary" to={localizedPath(locale, target)}>{task.status === "draft" ? t("tasks.continueEditing") : t("tasks.view")}</Link></td>
+                  <td data-label={t("tasks.columns.action")}><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{task.status === "draft" ? t("tasks.continueEditing") : t("tasks.view")}</Link></td>
                 </tr>;
               })}</tbody>
             </table>

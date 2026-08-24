@@ -3,9 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  define: {
-    __LOCAL_AUTH__: JSON.stringify(mode === "development"),
-  },
+
   server: {
     port: 5173,
     strictPort: true,
