@@ -21,6 +21,11 @@ public sealed record CsrfTokenDto(string Token);
 public sealed record BootstrapAccountRequest(string DisplayName, string Email, string Password);
 public sealed record LoginRequest(string Email, string Password, bool RememberMe);
 
+public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int PageSize, int Total);
+public sealed record CreateUserRequest(string DisplayName, string Email, string Password, string Role);
+public sealed record UpdateUserRequest(string DisplayName, string Role, bool Active);
+
 public sealed record ConfigOptionDto(
     string Id,
     string Label,
@@ -183,6 +188,23 @@ public sealed record PagedProjectsDto(
     int Page,
     int PageSize,
     int Total);
+
+public sealed record AdminProjectSummaryDto(
+    string Id, string? TaskNumber, string ProjectName, string ClientName, string BookTitle, string AuthorName, string? CoverUrl,
+    string SubmissionStatus, string WorkflowStatus, string Priority, string OwnerId, string OwnerName, string OwnerEmail,
+    string? AssigneeUserId, string? AssigneeName, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public sealed record PagedAdminProjectsDto(AdminProjectSummaryDto[] Items, int Page, int PageSize, int Total);
+
+public sealed record AdminNoteDto(string Id, string ProjectId, string AuthorUserId, string AuthorName, string Body, DateTimeOffset CreatedAt);
+
+public sealed record AdminProjectDetailDto(
+    TaskDraftDto Project, string OwnerId, string OwnerName, string OwnerEmail, string WorkflowStatus, string Priority,
+    string? AssigneeUserId, string? AssigneeName, AdminNoteDto[] Notes);
+
+public sealed record UpdateProjectWorkflowRequest(string WorkflowStatus, string Priority, string? AssigneeUserId);
+
+public sealed record AddAdminNoteRequest(string Body);
 
 public sealed record SaveDraftRequest(
     int Version,

@@ -160,6 +160,71 @@ export interface VoiceAndReferencesInfo {
   creativeDirection: CreativeDirectionInfo;
 }
 
+
+export type AdminRole = "owner" | "admin" | "customer";
+export type WorkflowStatus = "new" | "contacting" | "confirmed" | "in_production" | "awaiting_customer" | "completed" | "closed";
+export type ProjectPriority = "low" | "normal" | "high" | "urgent";
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: AdminRole;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminProjectSummary {
+  id: string;
+  taskNumber?: string;
+  projectName: string;
+  clientName: string;
+  bookTitle: string;
+  authorName: string;
+  coverUrl?: string;
+  submissionStatus: string;
+  workflowStatus: WorkflowStatus;
+  priority: ProjectPriority;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string;
+  assigneeUserId?: string;
+  assigneeName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinalDelivery {
+  id: string;
+  projectId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  note?: string;
+  publishedAt: string;
+}
+
+export interface AdminNote {
+  id: string;
+  projectId: string;
+  authorUserId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface AdminProjectDetail {
+  project: TaskDraft;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string;
+  workflowStatus: WorkflowStatus;
+  priority: ProjectPriority;
+  assigneeUserId?: string;
+  assigneeName?: string;
+  notes: AdminNote[];
+}
 export interface TaskDraft {
   id: string;
   taskNumber?: string;

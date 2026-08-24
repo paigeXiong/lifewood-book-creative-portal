@@ -1,5 +1,11 @@
 import type {
   AppErrorShape,
+  AdminProjectDetail,
+  AdminProjectSummary,
+  AdminUser,
+  FinalDelivery,
+  ProjectPriority,
+  WorkflowStatus,
   CurrentUser,
   FormOptions,
   PagedResult,
@@ -177,9 +183,59 @@ export const projectService = {
   },
   deleteAsset: (projectId: string, fileId: string, version: number, locale: SupportedLocale) =>
     request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}?version=${version}`, { method: "DELETE", locale }),
+  listDeliveries: (projectId: string, locale: SupportedLocale) =>
+    request<FinalDelivery[]>(`/projects/${encodeURIComponent(projectId)}/deliveries`, { locale }),
 };
 
 export const optionService = {
   getFormOptions: (locale: SupportedLocale) => request<FormOptions>("/form-options", { locale }),
   getVoices: (locale: SupportedLocale) => request<VoiceReference[]>("/voices", { locale }),
+};
+
+export interface AdminProjectListQuery {
+  workflowStatus?: WorkflowStatus;
+  priority?: ProjectPriority;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AdminUserListQuery {
+  search?: string;
+  role?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export const adminService = {
+  listProjects: ({ workflowStatus, priority, search, page = 1, pageSize = 20 }: AdminProjectListQuery = {}) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (workflowStatus) query.set("workflowStatus", workflowStatus);
+    if (priority) query.set("priority", priority);
+    if (search) query.set("search", search);
+    return request<PagedResult<AdminProjectSummary>>(`/admin/projects?${query}`);
+  },
+  getProject: (id: string) => request<AdminProjectDetail>(`/admin/projects/${encodeURIComponent(id)}`),
+  updateWorkflow: (id: string, workflowStatus: WorkflowStatus, priority: ProjectPriority, assigneeUserId?: string) =>
+    request<AdminProjectDetail>(`/admin/projects/${encodeURIComponent(id)}/workflow`, { method: "PUT", body: JSON.stringify({ workflowStatus, priority, assigneeUserId: assigneeUserId || null }) }),
+  addNote: (id: string, body: string) =>
+    request(`/admin/projects/${encodeURIComponent(id)}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
+  listDeliveries: (id: string) => request<FinalDelivery[]>(`/admin/projects/${encodeURIComponent(id)}/deliveries`),
+  publishFinalDelivery: (id: string, file: File, note: string) => {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("note", note);
+    return request<FinalDelivery>(`/admin/projects/${encodeURIComponent(id)}/deliveries`, { method: "POST", body });
+  },
+  listAssignees: () => request<AdminUser[]>("/admin/assignees"),
+  listUsers: ({ search, role, page = 1, pageSize = 20 }: AdminUserListQuery = {}) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) query.set("search", search);
+    if (role) query.set("role", role);
+    return request<PagedResult<AdminUser>>(`/admin/users?${query}`);
+  },
+  createUser: (account: { displayName: string; email: string; password: string; role: "customer" | "admin" }) =>
+    request<AdminUser>("/admin/users", { method: "POST", body: JSON.stringify(account) }),
+  updateUser: (id: string, account: { displayName: string; role: "customer" | "admin"; active: boolean }) =>
+    request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(account) }),
 };

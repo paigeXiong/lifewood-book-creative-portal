@@ -10,10 +10,11 @@
     "start:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1",
     "stop:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1 -Stop",
     "dev:web": "npm run dev --workspace @lifewood/task-entry-web",
-    "dev:test-console": "npm run dev --workspace @lifewood/test-console-removable",
+    "dev:admin": "npm run dev --workspace @lifewood/admin-web",
     "build:web": "npm run build --workspace @lifewood/task-entry-web",
-    "build:test-console": "npm run build --workspace @lifewood/test-console-removable",
-    "test:web": "npm run test --workspace @lifewood/task-entry-web"
+    "build:admin": "npm run build --workspace @lifewood/admin-web",
+    "test:web": "npm run test --workspace @lifewood/task-entry-web",
+    "test:admin": "npm run test --workspace @lifewood/admin-web"
   },
   "engines": {
     "node": ">=22"

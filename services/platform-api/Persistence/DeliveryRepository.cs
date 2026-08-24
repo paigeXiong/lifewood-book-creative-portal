@@ -1,0 +1,125 @@
+using Lifewood.PlatformApi.Contracts;
+using Microsoft.Data.Sqlite;
+
+namespace Lifewood.PlatformApi.Persistence;
+
+internal sealed class DeliveryRepository(string connectionString)
+{
+    public void Initialize()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS project_deliveries (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                uploader_user_id TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                note TEXT NULL,
+                published_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY(uploader_user_id) REFERENCES users(id) ON DELETE RESTRICT
+            );
+            CREATE INDEX IF NOT EXISTS ix_project_deliveries_project_published
+                ON project_deliveries(project_id, published_at DESC);
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    public FinalDeliveryDto[] List(string projectId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT d.id, d.project_id, d.file_name, d.content_type, d.size_bytes, d.note, d.published_at
+            FROM project_deliveries d
+            WHERE d.project_id = $projectId ORDER BY d.published_at DESC;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId);
+        using var reader = command.ExecuteReader();
+        var items = new List<FinalDeliveryDto>();
+        while (reader.Read()) items.Add(Read(reader));
+        return [.. items];
+    }
+
+    public FinalDeliveryDto? Find(string projectId, string deliveryId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT d.id, d.project_id, d.file_name, d.content_type, d.size_bytes, d.note, d.published_at
+            FROM project_deliveries d
+            WHERE d.project_id = $projectId AND d.id = $deliveryId;
+            """;
+        command.Parameters.AddWithValue("$projectId", projectId);
+        command.Parameters.AddWithValue("$deliveryId", deliveryId);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? Read(reader) : null;
+    }
+
+    public AdminWriteResult Publish(string deliveryId, string projectId, string uploaderUserId, string fileName, string contentType, long sizeBytes, string? note, out FinalDeliveryDto? delivery)
+    {
+        delivery = null;
+        var normalizedNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        if (normalizedNote?.Length > 2000) return new(AdminWriteOutcome.Invalid, "note");
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var project = connection.CreateCommand();
+        project.Transaction = transaction;
+        project.CommandText = "SELECT status FROM projects WHERE id = $id;";
+        project.Parameters.AddWithValue("$id", projectId);
+        var submissionStatus = project.ExecuteScalar() as string;
+        if (submissionStatus is null) return new(AdminWriteOutcome.NotFound);
+        if (!submissionStatus.Equals("submitted", StringComparison.Ordinal)) return new(AdminWriteOutcome.Conflict, "projectStatus");
+
+        using var uploader = connection.CreateCommand();
+        uploader.Transaction = transaction;
+        uploader.CommandText = "SELECT display_name FROM users WHERE id = $id AND is_active = 1;";
+        uploader.Parameters.AddWithValue("$id", uploaderUserId);
+        var uploaderName = uploader.ExecuteScalar() as string;
+        if (uploaderName is null) return new(AdminWriteOutcome.Invalid, "uploader");
+
+        var now = DateTimeOffset.UtcNow;
+        using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO project_deliveries(id, project_id, uploader_user_id, file_name, content_type, size_bytes, note, published_at)
+            VALUES ($id, $projectId, $uploaderId, $fileName, $contentType, $sizeBytes, $note, $publishedAt);
+            """;
+        insert.Parameters.AddWithValue("$id", deliveryId);
+        insert.Parameters.AddWithValue("$projectId", projectId);
+        insert.Parameters.AddWithValue("$uploaderId", uploaderUserId);
+        insert.Parameters.AddWithValue("$fileName", fileName);
+        insert.Parameters.AddWithValue("$contentType", contentType);
+        insert.Parameters.AddWithValue("$sizeBytes", sizeBytes);
+        insert.Parameters.AddWithValue("$note", (object?)normalizedNote ?? DBNull.Value);
+        insert.Parameters.AddWithValue("$publishedAt", now.ToString("O"));
+        insert.ExecuteNonQuery();
+
+        using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = "UPDATE projects SET workflow_status = 'completed', workflow_updated_at = $now WHERE id = $id;";
+        update.Parameters.AddWithValue("$now", now.ToString("O"));
+        update.Parameters.AddWithValue("$id", projectId);
+        update.ExecuteNonQuery();
+        transaction.Commit();
+        delivery = new(deliveryId, projectId, fileName, contentType, sizeBytes, normalizedNote, now);
+        return new(AdminWriteOutcome.Saved);
+    }
+
+    private static FinalDeliveryDto Read(SqliteDataReader reader) => new(
+        reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(4),
+        reader.IsDBNull(5) ? null : reader.GetString(5), DateTimeOffset.Parse(reader.GetString(6)));
+
+    private SqliteConnection Open()
+    {
+        var connection = new SqliteConnection(connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;";
+        command.ExecuteNonQuery();
+        return connection;
+    }
+}

@@ -12,7 +12,7 @@ const resources = {
   "zh-CN": {
     translation: {
       app: { name: "Lifewood AIGC Story Studio" },
-      nav: { tasks: "项目", workspace: "Deseret Book · 图书成片", language: "语言", account: "账户信息", accountMenu: "账户信息：{{name}}", logout: "退出登录", loggingOut: "正在退出…", logoutFailed: "退出失败，请重试。", skipToContent: "跳到主要内容" },
+      nav: { tasks: "项目", workspace: "Deseret Book · 图书成片", language: "语言", adminCenter: "管理后台", account: "账户信息", accountMenu: "账户信息：{{name}}", logout: "退出登录", loggingOut: "正在退出…", logoutFailed: "退出失败，请重试。", skipToContent: "跳到主要内容" },
       auth: {
         title: "登录",
         description: "使用平台账号进入图书视频项目登记。",
@@ -69,6 +69,7 @@ const resources = {
       },
       taskDetail: { title: "项目提交记录", project: "项目资料", book: "书籍资料", creative: "角色与视觉方向", voice: "配音与参考资料", direction: "制作要求", sourceFiles: "书籍文件与源材料", referenceFiles: "参考文件", referenceLinks: "参考链接", preferredVoice: "首选参考音色", selectedVoices: "候选参考音色", character: "角色 {{index}}", taskNumber: "项目编号", created: "创建时间", updated: "提交时间" },
       review: { intro: "确认交接资料包后提交给 Lifewood AIGC 制作团队。", edit: "修改", packageCount: "{{files}} 个文件 · {{links}} 个链接", noticeTitle: "提交后资料将锁定", noticeBody: "确认资料准确后再提交。如需调整，请先返回对应部分。", submit: "确认并发送给 AIGC 团队", submitting: "正在校验并提交…", validationTitle: "还有资料需要补充", validationBody: "平台服务完成了最终检查，请返回对应部分处理后再次提交。", validationCount: "{{count}} 项" },
+      delivery: { title: "成品交付", pendingTitle: "成品尚在准备", pendingBody: "制作团队发布最终成品后，您可以直接在此处下载。", readyTitle: "最终成品已交付", readyBody: "请下载并妥善保存项目成品。", readyBadge: "可下载", fileMeta: "{{size}} · {{date}}", downloadLatest: "下载最终成品", download: "下载此版本" },
       submitted: { title: "项目资料已提交", body: "制作团队已经收到当前版本的项目资料包。该记录现已锁定，您可以随时返回查看。", submittedAt: "提交时间", files: "文件数量", links: "参考链接", viewRecord: "查看提交记录", backToProjects: "返回项目列表", nextTitle: "接下来", nextBody: "制作团队将根据提交的书籍、创意方向和参考资料开展后续沟通。如需变更，请通过约定的项目沟通渠道联系团队。" },
       wizard: {
         stepProgress: "第 {{current}} 步，共 {{total}} 步",
@@ -135,7 +136,7 @@ const resources = {
   "en-US": {
     translation: {
       app: { name: "Lifewood AIGC Story Studio" },
-      nav: { tasks: "Projects", workspace: "Deseret Book · Book to Video", language: "Language", account: "Account information", accountMenu: "Account information for {{name}}", logout: "Log out", loggingOut: "Logging out…", logoutFailed: "Could not log out. Try again.", skipToContent: "Skip to main content" },
+      nav: { tasks: "Projects", workspace: "Deseret Book · Book to Video", language: "Language", adminCenter: "Admin", account: "Account information", accountMenu: "Account information for {{name}}", logout: "Log out", loggingOut: "Logging out…", logoutFailed: "Could not log out. Try again.", skipToContent: "Skip to main content" },
       auth: {
         title: "Sign in",
         description: "Use your platform account to access book video project intake.",
@@ -175,6 +176,7 @@ const resources = {
       },
       taskDetail: { title: "Project submission record", project: "Project details", book: "Book details", creative: "Characters & visual direction", voice: "Voice & references", direction: "Production requirements", sourceFiles: "Book files & source materials", referenceFiles: "Reference files", referenceLinks: "Reference links", preferredVoice: "Preferred reference voice", selectedVoices: "Candidate reference voices", character: "Character {{index}}", taskNumber: "Project number", created: "Created", updated: "Submitted" },
       review: { intro: "Confirm the handoff package before sending it to the Lifewood AIGC team.", edit: "Edit", packageCount: "{{files}} files · {{links}} links", noticeTitle: "Project details lock after submission", noticeBody: "Confirm the details before submitting. Return to the relevant section if anything needs to change.", submit: "Approve & Send to AIGC Team", submitting: "Validating and submitting…", validationTitle: "Some details still need attention", validationBody: "The platform service completed its final check. Return to the relevant section, resolve the items, and submit again.", validationCount: "{{count}} items" },
+      delivery: { title: "Final delivery", pendingTitle: "Your final video is being prepared", pendingBody: "When the production team publishes the final video, you can download it here.", readyTitle: "Your final video is ready", readyBody: "Download and keep a copy of the completed project.", readyBadge: "Ready to download", fileMeta: "{{size}} · {{date}}", downloadLatest: "Download final video", download: "Download this version" },
       submitted: { title: "Project details submitted", body: "The production team has received this version of the project package. The record is now locked and remains available for review.", submittedAt: "Submitted", files: "Files", links: "Reference links", viewRecord: "View submission record", backToProjects: "Back to projects", nextTitle: "What happens next", nextBody: "The production team will use the book, creative direction, and references for the next conversation. Contact the team through the agreed project channel if anything changes." },
       wizard: {
         stepProgress: "Step {{current}} of {{total}}",

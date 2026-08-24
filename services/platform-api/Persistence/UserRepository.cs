@@ -132,6 +132,12 @@ internal sealed class UserRepository
             return new(AccountLoginOutcome.InvalidCredentials, null);
         }
 
+        if (!account.Active)
+        {
+            transaction.Rollback();
+            passwordHasher.VerifyHashedPassword(new AccountPasswordTarget("dummy"), dummyPasswordHash, password);
+            return new(AccountLoginOutcome.InvalidCredentials, null);
+        }
         var now = DateTimeOffset.UtcNow;
         if (account.LockedUntil is { } lockedUntil && lockedUntil > now)
         {
@@ -165,7 +171,7 @@ internal sealed class UserRepository
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, email, display_name, role FROM users WHERE id = $id;";
+        command.CommandText = "SELECT id, email, display_name, role FROM users WHERE id = $id AND is_active = 1;";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)) : null;
@@ -211,12 +217,12 @@ internal sealed class UserRepository
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id, email, display_name, password_hash, role, failed_attempts, locked_until FROM users WHERE normalized_email = $email;";
+        command.CommandText = "SELECT id, email, display_name, password_hash, role, failed_attempts, locked_until, is_active FROM users WHERE normalized_email = $email;";
         command.Parameters.AddWithValue("$email", normalizedEmail);
         using var reader = command.ExecuteReader();
         if (!reader.Read()) return null;
         return new StoredAccount(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5),
-            reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6)));
+            reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt32(7) == 1);
     }
 
     private static void UpdateLoginState(SqliteConnection connection, SqliteTransaction transaction, string id, int attempts, DateTimeOffset? lockedUntil, string? passwordHash)
@@ -249,9 +255,17 @@ internal sealed class UserRepository
 
     private static string NormalizeEmail(string value) => value.Trim().ToUpperInvariant();
     private static bool IsValidEmail(string value) => MailAddress.TryCreate(value.Trim(), out var address) && address.Address.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase);
-    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role) => new(
-        id, email, displayName, null, email, null, [role], ["tasks.read", "tasks.write", "tasks.submit"], null, null);
+    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role)
+    {
+        var permissions = role switch
+        {
+            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage" },
+            "admin" => new[] { "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage" },
+            _ => new[] { "tasks.read", "tasks.write", "tasks.submit" }
+        };
+        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(id)}", email, null, [role], permissions, null, null);
+    }
 
     private sealed record AccountPasswordTarget(string Id);
-    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil);
+    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active);
 }

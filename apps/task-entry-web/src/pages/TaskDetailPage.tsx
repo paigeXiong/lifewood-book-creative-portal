@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+import { FinalDeliverySection } from "../components/FinalDeliverySection";
 
 export function TaskDetailPage() {
   const { t } = useTranslation();
@@ -40,6 +41,7 @@ export function TaskDetailPage() {
         <dl><div><dt>{t("taskDetail.taskNumber")}</dt><dd translate="no">{task.data.taskNumber ?? task.data.id}</dd></div><div><dt>{t("taskDetail.created")}</dt><dd><time dateTime={task.data.createdAt}>{date.format(new Date(task.data.createdAt))}</time></dd></div><div><dt>{t("taskDetail.updated")}</dt><dd><time dateTime={task.data.updatedAt}>{date.format(new Date(task.data.updatedAt))}</time></dd></div></dl>
       </aside>
       <div className="detail-sections">
+        <FinalDeliverySection projectId={task.data.id} locale={validLocale} />
         <section className="form-panel"><h2><span>01</span>{t("taskDetail.project")}</h2><dl className="data-grid">
           <div><dt>{t("wizard.fields.clientName")}</dt><dd>{task.data.project.clientName || "—"}</dd></div><div><dt>{t("wizard.fields.contactName")}</dt><dd>{task.data.project.contactName || "—"}</dd></div><div><dt>{t("wizard.fields.email")}</dt><dd>{task.data.project.email || "—"}</dd></div><div><dt>{t("wizard.fields.phone")}</dt><dd>{task.data.project.phone || "—"}</dd></div>
           <div><dt>{t("wizard.fields.projectName")}</dt><dd>{task.data.project.projectName || "—"}</dd></div><div><dt>{t("wizard.fields.brand")}</dt><dd>{optionLabel(catalog.brands, task.data.project.brandId)}</dd></div><div><dt>{t("wizard.fields.videoGoal")}</dt><dd>{optionLabel(catalog.videoGoals, task.data.project.videoGoalId)}</dd></div><div><dt>{t("wizard.fields.deadline")}</dt><dd>{task.data.project.deadline ? <time dateTime={task.data.project.deadline}>{dateOnly.format(new Date(`${task.data.project.deadline}T00:00:00`))}</time> : "—"}</dd></div><div className="data-wide"><dt>{t("wizard.fields.audiences")}</dt><dd>{optionLabels(catalog.audiences, task.data.project.audienceIds)}</dd></div>

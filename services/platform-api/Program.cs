@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Claims;
+using System.Text;
 using System.Threading.RateLimiting;
 using Lifewood.PlatformApi.Contracts;
 using Lifewood.PlatformApi.Features;
@@ -85,6 +86,12 @@ var users = new UserRepository(databaseConnection, dataDirectory);
 users.Initialize();
 builder.Services.AddSingleton(users);
 
+var administration = new AdminRepository(databaseConnection);
+administration.Initialize();
+builder.Services.AddSingleton(administration);
+var deliveries = new DeliveryRepository(databaseConnection);
+deliveries.Initialize();
+builder.Services.AddSingleton(deliveries);
 var app = builder.Build();
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
@@ -99,7 +106,8 @@ app.Use(async (context, next) =>
     var requestSize = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (requestSize is { IsReadOnly: false })
     {
-        var isUpload = HttpMethods.IsPost(context.Request.Method) && context.Request.Path.Value?.EndsWith("/files", StringComparison.Ordinal) == true;
+        var isUpload = HttpMethods.IsPost(context.Request.Method) &&
+            (context.Request.Path.Value?.EndsWith("/files", StringComparison.Ordinal) == true || context.Request.Path.Value?.EndsWith("/deliveries", StringComparison.Ordinal) == true);
         var isAuthWrite = context.Request.Path.StartsWithSegments("/api/auth") && !HttpMethods.IsGet(context.Request.Method);
         requestSize.MaxRequestBodySize = isUpload ? 510_000_000 : isAuthWrite ? 16_384 : 2_000_000;
     }
@@ -146,6 +154,7 @@ app.Use(async (context, next) =>
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 var api = app.MapGroup("/api");
+api.MapDeliveryEndpoints(dataDirectory);
 
 api.MapGet("/health", () => TypedResults.Ok(new HealthDto("ok")));
 api.MapGet("/auth/status", (UserRepository accounts) => Results.Ok(new AuthStatusDto(accounts.RequiresBootstrap())));
@@ -185,9 +194,131 @@ api.MapGet("/me", (HttpContext context) =>
         ? Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false)
         : Results.Ok(user);
 });
+api.MapGet("/me/avatar", (HttpContext context) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.Text(AvatarImage.Create(user.Id, user.DisplayName), "image/svg+xml", Encoding.UTF8);
+});
 
 api.MapGet("/form-options", (HttpContext context) =>
     Results.Ok(FormOptionCatalog.ForLocale(Locale(context))));
+
+api.MapGet("/admin/users", (HttpContext context, AdminRepository admin, string? search, string? role, int page = 1, int pageSize = 20) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(admin.ListUsers(search, role, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+});
+
+api.MapGet("/admin/users/{id}/avatar", (string id, HttpContext context, AdminRepository admin) =>
+{
+    var current = CurrentUser(context);
+    if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var user = admin.GetUser(id);
+    if (user is null) return Error(context, 404, "admin.user_not_found", "errors.admin.userNotFound", "The user was not found.", false);
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.Text(AvatarImage.Create(user.Id, user.DisplayName), "image/svg+xml", Encoding.UTF8);
+});
+
+api.MapGet("/admin/assignees", (HttpContext context, AdminRepository admin) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(admin.ListAssignees());
+});
+
+api.MapPost("/admin/users", (CreateUserRequest? request, HttpContext context, AdminRepository admin) =>
+{
+    var current = CurrentUser(context);
+    if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.CreateUser(request, out var created);
+    return result.Outcome switch
+    {
+        AdminWriteOutcome.Saved => Results.Ok(created),
+        AdminWriteOutcome.Conflict => Error(context, 409, "user.email_exists", "errors.admin.emailExists", "An account already uses this email.", false, [new FieldErrorDto("email", "duplicate", "errors.admin.emailExists")]),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The account details are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+    };
+});
+
+api.MapPut("/admin/users/{id}", (string id, UpdateUserRequest? request, HttpContext context, AdminRepository admin) =>
+{
+    var current = CurrentUser(context);
+    if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (id == current.Id && request is { Active: false }) return Error(context, 409, "user.self_deactivate", "errors.admin.selfDeactivate", "You cannot deactivate your own account.", false);
+    var result = admin.UpdateUser(id, request, out var updated);
+    return result.Outcome switch
+    {
+        AdminWriteOutcome.Saved => Results.Ok(updated),
+        AdminWriteOutcome.NotFound => Error(context, 404, "user.not_found", "errors.admin.userNotFound", "The user was not found.", false),
+        AdminWriteOutcome.Protected => Error(context, 409, "user.owner_protected", "errors.admin.ownerProtected", "The owner account cannot be changed here.", false),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The account details are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+    };
+});
+
+api.MapGet("/admin/projects", (HttpContext context, AdminRepository admin, string? workflowStatus, string? priority, string? search, int page = 1, int pageSize = 20) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(admin.ListProjects(workflowStatus, priority, search, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+});
+
+api.MapGet("/admin/projects/{id}", (string id, HttpContext context, AdminRepository admin) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var project = admin.GetProject(id);
+    return project is null ? Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false) : Results.Ok(project);
+});
+
+api.MapPut("/admin/projects/{id}/workflow", (string id, UpdateProjectWorkflowRequest? request, HttpContext context, AdminRepository admin) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.UpdateWorkflow(id, request);
+    if (result.Outcome == AdminWriteOutcome.NotFound) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
+    if (result.Outcome != AdminWriteOutcome.Saved) return Error(context, 400, "validation.failed", "errors.validation.failed", "The workflow values are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")]);
+    return Results.Ok(admin.GetProject(id));
+});
+
+api.MapPost("/admin/projects/{id}/notes", (string id, AddAdminNoteRequest? request, HttpContext context, AdminRepository admin) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.AddNote(id, user.Id, request, out var note);
+    return result.Outcome switch
+    {
+        AdminWriteOutcome.Saved => Results.Ok(note),
+        AdminWriteOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The note is invalid.", false, [new FieldErrorDto(result.Field ?? "body", "invalid", "errors.validation.invalid")])
+    };
+});
+
+api.MapGet("/admin/projects/{id}/files/{fileId}", (string id, string fileId, HttpContext context, AdminRepository admin) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var detail = admin.GetProject(id);
+    var asset = detail is null ? null : (detail.Project.Book.SourceAssets ?? []).Concat(detail.Project.VoiceAndReferences.Assets).FirstOrDefault(item => item.Id == fileId);
+    if (detail is null || asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
+    var folder = Path.Combine(dataDirectory, "uploads", detail.OwnerId, id);
+    var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
+    if (path is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
+    return asset.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+        ? Results.File(path, asset.ContentType, enableRangeProcessing: true)
+        : Results.File(path, asset.ContentType, asset.FileName, enableRangeProcessing: true);
+});
 
 api.MapGet("/voices", (HttpContext context) =>
     Results.Ok(FormOptionCatalog.VoicesForLocale(Locale(context))));

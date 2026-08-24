@@ -121,7 +121,7 @@ try {
         if ($allProcessesRunning -and $allEndpointsHealthy) {
             Write-Host "Local development environment is already running." -ForegroundColor Green
             Write-Host "Web:  $webUrl/zh-CN/tasks"
-            Write-Host "Test console (local only, removable): $consoleUrl/zh-CN"
+            Write-Host "Admin center: $consoleUrl/zh-CN/projects"
             Write-Host "API:  $apiUrl/api/health"
             return
         }
@@ -156,34 +156,33 @@ try {
         -RedirectStandardOutput $webLog -RedirectStandardError $webErrorLog
     $startedProcesses.Add($webProcess)
 
-    # TEST-ONLY REMOVABLE BLOCK: delete with apps/test-console when the local console is no longer needed.
     $consoleProcess = Start-Process -FilePath (Get-Command node.exe).Source `
         -ArgumentList $viteEntry, "--host", "127.0.0.1", "--port", $ConsolePort, "--strictPort" `
-        -WorkingDirectory (Join-Path $repositoryRoot "apps\test-console") `
+        -WorkingDirectory (Join-Path $repositoryRoot "apps\admin-web") `
         -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $consoleLog -RedirectStandardError $consoleErrorLog
     $startedProcesses.Add($consoleProcess)
 
     Wait-ForHttp "$apiUrl/api/health" "Platform API" $apiProcess $apiErrorLog
     Wait-ForHttp $webUrl "Web application" $webProcess $webErrorLog
-    Wait-ForHttp $consoleUrl "Removable local test console" $consoleProcess $consoleErrorLog
+    Wait-ForHttp $consoleUrl "Admin center" $consoleProcess $consoleErrorLog
 
     @{
         startedAt = (Get-Date).ToString("O")
         webUrl = "$webUrl/zh-CN/tasks"
-        testConsoleUrl = "$consoleUrl/zh-CN"
+        adminUrl = "$consoleUrl/zh-CN/projects"
         apiUrl = "$apiUrl/api/health"
         processes = @(
             @{ name = "API"; id = $apiProcess.Id; path = $apiProcess.Path },
             @{ name = "Web"; id = $webProcess.Id; path = $webProcess.Path }
-            @{ name = "Test console (removable)"; id = $consoleProcess.Id; path = $consoleProcess.Path }
+            @{ name = "Admin center"; id = $consoleProcess.Id; path = $consoleProcess.Path }
         )
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $stateFile -Encoding UTF8
 
     Write-Host ""
     Write-Host "Local development environment is ready." -ForegroundColor Green
     Write-Host "Web:  $webUrl/zh-CN/tasks"
-    Write-Host "Test console (local only, removable): $consoleUrl/zh-CN"
+    Write-Host "Admin center: $consoleUrl/zh-CN/projects"
     Write-Host "API:  $apiUrl/api/health"
     Write-Host "Logs: $logDirectory"
     Write-Host "Stop: powershell -File scripts/start-local.ps1 -Stop" -ForegroundColor DarkGray

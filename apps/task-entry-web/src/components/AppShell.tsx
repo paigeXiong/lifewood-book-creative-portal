@@ -12,6 +12,12 @@ function switchLocale(pathname: string, locale: SupportedLocale): string {
   return parts.join("/") || `/${locale}/tasks`;
 }
 
+export function adminCenterUrl(locale: SupportedLocale, configuredBase = import.meta.env.VITE_ADMIN_APP_URL): string {
+  const base = configuredBase?.trim()
+    || (import.meta.env.DEV ? `${window.location.protocol}//${window.location.hostname}:5174` : "/admin");
+  return `${base.replace(/\/$/, "")}/${locale}/projects`;
+}
+
 function LeafMark() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -27,7 +33,6 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   const location = useLocation();
   const queryClient = useQueryClient();
   const [accountOpen, setAccountOpen] = useState(false);
-  const [avatarFailed, setAvatarFailed] = useState(false);
   const accountPopoverId = useId();
   const accountRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
@@ -38,8 +43,6 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
       if (isSupportedLocale(locale)) navigate(`/${locale}/login`, { replace: true });
     },
   });
-
-  useEffect(() => setAvatarFailed(false), [user.avatarUrl]);
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -62,6 +65,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
 
   if (!isSupportedLocale(locale)) return null;
   const confirmLeave = () => document.body.dataset.unsavedChanges !== "true" || window.confirm(t("wizard.unsavedChanges"));
+  const canAccessAdmin = user.permissions.includes("admin.access");
 
   return (
     <div className="app-shell reference-shell">
@@ -82,6 +86,12 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
         </nav>
 
         <div className="topbar-actions">
+          {canAccessAdmin ? (
+            <a className="admin-entry" href={adminCenterUrl(locale)} onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}>
+              <span className="admin-entry-icon" aria-hidden="true">⚙</span>
+              <span>{t("nav.adminCenter")}</span>
+            </a>
+          ) : null}
           <label className="locale-control reference-language">
             <span className="language-icon" aria-hidden="true">文</span>
             <span className="sr-only">{t("nav.language")}</span>
@@ -109,7 +119,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
               aria-label={t("nav.accountMenu", { name: user.displayName })}
               onClick={() => setAccountOpen((open) => !open)}
             >
-              {user.avatarUrl && !avatarFailed ? <img className="avatar" src={user.avatarUrl} alt="" width="28" height="28" onError={() => setAvatarFailed(true)} /> : null}
+              <img className="avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="28" height="28" />
               <span className="user-name">{user.displayName}</span>
               <span className="account-chevron" aria-hidden="true">⌄</span>
             </button>

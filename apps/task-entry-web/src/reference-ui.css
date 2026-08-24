@@ -80,6 +80,23 @@ body {
 .nav-links a.active::after { left: 0; right: 0; }
 
 .topbar-actions { justify-self: end; display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.admin-entry {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: 0 .75rem;
+  border-radius: 8px;
+  background: var(--green-900);
+  color: #fff;
+  font-size: .78rem;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.admin-entry:hover { background: var(--green-800); }
+.admin-entry:focus-visible { outline: 3px solid rgba(47, 106, 80, .24); outline-offset: 2px; }
+.admin-entry-icon { font-size: .85rem; line-height: 1; }
 .reference-language { height: 36px; display: flex; align-items: center; gap: 5px; padding-left: 9px; border: 1px solid var(--reference-border); border-radius: 8px; background: var(--surface); color: var(--green-900); }
 .language-icon { font: 700 12px/1 var(--lw-font-editorial); }
 .reference-language select { width: auto; height: 34px; padding: 0 26px 0 2px; border: 0; background-color: transparent; font-size: 12px; font-weight: 650; }
