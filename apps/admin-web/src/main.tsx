@@ -7,6 +7,7 @@ import "@lifewood/i18n";
 import "./i18n";
 import { App } from "./App";
 import "./styles.css";
+import "./surface-theme.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000, refetchOnWindowFocus: false } } });
 
