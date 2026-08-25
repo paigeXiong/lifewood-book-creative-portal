@@ -45,7 +45,7 @@ export function TaskListPage() {
       navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
     },
   });
-  const statusMap = useMemo(() => new Map(options.data?.taskStatuses.map((item) => [item.id, item]) ?? []), [options.data]);
+  const statusMap = useMemo(() => new Map([...(options.data?.taskStatuses ?? []), ...(options.data?.workflowStatuses ?? [])].map((item) => [item.id, item])), [options.data]);
   const totalPages = Math.max(1, Math.ceil((tasks.data?.total ?? 0) / (tasks.data?.pageSize ?? 10)));
   const formatter = useMemo(() => new Intl.DateTimeFormat(validLocale, { dateStyle: "medium", timeStyle: "short" }), [validLocale]);
 
@@ -126,7 +126,8 @@ export function TaskListPage() {
                 <th>{t("tasks.columns.updated")}</th><th><span className="sr-only">{t("tasks.columns.action")}</span></th>
               </tr></thead>
               <tbody>{tasks.data?.items.map((task) => {
-                const statusOption = statusMap.get(task.status);
+                const statusId = task.status === "draft" ? task.status : (task.workflowStatus ?? task.status);
+                const statusOption = statusMap.get(statusId);
                 const target = task.status === "draft" ? `/tasks/${task.id}/edit/project` : `/tasks/${task.id}`;
                 return <tr key={task.id}>
                   <td><Link className="task-identity" to={localizedPath(locale, target)}>
@@ -134,7 +135,7 @@ export function TaskListPage() {
                     <span><strong>{task.bookTitle || task.projectName}</strong><small>{task.clientName || task.projectName}</small></span>
                   </Link></td>
                   <td data-label={t("tasks.columns.book")}>{task.authorName || "—"}</td>
-                  <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${statusOption?.tone ?? "neutral"}`}>{statusOption?.label ?? task.status}</span></td>
+                  <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${statusOption?.tone ?? "neutral"}`}>{statusOption?.label ?? statusId}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
                   <td data-label={t("tasks.columns.action")}><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{task.status === "draft" ? t("tasks.continueEditing") : t("tasks.view")}</Link></td>
                 </tr>;

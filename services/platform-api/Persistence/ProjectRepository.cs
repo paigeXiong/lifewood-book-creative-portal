@@ -118,7 +118,7 @@ internal sealed class ProjectRepository(string connectionString)
 
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at
+            SELECT id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status
             FROM projects
             {where}
             ORDER BY updated_at DESC
@@ -154,7 +154,7 @@ internal sealed class ProjectRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at
+            SELECT id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status
             FROM projects WHERE owner_id = $ownerId AND id = $id;
             """;
         command.Parameters.AddWithValue("$ownerId", ownerId);
@@ -300,7 +300,7 @@ internal sealed class ProjectRepository(string connectionString)
             UPDATE projects
             SET task_number = $taskNumber, status = 'submitted', submission_key = $idempotencyKey, version = version + 1, updated_at = $updatedAt
             WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version
-            RETURNING id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at;
+            RETURNING id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status;
             """;
         command.Parameters.AddWithValue("$taskNumber", taskNumber);
         command.Parameters.AddWithValue("$updatedAt", now.ToString("O"));
@@ -391,7 +391,8 @@ internal sealed class ProjectRepository(string connectionString)
         var voice = DeserializeVoiceAndReferences(reader.GetString(7));
         return new TaskDraftDto(
             reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetString(2), reader.GetInt32(3),
-            project, book, creative, voice, DateTimeOffset.Parse(reader.GetString(8)), DateTimeOffset.Parse(reader.GetString(9)));
+            project, book, creative, voice, DateTimeOffset.Parse(reader.GetString(8)), DateTimeOffset.Parse(reader.GetString(9)),
+            reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : null);
     }
 
     private static CreativeInfoDto DeserializeCreative(string json) =>
@@ -426,7 +427,7 @@ internal sealed class ProjectRepository(string connectionString)
         string.IsNullOrWhiteSpace(task.Book.Title) ? "—" : task.Book.Title,
         string.IsNullOrWhiteSpace(task.Book.AuthorName) ? "—" : task.Book.AuthorName,
         task.Book.SourceAssets?.FirstOrDefault(asset => asset.CategoryId == "book-cover")?.Url,
-        task.Status, task.CreatedAt, task.UpdatedAt);
+        task.Status, task.CreatedAt, task.UpdatedAt, task.WorkflowStatus);
 }
 
 internal enum SaveOutcome { Saved, NotFound, NotEditable, VersionConflict }

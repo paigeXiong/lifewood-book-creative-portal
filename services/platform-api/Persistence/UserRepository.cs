@@ -9,6 +9,8 @@ internal enum AccountCreateOutcome { Created, AlreadyInitialized, Invalid }
 internal sealed record AccountCreateResult(AccountCreateOutcome Outcome, CurrentUserDto? User, string? Field = null);
 internal enum AccountLoginOutcome { Success, InvalidCredentials, Locked }
 internal sealed record AccountLoginResult(AccountLoginOutcome Outcome, CurrentUserDto? User, DateTimeOffset? LockedUntil = null);
+internal enum PasswordUpdateOutcome { Updated, Invalid, NotFound }
+internal sealed record PasswordUpdateResult(PasswordUpdateOutcome Outcome, string? Field = null);
 
 internal sealed class UserRepository
 {
@@ -40,12 +42,14 @@ internal sealed class UserRepository
                 role TEXT NOT NULL,
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
                 locked_until TEXT NULL,
+                session_version INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS ux_users_normalized_email ON users(normalized_email);
             """;
         command.ExecuteNonQuery();
+        if (!HasColumn(connection, "users", "session_version")) Execute(connection, "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0;");
     }
 
     public bool RequiresBootstrap()
@@ -167,12 +171,13 @@ internal sealed class UserRepository
         return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role));
     }
 
-    public CurrentUserDto? Get(string id)
+    public CurrentUserDto? Get(string id, int? sessionVersion = null)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, email, display_name, role FROM users WHERE id = $id AND is_active = 1;";
+        command.CommandText = "SELECT id, email, display_name, role FROM users WHERE id = $id AND is_active = 1 AND ($sessionVersion IS NULL OR session_version = $sessionVersion);";
         command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$sessionVersion", sessionVersion is null ? DBNull.Value : sessionVersion.Value);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)) : null;
     }
@@ -266,6 +271,68 @@ internal sealed class UserRepository
         return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(id)}", email, null, [role], permissions, null, null);
     }
 
+    private static bool ValidNewPassword(string password) => !string.IsNullOrEmpty(password) && password.Length is >= 12 and <= 128;
+
+    private void UpdatePassword(SqliteConnection connection, SqliteTransaction transaction, string id, string password)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE users SET password_hash = $hash, failed_attempts = 0, locked_until = NULL, session_version = session_version + 1, updated_at = $now WHERE id = $id;";
+        command.Parameters.AddWithValue("$hash", passwordHasher.HashPassword(new AccountPasswordTarget(id), password));
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
+    private static bool HasColumn(SqliteConnection connection, string table, string column)
+    { using var command = connection.CreateCommand(); command.CommandText = $"PRAGMA table_info({table});"; using var reader = command.ExecuteReader(); while (reader.Read()) if (reader.GetString(1).Equals(column, StringComparison.Ordinal)) return true; return false; }
+
+    private static void Execute(SqliteConnection connection, string sql)
+    { using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
     private sealed record AccountPasswordTarget(string Id);
     private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active);
+    public PasswordUpdateResult ChangePassword(string id, string currentPassword, string newPassword)
+    {
+        if (string.IsNullOrEmpty(currentPassword) || currentPassword.Length > 128) return new(PasswordUpdateOutcome.Invalid, "currentPassword");
+        if (!ValidNewPassword(newPassword)) return new(PasswordUpdateOutcome.Invalid, "newPassword");
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var find = connection.CreateCommand();
+        find.Transaction = transaction;
+        find.CommandText = "SELECT password_hash FROM users WHERE id = $id AND is_active = 1;";
+        find.Parameters.AddWithValue("$id", id);
+        var storedHash = find.ExecuteScalar() as string;
+        if (storedHash is null) return new(PasswordUpdateOutcome.NotFound);
+        if (passwordHasher.VerifyHashedPassword(new AccountPasswordTarget(id), storedHash, currentPassword) == PasswordVerificationResult.Failed)
+            return new(PasswordUpdateOutcome.Invalid, "currentPassword");
+        UpdatePassword(connection, transaction, id, newPassword);
+        transaction.Commit();
+        return new(PasswordUpdateOutcome.Updated);
+    }
+
+    public PasswordUpdateResult ResetPassword(string id, string newPassword)
+    {
+        if (!ValidNewPassword(newPassword)) return new(PasswordUpdateOutcome.Invalid, "newPassword");
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var exists = connection.CreateCommand();
+        exists.Transaction = transaction;
+        exists.CommandText = "SELECT COUNT(*) FROM users WHERE id = $id;";
+        exists.Parameters.AddWithValue("$id", id);
+        if (Convert.ToInt32(exists.ExecuteScalar()) != 1) return new(PasswordUpdateOutcome.NotFound);
+        UpdatePassword(connection, transaction, id, newPassword);
+        transaction.Commit();
+        return new(PasswordUpdateOutcome.Updated);
+    }
+
+    public int? GetSessionVersion(string id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT session_version FROM users WHERE id = $id AND is_active = 1;";
+        command.Parameters.AddWithValue("$id", id);
+        var value = command.ExecuteScalar();
+        return value is null or DBNull ? null : Convert.ToInt32(value);
+    }
+
 }

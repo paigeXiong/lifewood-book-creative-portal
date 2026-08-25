@@ -13,6 +13,8 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSerializable(typeof(CsrfTokenDto))]
 [JsonSerializable(typeof(BootstrapAccountRequest))]
 [JsonSerializable(typeof(LoginRequest))]
+[JsonSerializable(typeof(ChangePasswordRequest))]
+[JsonSerializable(typeof(ResetPasswordRequest))]
 [JsonSerializable(typeof(AdminUserDto))]
 [JsonSerializable(typeof(AdminUserDto[]))]
 [JsonSerializable(typeof(PagedAdminUsersDto))]

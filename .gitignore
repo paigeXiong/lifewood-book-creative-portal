@@ -13,3 +13,4 @@ services/platform-api/data/
 services/test-api/uploads/
 artifacts/
 data/
+backups/

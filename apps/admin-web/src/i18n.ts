@@ -11,6 +11,7 @@ i18n.addResourceBundle("zh-CN", "translation", {
     auth: { title: "登录管理中心", body: "使用管理员账号继续。", bootstrapTitle: "初始化平台管理员", bootstrapBody: "创建平台所有者账号。后续客户和管理员账号由管理中心创建。", remember: "保持登录", signIn: "登录", createOwner: "创建所有者账号" },
     forbidden: { title: "无法访问管理中心", body: "当前账号是客户账号，没有管理员权限。" },
     workflow: { new: "待跟进", contacting: "沟通中", confirmed: "已确认", in_production: "制作中", awaiting_customer: "待客户确认", completed: "已完成", closed: "已关闭" },
+    account: { changePassword: "修改密码", currentPassword: "当前密码", newPassword: "新密码", confirmPassword: "确认新密码", mismatch: "两次输入的新密码不一致。", invalid: "当前密码不正确，或新密码不符合要求。", save: "保存新密码", saving: "正在保存…" },
     priority: { low: "低", normal: "普通", high: "高", urgent: "紧急" },
     roles: { owner: "所有者", admin: "管理员", customer: "客户" },
     projects: {
@@ -42,6 +43,10 @@ i18n.addResourceBundle("zh-CN", "translation", {
       upload: "上传最终成品",
       empty: "尚未向客户交付成品。",
       download: "下载",
+      revoke: "撤回",
+      revoked: "已撤回",
+      revokeConfirm: "撤回后客户将无法再查看或下载这个成品，确定继续吗？",
+      notFound: "未找到该交付物，可能已经被撤回。",
       dialogTitle: "上传并交付最终成品",
       immediateTitle: "上传成功后将立即对客户可见",
       immediateBody: "无需经过中间制作状态；项目会快捷标记为已完成，之后仍可手动调整状态。",
@@ -74,7 +79,12 @@ i18n.addResourceBundle("zh-CN", "translation", {
       email: "邮箱",
       password: "密码",
       confirmPassword: "确认密码",
-      passwordHint: "至少 12 个字符；请通过安全渠道交给用户。"
+      passwordHint: "至少 12 个字符；请通过安全渠道交给用户。",
+      resetPassword: "重置密码",
+      resetTitle: "重置用户密码",
+      resetFor: "为 {{name}} 设置新密码。保存后，该用户原有登录会话会立即失效。",
+      resetAction: "保存并使旧会话失效",
+      resetSuccess: "密码已重置。"
     }
   }
 }, true, true);
@@ -90,6 +100,7 @@ i18n.addResourceBundle("en-US", "translation", {
     auth: { title: "Sign in to Admin Center", body: "Continue with an administrator account.", bootstrapTitle: "Initialize the platform", bootstrapBody: "Create the platform owner. Customer and administrator accounts can then be created here.", remember: "Keep me signed in", signIn: "Sign in", createOwner: "Create owner account" },
     forbidden: { title: "Admin Center unavailable", body: "This is a customer account and does not have administrator access." },
     workflow: { new: "Needs follow-up", contacting: "Contacting", confirmed: "Confirmed", in_production: "In production", awaiting_customer: "Awaiting customer", completed: "Completed", closed: "Closed" },
+    account: { changePassword: "Change password", currentPassword: "Current password", newPassword: "New password", confirmPassword: "Confirm new password", mismatch: "The new passwords do not match.", invalid: "The current password is incorrect or the new password does not meet the requirements.", save: "Save new password", saving: "Saving…" },
     priority: { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" },
     roles: { owner: "Owner", admin: "Administrator", customer: "Customer" },
     projects: {
@@ -121,6 +132,10 @@ i18n.addResourceBundle("en-US", "translation", {
       upload: "Upload final",
       empty: "No final deliverable has been sent to the customer.",
       download: "Download",
+      revoke: "Withdraw",
+      revoked: "Withdrawn",
+      revokeConfirm: "The customer will no longer be able to view or download this delivery. Continue?",
+      notFound: "The delivery was not found or has already been withdrawn.",
       dialogTitle: "Upload and deliver final video",
       immediateTitle: "The customer will see it as soon as the upload succeeds",
       immediateBody: "No intermediate status is required. The project is marked completed automatically and can still be changed manually.",
@@ -153,7 +168,12 @@ i18n.addResourceBundle("en-US", "translation", {
       email: "Email",
       password: "Password",
       confirmPassword: "Confirm password",
-      passwordHint: "At least 12 characters. Share it with the user through a secure channel."
+      passwordHint: "At least 12 characters. Share it with the user through a secure channel.",
+      resetPassword: "Reset password",
+      resetTitle: "Reset user password",
+      resetFor: "Set a new password for {{name}}. Saving immediately invalidates that user's existing sessions.",
+      resetAction: "Save & invalidate sessions",
+      resetSuccess: "Password reset."
     }
   }
 }, true, true);

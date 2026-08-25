@@ -20,6 +20,8 @@ public sealed record AuthStatusDto(bool RequiresBootstrap);
 public sealed record CsrfTokenDto(string Token);
 public sealed record BootstrapAccountRequest(string DisplayName, string Email, string Password);
 public sealed record LoginRequest(string Email, string Password, bool RememberMe);
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public sealed record ResetPasswordRequest(string NewPassword);
 
 public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int PageSize, int Total);
@@ -77,7 +79,9 @@ public sealed record FormOptionsDto(
     ConfigOptionDto[] VoiceTags,
     ReferenceCategoryDto[] SourceCategories,
     ReferenceCategoryDto[] ReferenceCategories,
-    int MaxSelectedVoices);
+    int MaxSelectedVoices,
+    ConfigOptionDto[] WorkflowStatuses,
+    ConfigOptionDto[] ProjectPriorities);
 
 public sealed record ProjectInfoDto(
     string ClientName,
@@ -169,7 +173,8 @@ public sealed record TaskDraftDto(
     CreativeInfoDto Creative,
     VoiceAndReferencesInfoDto VoiceAndReferences,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? WorkflowStatus = null);
 
 public sealed record ProjectSummaryDto(
     string Id,
@@ -181,7 +186,8 @@ public sealed record ProjectSummaryDto(
     string? CoverUrl,
     string Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? WorkflowStatus = null);
 
 public sealed record PagedProjectsDto(
     ProjectSummaryDto[] Items,

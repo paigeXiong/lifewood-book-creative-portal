@@ -65,6 +65,8 @@ export interface FormOptions {
   sourceCategories: ReferenceCategory[];
   referenceCategories: ReferenceCategory[];
   maxSelectedVoices: number;
+  workflowStatuses: ConfigOption[];
+  projectPriorities: ConfigOption[];
 }
 
 export interface UploadReferenceResult {
@@ -203,6 +205,7 @@ export interface FinalDelivery {
   sizeBytes: number;
   note?: string;
   publishedAt: string;
+  revokedAt?: string;
 }
 
 export interface AdminNote {
@@ -236,6 +239,7 @@ export interface TaskDraft {
   voiceAndReferences: VoiceAndReferencesInfo;
   createdAt: string;
   updatedAt: string;
+  workflowStatus?: WorkflowStatus;
 }
 
 export interface TaskSummary {
@@ -249,6 +253,7 @@ export interface TaskSummary {
   status: string;
   createdAt: string;
   updatedAt: string;
+  workflowStatus?: WorkflowStatus;
 }
 
 export interface PagedResult<T> {

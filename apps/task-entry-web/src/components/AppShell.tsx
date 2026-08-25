@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { authService } from "@lifewood/api-client";
 import { isSupportedLocale } from "@lifewood/i18n";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import type { CurrentUser, SupportedLocale } from "@lifewood/domain";
 
 function switchLocale(pathname: string, locale: SupportedLocale): string {
@@ -35,6 +36,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   const [accountOpen, setAccountOpen] = useState(false);
   const accountPopoverId = useId();
   const accountRef = useRef<HTMLDivElement>(null);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const logout = useMutation({
     mutationFn: authService.logout,
@@ -130,6 +132,9 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
                   {user.email ? <span>{user.email}</span> : null}
                   {user.organization?.name ? <small>{user.organization.name}</small> : null}
                 </div>
+                <button className="account-action" type="button" onClick={() => { setAccountOpen(false); setChangePasswordOpen(true); }}>
+                  {t("nav.changePassword")}
+                </button>
                 <button className="account-action" type="button" disabled={logout.isPending} onClick={() => { if (confirmLeave()) logout.mutate(); }}>
                   {logout.isPending ? t("nav.loggingOut") : t("nav.logout")}
                 </button>
@@ -140,6 +145,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
         </div>
       </header>
       <main id="main-content" tabIndex={-1}>{children}</main>
+      {changePasswordOpen ? <ChangePasswordDialog onClose={() => setChangePasswordOpen(false)} /> : null}
     </div>
   );
 }

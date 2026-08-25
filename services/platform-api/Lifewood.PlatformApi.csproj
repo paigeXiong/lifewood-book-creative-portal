@@ -18,4 +18,7 @@
   <ItemGroup>
     <Content Include="assets\voice-samples\*.wav" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lifewood.PlatformApi.Tests" />
+  </ItemGroup>
 </Project>

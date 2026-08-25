@@ -119,6 +119,10 @@ export const authService = {
     clearCsrfToken();
     return user;
   },
+  changePassword: async (credentials: { currentPassword: string; newPassword: string }) => {
+    await request<void>("/me/password", { method: "POST", body: JSON.stringify(credentials) });
+    clearCsrfToken();
+  },
   logout: async () => {
     await request<void>("/auth/logout", { method: "POST" });
     clearCsrfToken();
@@ -227,6 +231,8 @@ export const adminService = {
     body.append("note", note);
     return request<FinalDelivery>(`/admin/projects/${encodeURIComponent(id)}/deliveries`, { method: "POST", body });
   },
+  revokeFinalDelivery: (projectId: string, deliveryId: string) =>
+    request<void>(`/admin/projects/${encodeURIComponent(projectId)}/deliveries/${encodeURIComponent(deliveryId)}`, { method: "DELETE" }),
   listAssignees: () => request<AdminUser[]>("/admin/assignees"),
   listUsers: ({ search, role, page = 1, pageSize = 20 }: AdminUserListQuery = {}) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
@@ -238,4 +244,6 @@ export const adminService = {
     request<AdminUser>("/admin/users", { method: "POST", body: JSON.stringify(account) }),
   updateUser: (id: string, account: { displayName: string; role: "customer" | "admin"; active: boolean }) =>
     request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(account) }),
+  resetUserPassword: (id: string, newPassword: string) =>
+    request<void>(`/admin/users/${encodeURIComponent(id)}/password`, { method: "PUT", body: JSON.stringify({ newPassword }) }),
 };

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { optionService, projectService } from "@lifewood/api-client";
+import { authService, optionService, projectService } from "@lifewood/api-client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -41,8 +41,25 @@ describe("API client", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/projects/p1/validate");
     expect(new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).get("X-CSRF-TOKEN")).toBe("csrf-token");
     expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toEqual({ version: 7 });
+
     expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/projects/p1/submit");
     expect(new Headers((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).get("X-CSRF-TOKEN")).toBe("csrf-token");
     expect(JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit).body))).toEqual({ version: 7, idempotencyKey: "0123456789abcdef0123456789abcdef" });
+  });
+
+  it("changes the current password with CSRF protection", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-account" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await authService.changePassword({ currentPassword: "old-password", newPassword: "new-password-123" });
+
+    const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/me/password");
+    expect(options.method).toBe("POST");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBeTruthy();
+    expect(JSON.parse(String(options.body))).toEqual({ currentPassword: "old-password", newPassword: "new-password-123" });
   });
 });

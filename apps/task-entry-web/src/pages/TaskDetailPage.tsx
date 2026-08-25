@@ -13,13 +13,14 @@ export function TaskDetailPage() {
   const task = useQuery({ queryKey: ["project", taskId, validLocale], queryFn: () => projectService.getProject(taskId!, validLocale), enabled: Boolean(taskId) });
   const options = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
   const voices = useQuery({ queryKey: ["voices", validLocale], queryFn: () => optionService.getVoices(validLocale) });
-  const statusMap = useMemo(() => new Map(options.data?.taskStatuses.map((item) => [item.id, item]) ?? []), [options.data]);
+  const statusMap = useMemo(() => new Map([...(options.data?.taskStatuses ?? []), ...(options.data?.workflowStatuses ?? [])].map((item) => [item.id, item])), [options.data]);
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (task.isPending || options.isPending || voices.isPending) return <div className="screen-status" aria-busy="true">{t("common.loading")}</div>;
   if (task.isError || options.isError || voices.isError || !task.data) return <div className="screen-status" role="alert">{localizedApiError(task.error ?? options.error ?? voices.error, t)}</div>;
   if (task.data.status === "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${task.data.id}/edit/project`)} />;
 
-  const status = statusMap.get(task.data.status);
+  const statusId = task.data.workflowStatus ?? task.data.status;
+  const status = statusMap.get(statusId);
   const optionLabel = (items: Array<{ id: string; label: string }>, id?: string) => id ? (items.find((item) => item.id === id)?.label ?? id) : "—";
   const optionLabels = (items: Array<{ id: string; label: string }>, ids: string[]) => ids.length ? ids.map((id) => optionLabel(items, id)).join(validLocale === "zh-CN" ? "、" : ", ") : "—";
   const catalog = options.data!;
@@ -33,7 +34,7 @@ export function TaskDetailPage() {
     <header className="detail-header">
       <Link className="button button-secondary" to={localizedPath(validLocale, "/tasks")}>{t("common.back")}</Link>
       <div><span className="folio-kicker">{t("taskDetail.title")}</span><h1>{task.data.project.projectName}</h1><p>{task.data.book.title}</p></div>
-      <span className={`status-badge status-${status?.tone ?? "neutral"}`}>{status?.label ?? task.data.status}</span>
+      <span className={`status-badge status-${status?.tone ?? "neutral"}`}>{status?.label ?? statusId}</span>
     </header>
     <div className="detail-layout">
       <aside className="detail-cover">

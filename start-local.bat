@@ -34,7 +34,7 @@ if /i not "%LIFEWOOD_NO_BROWSER%"=="1" start "" "http://127.0.0.1:5173/zh-CN/tas
 
 echo.
 echo Customer page: http://127.0.0.1:5173/zh-CN/tasks
-echo Test console:  http://127.0.0.1:5174/zh-CN
+echo Admin center:  http://127.0.0.1:5174/zh-CN/projects
 echo.
 echo Services are running in the background. This window can be closed.
 exit /b 0

@@ -20,7 +20,7 @@ internal static class DeliveryEndpoints
             if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
             return admin.GetProject(id) is null
                 ? Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.")
-                : Results.Ok(deliveries.List(id));
+                : Results.Ok(deliveries.ListForAdmin(id));
         });
 
         api.MapPost("/admin/projects/{id}/deliveries", async (string id, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
@@ -78,6 +78,17 @@ internal static class DeliveryEndpoints
             }
         }).DisableAntiforgery();
 
+        api.MapDelete("/admin/projects/{id}/deliveries/{deliveryId}", (string id, string deliveryId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
+        {
+            var user = CurrentUser(context);
+            if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
+            if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
+            if (admin.GetProject(id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            var result = deliveries.Revoke(id, deliveryId);
+            return result.Outcome == AdminWriteOutcome.Saved
+                ? Results.NoContent()
+                : Error(context, 404, "delivery.not_found", "admin.delivery.notFound", "The delivery was not found.");
+        });
         api.MapGet("/admin/projects/{id}/deliveries/{deliveryId}/file", (string id, string deliveryId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
         {
             var user = CurrentUser(context);
@@ -123,7 +134,10 @@ internal static class DeliveryEndpoints
     private static CurrentUserDto? CurrentUser(HttpContext context)
     {
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return string.IsNullOrWhiteSpace(userId) ? null : context.RequestServices.GetRequiredService<UserRepository>().Get(userId);
+        var sessionClaim = context.User.FindFirstValue("lw_session_version");
+        return string.IsNullOrWhiteSpace(userId) || !int.TryParse(sessionClaim, out var sessionVersion)
+            ? null
+            : context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
     }
 
     private static bool Can(CurrentUserDto user, string permission) => user.Permissions.Contains(permission, StringComparer.Ordinal);

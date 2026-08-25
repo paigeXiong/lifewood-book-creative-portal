@@ -81,6 +81,10 @@ label > small { color: #6a7d74; font-weight: 400; }
 .delivery-list small { color: #64756d; font-size: .67rem; }
 .delivery-list p { margin: .2rem 0 0; color: #33483e; font-size: .73rem; }
 .delivery-list a { flex: 0 0 auto; color: #006b4c; font-size: .75rem; font-weight: 700; }
+.delivery-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .55rem; }
+.delivery-actions .danger-link { padding: .25rem .4rem; border-color: transparent; color: #9b2c23; background: transparent; font-size: .72rem; }
+.delivery-list li.revoked { opacity: .62; }
+.delivery-list li.revoked strong { text-decoration: line-through; }
 .delivery-warning { padding: .6rem .7rem; border-radius: .5rem; background: #fff7df; color: #624900; }
 .delivery-warning strong { font-size: .78rem; }
 .delivery-warning p { margin: .2rem 0 0; font-size: .72rem; line-height: 1.45; }
@@ -110,6 +114,9 @@ td { padding: .65rem .75rem; border-bottom: 1px solid #edf1ee; }
 .user-cell > img { flex: 0 0 auto; width: 2rem; height: 2rem; border-radius: 50%; object-fit: cover; }
 .user-cell div { display: grid; }
 .user-cell small { color: #6b7e75; }
+.row-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.modal-title > div { min-width: 0; }
+.modal-title p { margin: .3rem 0 0; color: #64756d; font-size: .88rem; line-height: 1.45; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 1rem; background: rgba(5,32,24,.42); }
 .modal { width: min(28rem, 100%); padding: .9rem; background: #fff; border-radius: .7rem; box-shadow: 0 18px 60px rgba(0,0,0,.22); }
 .modal-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: .7rem; }

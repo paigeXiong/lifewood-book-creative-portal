@@ -7,4 +7,5 @@ public sealed record FinalDeliveryDto(
     string ContentType,
     long SizeBytes,
     string? Note,
-    DateTimeOffset PublishedAt);
+    DateTimeOffset PublishedAt,
+    DateTimeOffset? RevokedAt = null);

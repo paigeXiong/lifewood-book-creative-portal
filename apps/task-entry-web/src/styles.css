@@ -30,6 +30,18 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .account-identity small { margin-top: 2px; color: var(--lw-text-muted); font-size: 11px; }
 .account-action { width: 100%; min-height: 36px; margin-top: 5px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--lw-dark-serpent); text-align: left; font-weight: 650; }
 .account-action:hover:not(:disabled) { background: #f2f5f2; color: var(--lw-castleton); }
+.password-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: rgb(5 32 24 / 46%); }
+.password-dialog { width: min(420px, 100%); padding: 18px; border-radius: 12px; background: var(--lw-white); box-shadow: 0 24px 70px -24px rgb(5 32 24 / 72%); }
+.password-dialog-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.password-dialog-title h2 { margin: 0; font-size: 1.15rem; }
+.password-dialog-title button { min-width: 36px; min-height: 36px; border: 0; background: transparent; font-size: 1.4rem; }
+.password-dialog form { display: grid; gap: 12px; }
+.password-dialog label { display: grid; gap: 5px; color: var(--lw-dark-serpent); font-weight: 650; }
+.password-dialog input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--lw-border); border-radius: 7px; }
+.password-dialog input:focus-visible { outline: 3px solid rgb(0 100 75 / 20%); border-color: var(--lw-castleton); }
+.password-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 5px; }
+.password-actions button { min-height: 38px; padding: 0 14px; }
+.password-dialog .account-error { margin: 0; }
 .account-error { margin: 5px 8px 3px; color: var(--lw-error); font-size: 11px; }
 .avatar { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; object-fit: cover; }
 .avatar-large { width: 42px; height: 42px; }
@@ -193,10 +205,10 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .login-heading p { margin: 0; color: var(--lw-text-secondary); font-size: 13px; line-height: 1.55; text-wrap: pretty; }
 .login-form { display: grid; gap: 13px; }
 .login-field { display: grid; gap: 5px; color: var(--lw-dark-serpent); font-size: 12px; font-weight: 680; }
-.login-field input { width: 100%; }
+.login-field input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--lw-border-strong); border-radius: var(--lw-radius-control); background: var(--lw-white); color: var(--lw-dark-serpent); }
 .login-field small { color: var(--lw-text-muted); font-size: 10px; font-weight: 500; line-height: 1.4; }
 .login-field small.field-error { color: var(--lw-error); }
-.password-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
+.password-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; overflow: hidden; border-radius: var(--lw-radius-control); }
 .password-control input { min-width: 0; border-radius: var(--lw-radius-control) 0 0 var(--lw-radius-control); }
 .password-control button { min-width: 72px; padding: 0 10px; border: 1px solid var(--lw-border-strong); border-left: 0; border-radius: 0 var(--lw-radius-control) var(--lw-radius-control) 0; background: var(--lw-sea-salt); color: var(--lw-castleton); font-size: 11px; font-weight: 700; }
 .password-control:focus-within { border-radius: var(--lw-radius-control); box-shadow: 0 0 0 3px rgb(47 106 80 / 18%); }

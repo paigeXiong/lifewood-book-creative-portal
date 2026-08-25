@@ -144,7 +144,24 @@ internal static class FormOptionCatalog
                 Category("scene-notes", en ? "Scene notes" : "场景说明", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 10_000_000, 5),
                 Category("dos-donts", en ? "Do / Don't notes" : "注意事项", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 10_000_000, 5)
             ],
-            MaxSelectedVoices: MaxSelectedVoices);
+            MaxSelectedVoices: MaxSelectedVoices,
+            WorkflowStatuses:
+            [
+                Option("new", en ? "Needs follow-up" : "待跟进", "warning"),
+                Option("contacting", en ? "Contacting" : "沟通中", "warning"),
+                Option("confirmed", en ? "Confirmed" : "已确认", "info"),
+                Option("in_production", en ? "In production" : "制作中", "info"),
+                Option("awaiting_customer", en ? "Awaiting customer" : "待客户确认", "warning"),
+                Option("completed", en ? "Completed" : "已完成", "success"),
+                Option("closed", en ? "Closed" : "已关闭", "neutral")
+            ],
+            ProjectPriorities:
+            [
+                Option("low", en ? "Low" : "低"),
+                Option("normal", en ? "Normal" : "普通"),
+                Option("high", en ? "High" : "高"),
+                Option("urgent", en ? "Urgent" : "紧急", "danger")
+            ]);
     }
 
     public static VoiceReferenceDto[] VoicesForLocale(string locale)

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -37,6 +38,8 @@ var dataDirectory = Path.Combine(builder.Environment.ContentRootPath, "data");
 var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db")}";
 var voiceSampleDirectory = Path.Combine(AppContext.BaseDirectory, "assets", "voice-samples");
 Directory.CreateDirectory(dataDirectory);
+var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
+using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 var keyDirectory = Path.Combine(dataDirectory, "data-protection-keys");
 Directory.CreateDirectory(keyDirectory);
 builder.Services.AddDataProtection()
@@ -202,6 +205,20 @@ api.MapGet("/me/avatar", (HttpContext context) =>
     return Results.Text(AvatarImage.Create(user.Id, user.DisplayName), "image/svg+xml", Encoding.UTF8);
 });
 
+api.MapPost("/me/password", async (ChangePasswordRequest? request, HttpContext context, UserRepository accounts) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
+    var result = accounts.ChangePassword(user.Id, request.CurrentPassword, request.NewPassword);
+    if (result.Outcome == PasswordUpdateOutcome.NotFound) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (result.Outcome == PasswordUpdateOutcome.Invalid)
+        return Error(context, 400, "auth.password_invalid", "errors.auth.passwordInvalid", "The current password is incorrect or the new password is invalid.", false,
+            [new FieldErrorDto(result.Field ?? "request", "invalid", result.Field == "currentPassword" ? "errors.auth.currentPassword" : "errors.auth.fields.password")]);
+    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.NoContent();
+}).RequireRateLimiting("authentication");
+
 api.MapGet("/form-options", (HttpContext context) =>
     Results.Ok(FormOptionCatalog.ForLocale(Locale(context))));
 
@@ -262,6 +279,25 @@ api.MapPut("/admin/users/{id}", (string id, UpdateUserRequest? request, HttpCont
     };
 });
 
+
+api.MapPut("/admin/users/{id}/password", (string id, ResetPasswordRequest? request, HttpContext context, UserRepository accounts, AdminRepository admin) =>
+{
+    var current = CurrentUser(context);
+    if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
+    var target = admin.GetUser(id);
+    if (target is null) return Error(context, 404, "user.not_found", "errors.admin.userNotFound", "The user was not found.", false);
+    if (target.Role == "owner") return Error(context, 409, "user.owner_protected", "errors.admin.ownerProtected", "The owner password can only be changed by the owner.", false);
+    var result = accounts.ResetPassword(id, request.NewPassword);
+    return result.Outcome switch
+    {
+        PasswordUpdateOutcome.Updated => Results.NoContent(),
+        PasswordUpdateOutcome.NotFound => Error(context, 404, "user.not_found", "errors.admin.userNotFound", "The user was not found.", false),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The password is invalid.", false,
+            [new FieldErrorDto(result.Field ?? "newPassword", "invalid", "errors.auth.fields.password")])
+    };
+});
 api.MapGet("/admin/projects", (HttpContext context, AdminRepository admin, string? workflowStatus, string? priority, string? search, int page = 1, int pageSize = 20) =>
 {
     var user = CurrentUser(context);
@@ -575,13 +611,22 @@ app.Run();
 static CurrentUserDto? CurrentUser(HttpContext context)
 {
     var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-    return string.IsNullOrWhiteSpace(userId) ? null : context.RequestServices.GetRequiredService<UserRepository>().Get(userId);
+    var sessionClaim = context.User.FindFirstValue("lw_session_version");
+    return string.IsNullOrWhiteSpace(userId) || !int.TryParse(sessionClaim, NumberStyles.None, CultureInfo.InvariantCulture, out var sessionVersion)
+        ? null
+        : context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
 }
 
 static Task SignIn(HttpContext context, CurrentUserDto user, bool persistent)
 {
+    var sessionVersion = context.RequestServices.GetRequiredService<UserRepository>().GetSessionVersion(user.Id)
+        ?? throw new InvalidOperationException("Cannot create a session for an inactive or missing user.");
     var identity = new ClaimsIdentity(
-        [new Claim(ClaimTypes.NameIdentifier, user.Id), new Claim(ClaimTypes.Name, user.DisplayName)],
+        [
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+            new Claim(ClaimTypes.Name, user.DisplayName),
+            new Claim("lw_session_version", sessionVersion.ToString(CultureInfo.InvariantCulture))
+        ],
         CookieAuthenticationDefaults.AuthenticationScheme);
     var properties = new AuthenticationProperties
     {

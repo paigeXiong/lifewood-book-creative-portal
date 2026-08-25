@@ -2,7 +2,7 @@
 param(
     [int]$ApiPort = 5077,
     [int]$WebPort = 5173,
-    [int]$ConsolePort = 5174,
+    [int]$AdminPort = 5174,
     [switch]$SkipBuild,
     [switch]$Stop
 )
@@ -13,7 +13,7 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $webUrl = "http://127.0.0.1:$WebPort"
 $apiUrl = "http://127.0.0.1:$ApiPort"
-$consoleUrl = "http://127.0.0.1:$ConsolePort"
+$adminUrl = "http://127.0.0.1:$AdminPort"
 $apiProject = Join-Path $repositoryRoot "services\platform-api\Lifewood.PlatformApi.csproj"
 $apiExecutable = Join-Path $repositoryRoot "services\platform-api\bin\Debug\net10.0\Lifewood.PlatformApi.exe"
 $nodeModules = Join-Path $repositoryRoot "node_modules"
@@ -25,8 +25,8 @@ $apiLog = Join-Path $logDirectory "api-$runStamp.log"
 $apiErrorLog = Join-Path $logDirectory "api-$runStamp.error.log"
 $webLog = Join-Path $logDirectory "web-$runStamp.log"
 $webErrorLog = Join-Path $logDirectory "web-$runStamp.error.log"
-$consoleLog = Join-Path $logDirectory "test-console-$runStamp.log"
-$consoleErrorLog = Join-Path $logDirectory "test-console-$runStamp.error.log"
+$adminLog = Join-Path $logDirectory "admin-$runStamp.log"
+$adminErrorLog = Join-Path $logDirectory "admin-$runStamp.error.log"
 $startedProcesses = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
 $previousEnvironment = $env:ASPNETCORE_ENVIRONMENT
 
@@ -116,12 +116,12 @@ try {
         $allProcessesRunning = $allProcessesRunning -and $apiMatchesCurrentLauncher
         $allEndpointsHealthy = (Test-HttpEndpoint "$apiUrl/api/health") -and
             (Test-HttpEndpoint $webUrl) -and
-            (Test-HttpEndpoint $consoleUrl)
+            (Test-HttpEndpoint $adminUrl)
 
         if ($allProcessesRunning -and $allEndpointsHealthy) {
             Write-Host "Local development environment is already running." -ForegroundColor Green
             Write-Host "Web:  $webUrl/zh-CN/tasks"
-            Write-Host "Admin center: $consoleUrl/zh-CN/projects"
+            Write-Host "Admin center: $adminUrl/zh-CN/projects"
             Write-Host "API:  $apiUrl/api/health"
             return
         }
@@ -129,7 +129,6 @@ try {
         Write-Host "A stale or incomplete service record was found. Restarting local services..." -ForegroundColor DarkYellow
         Stop-LocalServices
     }
-    & (Join-Path $PSScriptRoot "migrate-test-api-data.ps1")
     Set-Location -LiteralPath $repositoryRoot
 
     if (-not $SkipBuild) {
@@ -156,33 +155,33 @@ try {
         -RedirectStandardOutput $webLog -RedirectStandardError $webErrorLog
     $startedProcesses.Add($webProcess)
 
-    $consoleProcess = Start-Process -FilePath (Get-Command node.exe).Source `
-        -ArgumentList $viteEntry, "--host", "127.0.0.1", "--port", $ConsolePort, "--strictPort" `
+    $adminProcess = Start-Process -FilePath (Get-Command node.exe).Source `
+        -ArgumentList $viteEntry, "--host", "127.0.0.1", "--port", $AdminPort, "--strictPort" `
         -WorkingDirectory (Join-Path $repositoryRoot "apps\admin-web") `
         -WindowStyle Hidden -PassThru `
-        -RedirectStandardOutput $consoleLog -RedirectStandardError $consoleErrorLog
-    $startedProcesses.Add($consoleProcess)
+        -RedirectStandardOutput $adminLog -RedirectStandardError $adminErrorLog
+    $startedProcesses.Add($adminProcess)
 
     Wait-ForHttp "$apiUrl/api/health" "Platform API" $apiProcess $apiErrorLog
     Wait-ForHttp $webUrl "Web application" $webProcess $webErrorLog
-    Wait-ForHttp $consoleUrl "Admin center" $consoleProcess $consoleErrorLog
+    Wait-ForHttp $adminUrl "Admin center" $adminProcess $adminErrorLog
 
     @{
         startedAt = (Get-Date).ToString("O")
         webUrl = "$webUrl/zh-CN/tasks"
-        adminUrl = "$consoleUrl/zh-CN/projects"
+        adminUrl = "$adminUrl/zh-CN/projects"
         apiUrl = "$apiUrl/api/health"
         processes = @(
             @{ name = "API"; id = $apiProcess.Id; path = $apiProcess.Path },
             @{ name = "Web"; id = $webProcess.Id; path = $webProcess.Path }
-            @{ name = "Admin center"; id = $consoleProcess.Id; path = $consoleProcess.Path }
+            @{ name = "Admin center"; id = $adminProcess.Id; path = $adminProcess.Path }
         )
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $stateFile -Encoding UTF8
 
     Write-Host ""
     Write-Host "Local development environment is ready." -ForegroundColor Green
     Write-Host "Web:  $webUrl/zh-CN/tasks"
-    Write-Host "Admin center: $consoleUrl/zh-CN/projects"
+    Write-Host "Admin center: $adminUrl/zh-CN/projects"
     Write-Host "API:  $apiUrl/api/health"
     Write-Host "Logs: $logDirectory"
     Write-Host "Stop: powershell -File scripts/start-local.ps1 -Stop" -ForegroundColor DarkGray
