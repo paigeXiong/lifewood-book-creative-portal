@@ -4,7 +4,7 @@ namespace Lifewood.PlatformApi.Features;
 
 internal static class VoiceAndReferencesValidator
 {
-    public static FieldErrorDto[] Validate(SaveVoiceAndReferencesRequest? request)
+    public static FieldErrorDto[] Validate(SaveVoiceAndReferencesRequest? request, IReadOnlySet<string> enabledVoiceIds)
     {
         var errors = new List<FieldErrorDto>();
         if (request?.VoiceAndReferences is null)
@@ -31,7 +31,7 @@ internal static class VoiceAndReferencesValidator
             Max(errors, "voiceAndReferences.voiceover.customVoiceDescription", voice.CustomVoiceDescription, 300);
             if (voice.SelectedVoiceIds is null) errors.Add(Error("voiceAndReferences.voiceover.selectedVoiceIds", "required"));
             var selectedVoiceIds = voice.SelectedVoiceIds ?? [];
-            Options(errors, "voiceAndReferences.voiceover.selectedVoiceIds", selectedVoiceIds, FormOptionCatalog.EnabledVoiceIds(), FormOptionCatalog.MaxSelectedVoices);
+            Options(errors, "voiceAndReferences.voiceover.selectedVoiceIds", selectedVoiceIds, enabledVoiceIds, FormOptionCatalog.MaxSelectedVoices);
             if (!string.IsNullOrWhiteSpace(voice.PreferredVoiceId) && !selectedVoiceIds.Contains(voice.PreferredVoiceId, StringComparer.Ordinal))
                 errors.Add(Error("voiceAndReferences.voiceover.preferredVoiceId", "invalid"));
         }

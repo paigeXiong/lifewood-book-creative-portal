@@ -4,12 +4,12 @@ namespace Lifewood.PlatformApi.Features;
 
 internal static class SubmitValidator
 {
-    public static FieldErrorDto[] Validate(TaskDraftDto draft)
+    public static FieldErrorDto[] Validate(TaskDraftDto draft, IReadOnlySet<string> enabledVoiceIds)
     {
         var errors = new List<FieldErrorDto>();
         errors.AddRange(DraftValidator.Validate(new SaveDraftRequest(draft.Version, draft.Project, draft.Book)));
         errors.AddRange(CreativeValidator.Validate(new SaveCreativeRequest(draft.Version, draft.Creative)));
-        errors.AddRange(VoiceAndReferencesValidator.Validate(new SaveVoiceAndReferencesRequest(draft.Version, draft.VoiceAndReferences, true)));
+        errors.AddRange(VoiceAndReferencesValidator.Validate(new SaveVoiceAndReferencesRequest(draft.Version, draft.VoiceAndReferences, true), enabledVoiceIds));
 
         Required(errors, "project.clientName", draft.Project.ClientName);
         Required(errors, "project.contactName", draft.Project.ContactName);

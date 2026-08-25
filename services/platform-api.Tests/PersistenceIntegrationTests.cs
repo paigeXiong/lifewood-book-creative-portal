@@ -1,4 +1,5 @@
 using Lifewood.PlatformApi.Persistence;
+using Lifewood.PlatformApi.Contracts;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -73,6 +74,42 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Null(deliveries.Find(draft.Id, "delivery-1"));
         Assert.NotNull(Assert.Single(deliveries.ListForAdmin(draft.Id)).RevokedAt);
         Assert.Equal("in_production", Scalar("SELECT workflow_status FROM projects WHERE id = $id;", ("$id", draft.Id)));
+    }
+
+    [Fact]
+    public void VoiceReferencesPersistBilingualContentAndRespectEnabledState()
+    {
+        var voices = new VoiceReferenceRepository(ConnectionString);
+        voices.Initialize();
+        Assert.Equal(4, voices.ListAdmin().Length);
+        Execute("DELETE FROM voice_references WHERE id = 'grounded-narrator';");
+        Execute("UPDATE voice_references SET name_en_us = 'Edited by admin' WHERE id = 'warm-storyteller';");
+        voices.Initialize();
+        Assert.Equal(4, voices.ListAdmin().Length);
+        Assert.Equal("Edited by admin", voices.ListAdmin().Single(value => value.Id == "warm-storyteller").NameEnUs);
+
+
+        var request = new UpsertVoiceReferenceRequest(
+            "测试音色",
+            "Test voice",
+            "中文描述",
+            "English description",
+            null,
+            ["warm", "clear"],
+            true,
+            true,
+            5);
+        var saved = voices.Upsert("test-voice", request, out var item);
+        Assert.Equal(VoiceWriteOutcome.Saved, saved.Outcome);
+        Assert.NotNull(item);
+        Assert.Equal("测试音色", voices.ForLocale("zh-CN").Single(value => value.Id == "test-voice").Name);
+        Assert.Equal("Test voice", voices.ForLocale("en-US").Single(value => value.Id == "test-voice").Name);
+        Assert.Contains("test-voice", voices.EnabledIds());
+
+        var disabled = voices.Upsert("test-voice", request with { Enabled = false }, out _);
+        Assert.Equal(VoiceWriteOutcome.Saved, disabled.Outcome);
+        Assert.DoesNotContain(voices.ForLocale("zh-CN"), value => value.Id == "test-voice");
+        Assert.DoesNotContain("test-voice", voices.EnabledIds());
     }
 
     [Fact]

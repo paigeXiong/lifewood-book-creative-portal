@@ -25,6 +25,7 @@ internal static class FormOptionCatalog
     public static readonly IReadOnlySet<string> VoiceAgeIds = Set("young-adult", "adult", "mature", "unspecified");
     public static readonly IReadOnlySet<string> AccentIds = Set("neutral-us", "neutral-uk", "mandarin", "unspecified");
     public static readonly IReadOnlySet<string> VoiceEmotionIds = Set("warm", "confident", "calm", "energetic", "reflective");
+    public static readonly IReadOnlySet<string> VoiceTagIds = Set("warm", "natural", "grounded", "professional", "bright", "clear");
     public static readonly IReadOnlySet<string> SourceCategoryIds = Set("book-cover", "manuscript", "key-chapters", "brand-guidelines", "authorization", "supplemental-images");
     public static readonly IReadOnlySet<string> ReferenceCategoryIds = Set("sample-video", "sample-image", "moodboard", "competitor", "scene-notes", "dos-donts");
 
@@ -175,8 +176,6 @@ internal static class FormOptionCatalog
             new("clear-editorial", en ? "Clear editorial voice" : "清晰编辑型", en ? "Precise and polished for information-led videos." : "清晰克制，适合信息主导的视频。", "/api/voices/clear-editorial/sample", ["clear", "professional"], false, true)
         ];
     }
-
-    public static IReadOnlySet<string> EnabledVoiceIds() => VoicesForLocale("en-US").Where(voice => voice.Enabled).Select(voice => voice.Id).ToHashSet(StringComparer.Ordinal);
 
     private static ConfigOptionDto Option(string id, string label, string? tone = null, string? previewColor = null) => new(id, label, null, tone, previewColor);
     private static ReferenceCategoryDto Category(string id, string label, string description, string[] accept, long maxBytes, int maxFiles, bool allowsUrl = false, bool required = false) => new(id, label, description, accept, maxBytes, maxFiles, allowsUrl, required);

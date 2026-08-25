@@ -10,6 +10,7 @@ import type { ConfigOption, ReferenceCategory, TaskDraft, VoiceReference } from 
 import { Field } from "../components/Field";
 import { StepProgress } from "../components/StepProgress";
 import { createVoiceDraftSchema, createVoiceStepSchema, type VoiceFormValues } from "./voiceFormSchema";
+import { reconcileVoiceSelection } from "../voice-selection";
 import { isCreativeComplete } from "./creativeFormSchema";
 
 function Options({ items }: { items: ConfigOption[] }) { return <>{items.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</>; }
@@ -55,6 +56,7 @@ export function VoiceAndReferencesPage() {
   const [uploadError, setUploadError] = useState<string>();
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [playingVoice, setPlayingVoice] = useState<string>();
+  const [removedVoiceCount, setRemovedVoiceCount] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const activeUploadRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const cancelledTransferIdsRef = useRef(new Set<string>());
@@ -72,17 +74,21 @@ export function VoiceAndReferencesPage() {
 
   useEffect(() => {
     const draft = draftQuery.data;
-    if (!draft || form.formState.isDirty) return;
+    if (!draft || !voicesQuery.data || form.formState.isDirty) return;
     const voice = draft.voiceAndReferences.voiceover;
     const direction = draft.voiceAndReferences.creativeDirection;
+    const { selectedVoiceIds, preferredVoiceId, removedCount } = reconcileVoiceSelection(
+      voice.selectedVoiceIds, voice.preferredVoiceId, voicesQuery.data.map((item) => item.id),
+    );
+    setRemovedVoiceCount(removedCount);
     form.reset({
       contentLanguageId: voice.contentLanguageId ?? draft.book.contentLanguageId ?? "", narrationToneId: voice.narrationToneId ?? "", speechRateId: voice.speechRateId ?? "",
       pronunciationNotes: voice.pronunciationNotes ?? "", voiceGenderId: voice.voiceGenderId ?? "", voiceAgeId: voice.voiceAgeId ?? "", accentId: voice.accentId ?? "", emotionStyleId: voice.emotionStyleId ?? "",
-      selectedVoiceIds: voice.selectedVoiceIds, preferredVoiceId: voice.preferredVoiceId ?? "", customVoiceDescription: voice.customVoiceDescription ?? "",
+      selectedVoiceIds, preferredVoiceId, customVoiceDescription: voice.customVoiceDescription ?? "",
       assets: draft.voiceAndReferences.assets, competitorUrls: draft.voiceAndReferences.competitorUrls,
       coreMessage: direction.coreMessage, requiredScenes: direction.requiredScenes ?? "", authorPreferences: direction.authorPreferences ?? "", closingMessage: direction.closingMessage ?? "", musicMood: direction.musicMood ?? "", avoidContent: direction.avoidContent ?? "",
     });
-  }, [draftQuery.data, form, form.formState.isDirty]);
+  }, [draftQuery.data, voicesQuery.data, form, form.formState.isDirty]);
 
   useEffect(() => {
     const dirty = form.formState.isDirty;
@@ -196,6 +202,7 @@ export function VoiceAndReferencesPage() {
 
   return <div className="wizard-page voice-page">
     <div className="wizard-heading"><div><h1>{t("wizard.pageTitles.voice")}</h1><p>{t("wizard.pageSubtitles.voice")}</p></div><span className={`save-state save-${saveState}`} aria-live="polite">{statusText}</span></div>
+    {removedVoiceCount > 0 && <div className="inline-notice" role="status">{t("voice.unavailableRemoved", { count: removedVoiceCount })}</div>}
     <StepProgress current={3} />
     <form autoComplete="off" onSubmit={continueStep}>
       <div className="voice-layout"><div className="form-stack">

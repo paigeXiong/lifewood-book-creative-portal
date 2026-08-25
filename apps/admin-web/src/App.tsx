@@ -8,6 +8,7 @@ import type { AdminProjectDetail, AdminProjectSummary, AdminUser, ConfigOption, 
 import { FinalDeliveryPanel } from "./FinalDeliveryPanel";
 import { ModalFrame } from "./ModalFrame";
 import { ChangeOwnPasswordDialog, ResetUserPasswordDialog } from "./PasswordDialogs";
+import { VoiceConfigPage } from "./VoiceConfigPage";
 
 
 function formatDate(value: string, locale: SupportedLocale) {
@@ -76,6 +77,7 @@ function AdminShell({ user, locale, children }: { user: CurrentUser; locale: Sup
     <a href={customerPortalUrl(locale)}><span className="nav-icon" aria-hidden="true">←</span>{t("admin.nav.home")}</a>
     <NavLink to={localizedPath(locale, "/projects")}><span className="nav-icon">▤</span>{t("admin.nav.projects")}</NavLink>
     <NavLink to={localizedPath(locale, "/users")}><span className="nav-icon">◎</span>{t("admin.nav.users")}</NavLink>
+    <NavLink to={localizedPath(locale, "/voices")}><span className="nav-icon" aria-hidden="true">♫</span>{t("admin.nav.voices")}</NavLink>
   </nav></aside><div className="workspace"><header className="topbar"><span>{t("admin.internalWorkspace")}</span><div className="topbar-actions"><label><span className="sr-only">{t("nav.language")}</span><select value={locale} onChange={(event) => changeLocale(event.target.value)}><option value="zh-CN">中文</option><option value="en-US">English</option></select></label><div className="admin-account" ref={accountRef}><button ref={accountTriggerRef} className="admin-account-trigger" type="button" aria-expanded={accountOpen} aria-controls={accountId} aria-label={t("nav.accountMenu", { name: user.displayName })} onClick={() => setAccountOpen((value) => !value)}><img className="account-avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" /><span>{user.displayName}</span><span className="account-chevron" aria-hidden="true">⌄</span></button>{accountOpen && <div id={accountId} className="admin-account-popover" role="region" aria-label={t("nav.account")}><strong>{user.displayName}</strong>{user.email && <span>{user.email}</span>}<small>{user.roles.map((role) => t(`admin.roles.${role}`)).join(" · ")}</small><button onClick={() => { setAccountOpen(false); setChangePasswordOpen(true); }}>{t("admin.account.changePassword")}</button><button disabled={logoutPending} onClick={() => void logout()}>{t(logoutPending ? "nav.loggingOut" : "nav.logout")}</button>{logoutFailed && <p className="admin-account-error" role="alert">{t("nav.logoutFailed")}</p>}</div>}</div></div></header>{children}</div>{changePasswordOpen && <ChangeOwnPasswordDialog onClose={() => setChangePasswordOpen(false)} />}</div>;
 }
 
@@ -175,7 +177,7 @@ function AdminRoot() {
   if (me.isPending || (me.isError && authStatus.isPending)) return <main className="center-state">{t("common.loading")}</main>;
   if (!me.data) return <IdentityGate requiresBootstrap={authStatus.data?.requiresBootstrap === true} busy={busy} error={error} onAuthenticate={(value) => void authenticate(value)} />;
   if (!me.data.permissions.includes("admin.access")) return <main className="center-state"><div><h1>{t("admin.forbidden.title")}</h1><p>{t("admin.forbidden.body")}</p><button onClick={() => void authService.logout().then(() => window.location.reload())}>{t("nav.logout")}</button></div></main>;
-  return <AdminShell user={me.data} locale={locale}><Routes><Route index element={<Navigate replace to="projects" />} /><Route path="projects" element={<ProjectsPage locale={locale} />} /><Route path="users" element={<UsersPage locale={locale} />} /><Route path="*" element={<Navigate replace to="projects" />} /></Routes></AdminShell>;
+  return <AdminShell user={me.data} locale={locale}><Routes><Route index element={<Navigate replace to="projects" />} /><Route path="projects" element={<ProjectsPage locale={locale} />} /><Route path="users" element={<UsersPage locale={locale} />} /><Route path="voices" element={<VoiceConfigPage locale={locale} />} /><Route path="*" element={<Navigate replace to="projects" />} /></Routes></AdminShell>;
 }
 
 export function App() {

@@ -1,0 +1,88 @@
+.config-content {
+  overflow: auto;
+}
+
+.voice-config-name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.voice-config-name strong,
+.voice-config-name small,
+.voice-tags {
+  overflow-wrap: anywhere;
+}
+
+.voice-config-name small {
+  color: var(--muted);
+}
+
+.voice-tags {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+.config-content td .status + .status {
+  margin-left: 6px;
+}
+
+.voice-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.35fr);
+  gap: 10px;
+}
+
+.voice-form-grid label:nth-child(n + 3) {
+  grid-column: span 1;
+}
+
+.voice-form-grid textarea {
+  resize: vertical;
+}
+
+.modal-card fieldset {
+  margin: 12px 0 0;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-muted, #f4f6f4);
+}
+
+.modal-card legend {
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+.tag-checks,
+.toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.tag-checks label,
+.toggle-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.toggle-row {
+  margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .voice-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .voice-form-grid label:nth-child(n + 3) {
+    grid-column: auto;
+  }
+}

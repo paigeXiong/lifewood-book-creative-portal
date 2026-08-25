@@ -54,6 +54,29 @@ public sealed record VoiceReferenceDto(
     bool Recommended,
     bool Enabled);
 
+public sealed record AdminVoiceReferenceDto(
+    string Id,
+    string NameZhCn,
+    string NameEnUs,
+    string DescriptionZhCn,
+    string DescriptionEnUs,
+    string? AudioUrl,
+    string[] TagIds,
+    bool Recommended,
+    bool Enabled,
+    int SortOrder);
+
+public sealed record UpsertVoiceReferenceRequest(
+    string NameZhCn,
+    string NameEnUs,
+    string DescriptionZhCn,
+    string DescriptionEnUs,
+    string? AudioUrl,
+    string[] TagIds,
+    bool Recommended,
+    bool Enabled,
+    int SortOrder);
+
 public sealed record FormOptionsDto(
     ConfigOptionDto[] Brands,
     ConfigOptionDto[] VideoGoals,

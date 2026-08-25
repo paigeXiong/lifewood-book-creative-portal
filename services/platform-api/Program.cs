@@ -95,6 +95,10 @@ builder.Services.AddSingleton(administration);
 var deliveries = new DeliveryRepository(databaseConnection);
 deliveries.Initialize();
 builder.Services.AddSingleton(deliveries);
+var voiceReferences = new VoiceReferenceRepository(databaseConnection);
+voiceReferences.Initialize();
+builder.Services.AddSingleton(voiceReferences);
+
 var app = builder.Build();
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
@@ -356,12 +360,32 @@ api.MapGet("/admin/projects/{id}/files/{fileId}", (string id, string fileId, Htt
         : Results.File(path, asset.ContentType, asset.FileName, enableRangeProcessing: true);
 });
 
-api.MapGet("/voices", (HttpContext context) =>
-    Results.Ok(FormOptionCatalog.VoicesForLocale(Locale(context))));
-
-api.MapGet("/voices/{id}/sample", (string id) =>
+api.MapGet("/admin/voices", (HttpContext context, VoiceReferenceRepository voices) =>
 {
-    if (!FormOptionCatalog.EnabledVoiceIds().Contains(id)) return Results.NotFound();
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(voices.ListAdmin());
+});
+
+api.MapPut("/admin/voices/{id}", (string id, UpsertVoiceReferenceRequest? request, HttpContext context, VoiceReferenceRepository voices) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = voices.Upsert(id, request, out var saved);
+    return result.Outcome == VoiceWriteOutcome.Saved
+        ? Results.Ok(saved)
+        : Error(context, 400, "validation.failed", "errors.validation.failed", "The voice reference is invalid.", false,
+            [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")]);
+});
+
+api.MapGet("/voices", (HttpContext context, VoiceReferenceRepository voices) =>
+    Results.Ok(voices.ForLocale(Locale(context))));
+
+api.MapGet("/voices/{id}/sample", (string id, VoiceReferenceRepository voices) =>
+{
+    if (!voices.EnabledIds().Contains(id)) return Results.NotFound();
     var path = Path.Combine(voiceSampleDirectory, $"{id}.wav");
     return File.Exists(path) ? Results.File(path, "audio/wav", enableRangeProcessing: true) : Results.NotFound();
 });
@@ -438,7 +462,7 @@ api.MapPut("/projects/{id}/creative", (string id, SaveCreativeRequest? request, 
     };
 });
 
-api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndReferencesRequest? request, HttpContext context, ProjectRepository projects) =>
+api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndReferencesRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -448,7 +472,7 @@ api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndRefere
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (request is not null && current.Version != request.Version)
         return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
-    var fieldErrors = VoiceAndReferencesValidator.Validate(request);
+    var fieldErrors = VoiceAndReferencesValidator.Validate(request, voices.EnabledIds());
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
     if (!AssetsMatch(current.VoiceAndReferences.Assets, request!.VoiceAndReferences.Assets ?? []))
@@ -463,7 +487,7 @@ api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndRefere
     };
 });
 
-api.MapPost("/projects/{id}/validate", (string id, ValidateProjectRequest? request, HttpContext context, ProjectRepository projects) =>
+api.MapPost("/projects/{id}/validate", (string id, ValidateProjectRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -473,11 +497,11 @@ api.MapPost("/projects/{id}/validate", (string id, ValidateProjectRequest? reque
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before validating.", false, currentVersion: current.Version);
-    var fieldErrors = SubmitValidator.Validate(current);
+    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds());
     return Results.Ok(new ValidationResultDto(fieldErrors.Length == 0, fieldErrors));
 });
 
-api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, HttpContext context, ProjectRepository projects) =>
+api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -495,7 +519,7 @@ api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, 
     }
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before submitting.", false, currentVersion: current.Version);
-    var fieldErrors = SubmitValidator.Validate(current);
+    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds());
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The application is incomplete.", false, fieldErrors);
     var result = projects.Submit(user.Id, id, request.Version, request.IdempotencyKey);

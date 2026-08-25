@@ -39,6 +39,19 @@ export interface VoiceReference {
   enabled: boolean;
 }
 
+export interface AdminVoiceReference {
+  id: string;
+  nameZhCn: string;
+  nameEnUs: string;
+  descriptionZhCn: string;
+  descriptionEnUs: string;
+  audioUrl: string | null;
+  tagIds: string[];
+  recommended: boolean;
+  enabled: boolean;
+  sortOrder: number;
+}
+
 export interface FormOptions {
   brands: ConfigOption[];
   videoGoals: ConfigOption[];

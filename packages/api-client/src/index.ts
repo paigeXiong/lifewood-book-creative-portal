@@ -16,6 +16,7 @@ import type {
   UploadReferenceResult,
   VoiceReference,
 } from "@lifewood/domain";
+import type { AdminVoiceReference } from "@lifewood/domain";
 
 export class ApiError extends Error {
   readonly details: AppErrorShape;
@@ -246,4 +247,7 @@ export const adminService = {
     request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(account) }),
   resetUserPassword: (id: string, newPassword: string) =>
     request<void>(`/admin/users/${encodeURIComponent(id)}/password`, { method: "PUT", body: JSON.stringify({ newPassword }) }),
+  listVoiceReferences: () => request<AdminVoiceReference[]>("/admin/voices"),
+  saveVoiceReference: (voice: AdminVoiceReference) =>
+    request<AdminVoiceReference>(`/admin/voices/${encodeURIComponent(voice.id)}`, { method: "PUT", body: JSON.stringify(voice) }),
 };

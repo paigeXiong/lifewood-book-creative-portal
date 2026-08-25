@@ -26,6 +26,10 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSerializable(typeof(ReferenceCategoryDto[]))]
 [JsonSerializable(typeof(VoiceReferenceDto))]
 [JsonSerializable(typeof(VoiceReferenceDto[]))]
+[JsonSerializable(typeof(AdminVoiceReferenceDto))]
+[JsonSerializable(typeof(AdminVoiceReferenceDto[]))]
+[JsonSerializable(typeof(UpsertVoiceReferenceRequest))]
+
 [JsonSerializable(typeof(FormOptionsDto))]
 [JsonSerializable(typeof(ProjectInfoDto))]
 [JsonSerializable(typeof(BookInfoDto))]

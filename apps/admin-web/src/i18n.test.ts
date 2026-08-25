@@ -19,6 +19,9 @@ const requiredKeys = [
   "errors.admin.selfDeactivate",
   "errors.admin.userNotFound",
   "errors.admin.ownerProtected",
+  "admin.nav.voices",
+  "admin.voices.create",
+  "admin.voices.descriptionEn",
 ];
 
 describe("administrator locale resources", () => {
