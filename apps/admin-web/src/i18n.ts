@@ -7,7 +7,7 @@ i18n.addResourceBundle("zh-CN", "translation", {
     documentTitle: "Lifewood 管理中心",
     productName: "项目管理中心",
     internalWorkspace: "内部项目跟进",
-    nav: { home: "返回主页", projects: "项目跟进", users: "用户管理", voices: "参考音色" },
+    nav: { home: "返回主页", projects: "项目跟进", users: "用户管理", settings: "系统配置" },
     auth: { title: "登录管理中心", body: "使用管理员账号继续。", bootstrapTitle: "初始化平台管理员", bootstrapBody: "创建平台所有者账号。后续客户和管理员账号由管理中心创建。", remember: "保持登录", signIn: "登录", createOwner: "创建所有者账号" },
     forbidden: { title: "无法访问管理中心", body: "当前账号是客户账号，没有管理员权限。" },
     workflow: { new: "待跟进", contacting: "沟通中", confirmed: "已确认", in_production: "制作中", awaiting_customer: "待客户确认", completed: "已完成", closed: "已关闭" },
@@ -57,7 +57,7 @@ i18n.addResourceBundle("zh-CN", "translation", {
       publish: "上传并立即交付",
       publishing: "正在上传并交付…"
     },
-    voices: { count: "共 {{count}} 个参考音色", create: "新增音色", reference: "参考音色", tags: "标签", order: "排序", status: "状态", action: "操作", enabled: "已启用", disabled: "已停用", recommended: "推荐", edit: "编辑", empty: "暂无参考音色。", editTitle: "编辑参考音色", createTitle: "新增参考音色", id: "稳定 ID", nameZh: "中文名称", nameEn: "英文名称", descriptionZh: "中文描述", descriptionEn: "英文描述", saving: "正在保存…" },
+    voices: { title: "参考音色", count: "共 {{count}} 个参考音色", create: "新增音色", reference: "参考音色", tags: "标签", order: "排序", status: "状态", action: "操作", enabled: "已启用", disabled: "已停用", recommended: "推荐", edit: "编辑", empty: "暂无参考音色。", editTitle: "编辑参考音色", createTitle: "新增参考音色", id: "稳定 ID", nameZh: "中文名称", nameEn: "英文名称", descriptionZh: "中文描述", descriptionEn: "英文描述", saving: "正在保存…" },
     users: {
       search: "姓名或邮箱",
       allRoles: "全部角色",
@@ -97,7 +97,7 @@ i18n.addResourceBundle("en-US", "translation", {
     documentTitle: "Lifewood Admin Center",
     productName: "Project management",
     internalWorkspace: "Internal project follow-up",
-    nav: { home: "Back to home", projects: "Projects", users: "Users", voices: "Voice references" },
+    nav: { home: "Back to home", projects: "Projects", users: "Users", settings: "System settings" },
     auth: { title: "Sign in to Admin Center", body: "Continue with an administrator account.", bootstrapTitle: "Initialize the platform", bootstrapBody: "Create the platform owner. Customer and administrator accounts can then be created here.", remember: "Keep me signed in", signIn: "Sign in", createOwner: "Create owner account" },
     forbidden: { title: "Admin Center unavailable", body: "This is a customer account and does not have administrator access." },
     workflow: { new: "Needs follow-up", contacting: "Contacting", confirmed: "Confirmed", in_production: "In production", awaiting_customer: "Awaiting customer", completed: "Completed", closed: "Closed" },
@@ -147,7 +147,7 @@ i18n.addResourceBundle("en-US", "translation", {
       publish: "Upload & deliver now",
       publishing: "Uploading & delivering…"
     },
-    voices: { count: "{{count}} voice references", create: "Add voice", reference: "Voice reference", tags: "Tags", order: "Order", status: "Status", action: "Action", enabled: "Enabled", disabled: "Disabled", recommended: "Recommended", edit: "Edit", empty: "No voice references yet.", editTitle: "Edit voice reference", createTitle: "Add voice reference", id: "Stable ID", nameZh: "Chinese name", nameEn: "English name", descriptionZh: "Chinese description", descriptionEn: "English description", saving: "Saving…" },
+    voices: { title: "Voice references", count: "{{count}} voice references", create: "Add voice", reference: "Voice reference", tags: "Tags", order: "Order", status: "Status", action: "Action", enabled: "Enabled", disabled: "Disabled", recommended: "Recommended", edit: "Edit", empty: "No voice references yet.", editTitle: "Edit voice reference", createTitle: "Add voice reference", id: "Stable ID", nameZh: "Chinese name", nameEn: "English name", descriptionZh: "Chinese description", descriptionEn: "English description", saving: "Saving…" },
     users: {
       search: "Name or email",
       allRoles: "All roles",

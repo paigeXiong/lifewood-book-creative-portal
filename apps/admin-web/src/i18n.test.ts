@@ -19,7 +19,8 @@ const requiredKeys = [
   "errors.admin.selfDeactivate",
   "errors.admin.userNotFound",
   "errors.admin.ownerProtected",
-  "admin.nav.voices",
+  "admin.nav.settings",
+  "admin.voices.title",
   "admin.voices.create",
   "admin.voices.descriptionEn",
 ];

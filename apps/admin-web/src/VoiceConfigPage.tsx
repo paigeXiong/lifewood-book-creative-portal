@@ -36,6 +36,7 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
 
   return <main className="content config-content">
     <section className="page-toolbar">
+      <h1 className="config-context">{t("admin.voices.title")}</h1>
       <span className="result-count">{t("admin.voices.count", { count: voices.data?.length ?? 0 })}</span>
       <button className="primary push-right" type="button" onClick={() => { save.reset(); setEditing({ ...emptyVoice }); }}>{t("admin.voices.create")}</button>
     </section>
