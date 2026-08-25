@@ -29,11 +29,12 @@ internal static class FormOptionGroups
     public const string VoiceAges = "voice-ages";
     public const string Accents = "accents";
     public const string VoiceEmotions = "voice-emotions";
+    public const string VoiceTags = "voice-tags";
 
     public static readonly IReadOnlySet<string> Configurable = new HashSet<string>(
         [Brands, VideoGoals, Audiences, Genres, ContentLanguages, VideoDurations, PublishingPlatforms,
          RoleTypes, AgeRanges, Genders, VisualStyles, MoodTags, ImageStyleTags, PaceTags,
-         NarrationTones, SpeechRates, VoiceGenders, VoiceAges, Accents, VoiceEmotions],
+         NarrationTones, SpeechRates, VoiceGenders, VoiceAges, Accents, VoiceEmotions, VoiceTags],
         StringComparer.Ordinal);
 }
 
@@ -112,7 +113,8 @@ internal sealed class FormOptionRepository(string connectionString)
             VoiceGenders = EnabledForLocale(FormOptionGroups.VoiceGenders, locale),
             VoiceAges = EnabledForLocale(FormOptionGroups.VoiceAges, locale),
             Accents = EnabledForLocale(FormOptionGroups.Accents, locale),
-            VoiceEmotions = EnabledForLocale(FormOptionGroups.VoiceEmotions, locale)
+            VoiceEmotions = EnabledForLocale(FormOptionGroups.VoiceEmotions, locale),
+            VoiceTags = EnabledForLocale(FormOptionGroups.VoiceTags, locale)
         };
     }
 
@@ -222,6 +224,7 @@ internal sealed class FormOptionRepository(string connectionString)
         yield return (FormOptionGroups.VoiceAges, zh.VoiceAges, en.VoiceAges);
         yield return (FormOptionGroups.Accents, zh.Accents, en.Accents);
         yield return (FormOptionGroups.VoiceEmotions, zh.VoiceEmotions, en.VoiceEmotions);
+        yield return (FormOptionGroups.VoiceTags, zh.VoiceTags, en.VoiceTags);
     }
 
     private static void Save(SqliteConnection connection, string groupId, string id, UpsertFormOptionRequest request, SqliteTransaction? transaction = null)

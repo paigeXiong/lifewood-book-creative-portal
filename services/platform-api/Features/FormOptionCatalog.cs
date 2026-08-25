@@ -25,7 +25,6 @@ internal static class FormOptionCatalog
     public static readonly IReadOnlySet<string> VoiceAgeIds = Set("young-adult", "adult", "mature", "unspecified");
     public static readonly IReadOnlySet<string> AccentIds = Set("neutral-us", "neutral-uk", "mandarin", "unspecified");
     public static readonly IReadOnlySet<string> VoiceEmotionIds = Set("warm", "confident", "calm", "energetic", "reflective");
-    public static readonly IReadOnlySet<string> VoiceTagIds = Set("warm", "natural", "grounded", "professional", "bright", "clear");
 
     public static FormOptionsDto ForLocale(string locale)
     {

@@ -88,4 +88,42 @@ describe("administrator API client", () => {
     expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-admin");
     expect(JSON.parse(String(options.body))).toMatchObject({ accept: ["image/jpeg"], maxBytes: 12000000, maxFiles: 2, required: true });
   });
+  it("saves voice metadata with a concurrency token and excludes server-owned audio state", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-admin" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify({ id: "warm-storyteller", updatedAt: "2026-08-25T00:00:01Z" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminService.saveVoiceReference({ id: "warm-storyteller", nameZhCn: "温暖叙述", nameEnUs: "Warm storyteller", descriptionZhCn: "中文", descriptionEnUs: "English", audioUrl: "/api/voices/warm-storyteller/sample", tagIds: ["warm"], recommended: true, enabled: true, sortOrder: 10, updatedAt: "2026-08-25T00:00:00Z" });
+
+    const [, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    const payload = JSON.parse(String(options.body));
+    expect(payload.expectedUpdatedAt).toBe("2026-08-25T00:00:00Z");
+    expect(payload.audioUrl).toBeUndefined();
+    expect(payload.updatedAt).toBeUndefined();
+  });
+  it("uploads and removes real voice samples with CSRF protection", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-admin" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify({ id: "warm-storyteller", audioUrl: "/api/voices/warm-storyteller/sample" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File([new Uint8Array([0x49, 0x44, 0x33])], "sample.mp3", { type: "audio/mpeg" });
+    await adminService.uploadVoiceSample("warm-storyteller", file);
+    let [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/admin/voices/warm-storyteller/sample");
+    expect(options.method).toBe("POST");
+    expect(options.body).toBeInstanceOf(FormData);
+    expect((options.body as FormData).get("file")).toBe(file);
+    expect(new Headers(options.headers).has("Content-Type")).toBe(false);
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBeTruthy();
+
+    await adminService.removeVoiceSample("warm-storyteller");
+    [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/admin/voices/warm-storyteller/sample");
+    expect(options.method).toBe("DELETE");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBeTruthy();
+  });
 });

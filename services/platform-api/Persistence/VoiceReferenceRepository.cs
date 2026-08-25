@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Lifewood.PlatformApi.Persistence;
 
-internal enum VoiceWriteOutcome { Saved, Invalid }
+internal enum VoiceWriteOutcome { Saved, Invalid, Conflict }
 
 internal sealed record VoiceWriteResult(VoiceWriteOutcome Outcome, string? Field = null);
 
@@ -44,12 +44,12 @@ internal sealed class VoiceReferenceRepository(string connectionString)
                 en[index].Name,
                 zh[index].Description,
                 en[index].Description,
-                en[index].AudioUrl,
                 en[index].TagIds,
                 en[index].Recommended,
                 en[index].Enabled,
-                index * 10);
-            Save(connection, en[index].Id, request, transaction);
+                index * 10,
+                null);
+            Save(connection, en[index].Id, request, transaction, en[index].AudioUrl);
         }
         transaction.Commit();
     }
@@ -88,7 +88,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, name_zh_cn, name_en_us, description_zh_cn, description_en_us,
-                   audio_url, tag_ids, recommended, enabled, sort_order
+                   audio_url, tag_ids, recommended, enabled, sort_order, updated_at
             FROM voice_references
             ORDER BY sort_order, id;
             """;
@@ -98,7 +98,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         return [.. items];
     }
 
-    public VoiceWriteResult Upsert(string id, UpsertVoiceReferenceRequest? request, out AdminVoiceReferenceDto? item)
+    public VoiceWriteResult Upsert(string id, UpsertVoiceReferenceRequest? request, IReadOnlySet<string> enabledTagIds, out AdminVoiceReferenceDto? item)
     {
         item = null;
         if (!ValidId(id)) return new(VoiceWriteOutcome.Invalid, "id");
@@ -108,13 +108,17 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         if (!ValidText(request.DescriptionZhCn, 1, 500)) return new(VoiceWriteOutcome.Invalid, "descriptionZhCn");
         if (!ValidText(request.DescriptionEnUs, 1, 500)) return new(VoiceWriteOutcome.Invalid, "descriptionEnUs");
         if (request.SortOrder is < 0 or > 10000) return new(VoiceWriteOutcome.Invalid, "sortOrder");
-        if (request.TagIds is null || request.TagIds.Length > 12 || request.TagIds.Any(tag => !Features.FormOptionCatalog.VoiceTagIds.Contains(tag)))
-            return new(VoiceWriteOutcome.Invalid, "tagIds");
-        var expectedAudioUrl = $"/api/voices/{id}/sample";
-        if (request.AudioUrl is not null && !request.AudioUrl.Equals(expectedAudioUrl, StringComparison.Ordinal))
-            return new(VoiceWriteOutcome.Invalid, "audioUrl");
 
         using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        var previous = GetAdmin(connection, id, transaction);
+        if (previous is null ? request.ExpectedUpdatedAt is not null : request.ExpectedUpdatedAt != previous.UpdatedAt)
+            return new(VoiceWriteOutcome.Conflict, "expectedUpdatedAt");
+        var allowedTagIds = new HashSet<string>(enabledTagIds, StringComparer.Ordinal);
+        if (previous is not null) allowedTagIds.UnionWith(previous.TagIds);
+        if (request.TagIds is null || request.TagIds.Length > 12 || request.TagIds.Any(tag => !allowedTagIds.Contains(tag)))
+            return new(VoiceWriteOutcome.Invalid, "tagIds");
+
         Save(connection, id, request with
         {
             NameZhCn = request.NameZhCn.Trim(),
@@ -122,9 +126,41 @@ internal sealed class VoiceReferenceRepository(string connectionString)
             DescriptionZhCn = request.DescriptionZhCn.Trim(),
             DescriptionEnUs = request.DescriptionEnUs.Trim(),
             TagIds = [.. request.TagIds.Distinct(StringComparer.Ordinal)]
-        });
+        }, transaction, preserveAudio: true);
+        transaction.Commit();
         item = GetAdmin(connection, id);
         return new(VoiceWriteOutcome.Saved);
+    }
+    public void ReconcileAudioAvailability(Func<string, bool> hasSample)
+    {
+        foreach (var voice in ListAdmin())
+        {
+            var available = hasSample(voice.Id);
+            if (available != (voice.AudioUrl is not null)) SetAudioAvailable(voice.Id, available, out _);
+        }
+    }
+    public bool Exists(string id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM voice_references WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        return Convert.ToInt32(command.ExecuteScalar()) == 1;
+    }
+
+    public bool SetAudioAvailable(string id, bool available, out AdminVoiceReferenceDto? item)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE voice_references SET audio_url = $audioUrl, updated_at = $updatedAt WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$audioUrl", available ? $"/api/voices/{id}/sample" : DBNull.Value);
+        command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$id", id);
+        if (command.ExecuteNonQuery() != 1) { item = null; return false; }
+        item = GetAdmin(connection, id);
+        return true;
     }
 
     public IReadOnlySet<string> EnabledIds()
@@ -138,7 +174,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         return ids;
     }
 
-    private static void Save(SqliteConnection connection, string id, UpsertVoiceReferenceRequest request, SqliteTransaction? transaction = null)
+    private static void Save(SqliteConnection connection, string id, UpsertVoiceReferenceRequest request, SqliteTransaction? transaction = null, string? audioUrl = null, bool preserveAudio = false)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -154,7 +190,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
                 name_en_us = excluded.name_en_us,
                 description_zh_cn = excluded.description_zh_cn,
                 description_en_us = excluded.description_en_us,
-                audio_url = excluded.audio_url,
+                audio_url = CASE WHEN $preserveAudio = 1 THEN voice_references.audio_url ELSE excluded.audio_url END,
                 tag_ids = excluded.tag_ids,
                 recommended = excluded.recommended,
                 enabled = excluded.enabled,
@@ -166,7 +202,8 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         command.Parameters.AddWithValue("$nameEn", request.NameEnUs);
         command.Parameters.AddWithValue("$descriptionZh", request.DescriptionZhCn);
         command.Parameters.AddWithValue("$descriptionEn", request.DescriptionEnUs);
-        command.Parameters.AddWithValue("$audioUrl", (object?)request.AudioUrl ?? DBNull.Value);
+        command.Parameters.AddWithValue("$audioUrl", (object?)audioUrl ?? DBNull.Value);
+        command.Parameters.AddWithValue("$preserveAudio", preserveAudio ? 1 : 0);
         command.Parameters.AddWithValue("$tags", string.Join(',', request.TagIds));
         command.Parameters.AddWithValue("$recommended", request.Recommended ? 1 : 0);
         command.Parameters.AddWithValue("$enabled", request.Enabled ? 1 : 0);
@@ -174,13 +211,13 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
         command.ExecuteNonQuery();
     }
-
-    private static AdminVoiceReferenceDto? GetAdmin(SqliteConnection connection, string id)
+    private static AdminVoiceReferenceDto? GetAdmin(SqliteConnection connection, string id, SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT id, name_zh_cn, name_en_us, description_zh_cn, description_en_us,
-                   audio_url, tag_ids, recommended, enabled, sort_order
+                   audio_url, tag_ids, recommended, enabled, sort_order, updated_at
             FROM voice_references WHERE id = $id;
             """;
         command.Parameters.AddWithValue("$id", id);
@@ -198,7 +235,8 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         SplitTags(reader.GetString(6)),
         reader.GetInt32(7) == 1,
         reader.GetInt32(8) == 1,
-        reader.GetInt32(9));
+        reader.GetInt32(9),
+        reader.GetString(10));
 
     private static string[] SplitTags(string value) =>
         value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

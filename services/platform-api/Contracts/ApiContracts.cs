@@ -64,18 +64,19 @@ public sealed record AdminVoiceReferenceDto(
     string[] TagIds,
     bool Recommended,
     bool Enabled,
-    int SortOrder);
+    int SortOrder,
+    string UpdatedAt);
 
 public sealed record UpsertVoiceReferenceRequest(
     string NameZhCn,
     string NameEnUs,
     string DescriptionZhCn,
     string DescriptionEnUs,
-    string? AudioUrl,
     string[] TagIds,
     bool Recommended,
     bool Enabled,
-    int SortOrder);
+    int SortOrder,
+    string? ExpectedUpdatedAt);
 
 public sealed record AdminFormOptionDto(
     string GroupId,

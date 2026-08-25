@@ -260,6 +260,15 @@ export const adminService = {
     return request<AdminFormOption>(`/admin/form-options/${encodeURIComponent(option.groupId)}/${encodeURIComponent(option.id)}`, { method: "PUT", body: JSON.stringify({ ...payload, expectedUpdatedAt: updatedAt }) });
   },
 
-  saveVoiceReference: (voice: AdminVoiceReference) =>
-    request<AdminVoiceReference>(`/admin/voices/${encodeURIComponent(voice.id)}`, { method: "PUT", body: JSON.stringify(voice) }),
+  saveVoiceReference: (voice: AdminVoiceReference) => {
+    const { audioUrl: _audioUrl, updatedAt, ...metadata } = voice;
+    return request<AdminVoiceReference>(`/admin/voices/${encodeURIComponent(voice.id)}`, { method: "PUT", body: JSON.stringify({ ...metadata, expectedUpdatedAt: updatedAt }) });
+  },
+  uploadVoiceSample: (id: string, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<AdminVoiceReference>(`/admin/voices/${encodeURIComponent(id)}/sample`, { method: "POST", body });
+  },
+  removeVoiceSample: (id: string) =>
+    request<AdminVoiceReference>(`/admin/voices/${encodeURIComponent(id)}/sample`, { method: "DELETE" }),
 };

@@ -50,6 +50,7 @@ export interface AdminVoiceReference {
   recommended: boolean;
   enabled: boolean;
   sortOrder: number;
+  updatedAt: string | null;
 }
 
 export interface AdminFileCategory {

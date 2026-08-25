@@ -82,6 +82,8 @@ public sealed class PersistenceIntegrationTests : IDisposable
     {
         var voices = new VoiceReferenceRepository(ConnectionString);
         voices.Initialize();
+        var options = new FormOptionRepository(ConnectionString);
+        options.Initialize();
         Assert.Equal(4, voices.ListAdmin().Length);
         Execute("DELETE FROM voice_references WHERE id = 'grounded-narrator';");
         Execute("UPDATE voice_references SET name_en_us = 'Edited by admin' WHERE id = 'warm-storyteller';");
@@ -95,22 +97,37 @@ public sealed class PersistenceIntegrationTests : IDisposable
             "Test voice",
             "中文描述",
             "English description",
-            null,
             ["warm", "clear"],
             true,
             true,
-            5);
-        var saved = voices.Upsert("test-voice", request, out var item);
+            5,
+            null);
+        var saved = voices.Upsert("test-voice", request, options.EnabledIds(FormOptionGroups.VoiceTags), out var item);
         Assert.Equal(VoiceWriteOutcome.Saved, saved.Outcome);
         Assert.NotNull(item);
         Assert.Equal("测试音色", voices.ForLocale("zh-CN").Single(value => value.Id == "test-voice").Name);
         Assert.Equal("Test voice", voices.ForLocale("en-US").Single(value => value.Id == "test-voice").Name);
         Assert.Contains("test-voice", voices.EnabledIds());
 
-        var disabled = voices.Upsert("test-voice", request with { Enabled = false }, out _);
+        var disabled = voices.Upsert("test-voice", request with { Enabled = false, ExpectedUpdatedAt = item!.UpdatedAt }, options.EnabledIds(FormOptionGroups.VoiceTags), out _);
         Assert.Equal(VoiceWriteOutcome.Saved, disabled.Outcome);
         Assert.DoesNotContain(voices.ForLocale("zh-CN"), value => value.Id == "test-voice");
         Assert.DoesNotContain("test-voice", voices.EnabledIds());
+
+        Assert.True(voices.SetAudioAvailable("test-voice", true, out var withAudio));
+        Assert.Equal("/api/voices/test-voice/sample", withAudio!.AudioUrl);
+        voices.ReconcileAudioAvailability(_ => false);
+        Assert.Null(voices.ListAdmin().Single(value => value.Id == "test-voice").AudioUrl);
+
+        Execute("UPDATE form_options SET enabled = 0 WHERE group_id = $group AND id = $id;", ("$group", FormOptionGroups.VoiceTags), ("$id", "clear"));
+        var currentVoice = voices.ListAdmin().Single(value => value.Id == "test-voice");
+        var retainedLegacyTag = voices.Upsert("test-voice", request with { ExpectedUpdatedAt = currentVoice.UpdatedAt }, options.EnabledIds(FormOptionGroups.VoiceTags), out _);
+        Assert.Equal(VoiceWriteOutcome.Saved, retainedLegacyTag.Outcome);
+        var staleVoice = voices.Upsert("test-voice", request with { ExpectedUpdatedAt = currentVoice.UpdatedAt }, options.EnabledIds(FormOptionGroups.VoiceTags), out _);
+        Assert.Equal(VoiceWriteOutcome.Conflict, staleVoice.Outcome);
+        var rejectedDisabledTag = voices.Upsert("new-voice", request, options.EnabledIds(FormOptionGroups.VoiceTags), out _);
+        Assert.Equal(VoiceWriteOutcome.Invalid, rejectedDisabledTag.Outcome);
+        Assert.Equal("tagIds", rejectedDisabledTag.Field);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Net;
 using System.Security.Claims;
@@ -34,13 +35,34 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
 });
 
-var dataDirectory = Path.Combine(builder.Environment.ContentRootPath, "data");
+var configuredDataDirectory = builder.Configuration["Lifewood:DataDirectory"];
+var dataDirectory = string.IsNullOrWhiteSpace(configuredDataDirectory)
+    ? Path.Combine(builder.Environment.ContentRootPath, "data")
+    : Path.GetFullPath(Path.IsPathRooted(configuredDataDirectory)
+        ? configuredDataDirectory
+        : Path.Combine(builder.Environment.ContentRootPath, configuredDataDirectory));
 var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db")}";
-var voiceSampleDirectory = Path.Combine(AppContext.BaseDirectory, "assets", "voice-samples");
+var voiceSampleDirectory = Path.Combine(dataDirectory, "voice-samples");
+var voiceSampleLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
 Directory.CreateDirectory(dataDirectory);
 var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
 using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-var keyDirectory = Path.Combine(dataDirectory, "data-protection-keys");
+Directory.CreateDirectory(voiceSampleDirectory);
+CleanupOrphanedVoiceUploads(voiceSampleDirectory);
+var bundledSampleDirectory = Path.Combine(AppContext.BaseDirectory, "assets", "voice-samples");
+var bundledSampleMarker = Path.Combine(voiceSampleDirectory, ".bundled-samples-v1");
+if (!File.Exists(bundledSampleMarker) && Directory.Exists(bundledSampleDirectory))
+{
+    var bundledSamples = Directory.EnumerateFiles(bundledSampleDirectory)
+        .Where(path => Path.GetExtension(path).Equals(".wav", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+    foreach (var source in bundledSamples)
+    {
+        var target = Path.Combine(voiceSampleDirectory, Path.GetFileName(source));
+        if (!File.Exists(target)) File.Copy(source, target);
+    }
+    if (bundledSamples.Length > 0) File.WriteAllText(bundledSampleMarker, DateTimeOffset.UtcNow.ToString("O"));
+}var keyDirectory = Path.Combine(dataDirectory, "data-protection-keys");
 Directory.CreateDirectory(keyDirectory);
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keyDirectory))
@@ -97,6 +119,10 @@ deliveries.Initialize();
 builder.Services.AddSingleton(deliveries);
 var voiceReferences = new VoiceReferenceRepository(databaseConnection);
 voiceReferences.Initialize();
+RecoverVoiceSampleBackups(voiceSampleDirectory, voiceReferences);
+voiceReferences.ReconcileAudioAvailability(id =>
+    File.Exists(Path.Combine(voiceSampleDirectory, id + ".wav")) ||
+    File.Exists(Path.Combine(voiceSampleDirectory, id + ".mp3")));
 builder.Services.AddSingleton(voiceReferences);
 var formOptions = new FormOptionRepository(databaseConnection);
 formOptions.Initialize();
@@ -119,10 +145,11 @@ app.Use(async (context, next) =>
     var requestSize = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (requestSize is { IsReadOnly: false })
     {
-        var isUpload = HttpMethods.IsPost(context.Request.Method) &&
+        var isVoiceSample = HttpMethods.IsPost(context.Request.Method) && context.Request.Path.Value?.EndsWith("/sample", StringComparison.Ordinal) == true;
+        var isLargeUpload = HttpMethods.IsPost(context.Request.Method) &&
             (context.Request.Path.Value?.EndsWith("/files", StringComparison.Ordinal) == true || context.Request.Path.Value?.EndsWith("/deliveries", StringComparison.Ordinal) == true);
         var isAuthWrite = context.Request.Path.StartsWithSegments("/api/auth") && !HttpMethods.IsGet(context.Request.Method);
-        requestSize.MaxRequestBodySize = isUpload ? 510_000_000 : isAuthWrite ? 16_384 : 2_000_000;
+        requestSize.MaxRequestBodySize = isVoiceSample ? 22_000_000 : isLargeUpload ? 510_000_000 : isAuthWrite ? 16_384 : 2_000_000;
     }
     context.Response.Headers.Append("X-Request-Id", context.TraceIdentifier);
     try { await next(); }
@@ -440,28 +467,181 @@ api.MapGet("/admin/voices", (HttpContext context, VoiceReferenceRepository voice
     return Results.Ok(voices.ListAdmin());
 });
 
-api.MapPut("/admin/voices/{id}", (string id, UpsertVoiceReferenceRequest? request, HttpContext context, VoiceReferenceRepository voices) =>
+api.MapPut("/admin/voices/{id}", async (string id, UpsertVoiceReferenceRequest? request, HttpContext context, VoiceReferenceRepository voices, FormOptionRepository options) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    var result = voices.Upsert(id, request, out var saved);
-    return result.Outcome == VoiceWriteOutcome.Saved
-        ? Results.Ok(saved)
-        : Error(context, 400, "validation.failed", "errors.validation.failed", "The voice reference is invalid.", false,
-            [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")]);
+    var gate = voiceSampleLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+    await gate.WaitAsync(context.RequestAborted);
+    try
+    {
+        var result = voices.Upsert(id, request, options.EnabledIds(FormOptionGroups.VoiceTags), out var saved);
+        return result.Outcome switch
+        {
+            VoiceWriteOutcome.Saved => Results.Ok(saved),
+            VoiceWriteOutcome.Conflict => Error(context, 409, "voice.conflict", "admin.voices.conflict", "This voice reference changed elsewhere. Reload and try again.", false),
+            _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The voice reference is invalid.", false,
+                [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+        };
+    }
+    finally { gate.Release(); }
 });
 
+// Form endpoint metadata is disabled because the global unsafe-method middleware validates CSRF before route execution.
+api.MapPost("/admin/voices/{id}/sample", async (string id, HttpContext context, VoiceReferenceRepository voices) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var gate = voiceSampleLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+    await gate.WaitAsync(context.RequestAborted);
+    try
+    {
+        if (!voices.Exists(id)) return Error(context, 404, "voice.not_found", "errors.http.notFound", "The voice reference was not found.", false);
+        if (!context.Request.HasFormContentType) return Error(context, 400, "validation.failed", "errors.validation.failed", "A multipart form is required.", false);
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var file = form.Files.GetFile("file");
+        if (file is null || file.Length <= 0 || file.Length > 20_000_000)
+            return Error(context, 400, "validation.audio", "errors.validation.file", "Choose a WAV or MP3 file up to 20 MB.", false);
+        var contentType = NormalizeAudioContentType(file.ContentType, file.FileName);
+        if (contentType is null || !await HasExpectedAudioSignature(file, contentType, context.RequestAborted))
+            return Error(context, 400, "validation.audio", "errors.validation.file", "Choose a valid WAV or MP3 audio file.", false);
+        var extension = contentType == "audio/wav" ? ".wav" : ".mp3";
+        var target = Path.Combine(voiceSampleDirectory, id + extension);
+        var temporary = Path.Combine(voiceSampleDirectory, id + "." + Guid.NewGuid().ToString("N") + ".upload");
+        var staged = new List<(string Original, string Backup)>();
+        var installed = false;
+        var stateUpdated = false;
+        try
+        {
+            await using (var output = File.Create(temporary))
+                await file.CopyToAsync(output, context.RequestAborted);
+            staged = StageVoiceSamples(voiceSampleDirectory, id);
+            File.Move(temporary, target, true);
+            installed = true;
+            if (!voices.SetAudioAvailable(id, true, out var updated))
+            {
+                File.Delete(target);
+                installed = false;
+                RestoreVoiceSamples(staged);
+                return Error(context, 404, "voice.not_found", "errors.http.notFound", "The voice reference was not found.", false);
+            }
+            stateUpdated = true;
+            DeleteVoiceSampleBackups(staged);
+            return Results.Ok(updated);
+        }
+        catch
+        {
+            if (!stateUpdated)
+            {
+                if (installed && File.Exists(target)) File.Delete(target);
+                RestoreVoiceSamples(staged);
+            }
+            throw;
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+    finally { gate.Release(); }
+}).DisableAntiforgery();
+
+api.MapDelete("/admin/voices/{id}/sample", async (string id, HttpContext context, VoiceReferenceRepository voices) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var gate = voiceSampleLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+    await gate.WaitAsync(context.RequestAborted);
+    try
+    {
+        if (!voices.Exists(id)) return Error(context, 404, "voice.not_found", "errors.http.notFound", "The voice reference was not found.", false);
+        var staged = StageVoiceSamples(voiceSampleDirectory, id);
+        var stateUpdated = false;
+        try
+        {
+            if (!voices.SetAudioAvailable(id, false, out var updated))
+            {
+                RestoreVoiceSamples(staged);
+                return Error(context, 404, "voice.not_found", "errors.http.notFound", "The voice reference was not found.", false);
+            }
+            stateUpdated = true;
+            DeleteVoiceSampleBackups(staged);
+            return Results.Ok(updated);
+        }
+        catch
+        {
+            if (!stateUpdated) RestoreVoiceSamples(staged);
+            throw;
+        }
+    }
+    finally { gate.Release(); }
+});
+
+api.MapGet("/admin/voices/{id}/sample", async (string id, HttpContext context, VoiceReferenceRepository voices) =>
+{
+    var user = CurrentUser(context);
+    if (user is null)
+    {
+        await Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false).ExecuteAsync(context);
+        return;
+    }
+    if (!Can(user, "admin.config.manage"))
+    {
+        await Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false).ExecuteAsync(context);
+        return;
+    }
+    if (!voices.Exists(id))
+    {
+        await Error(context, 404, "voice.not_found", "errors.http.notFound", "The voice reference was not found.", false).ExecuteAsync(context);
+        return;
+    }
+    var gate = voiceSampleLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+    (FileStream Stream, string ContentType)? snapshot;
+    await gate.WaitAsync(context.RequestAborted);
+    try
+    {
+        snapshot = voices.Exists(id) ? OpenVoiceSampleSnapshot(voiceSampleDirectory, id) : null;
+    }
+    finally { gate.Release(); }
+    if (snapshot is null)
+    {
+        await Results.NotFound().ExecuteAsync(context);
+        return;
+    }
+    context.Response.Headers.CacheControl = "no-cache";
+    await using var sampleStream = snapshot.Value.Stream;
+    await Results.Stream(sampleStream, snapshot.Value.ContentType, enableRangeProcessing: true).ExecuteAsync(context);
+});
 api.MapGet("/voices", (HttpContext context, VoiceReferenceRepository voices) =>
     Results.Ok(voices.ForLocale(Locale(context))));
 
-api.MapGet("/voices/{id}/sample", (string id, VoiceReferenceRepository voices) =>
+api.MapGet("/voices/{id}/sample", async (string id, HttpContext context, VoiceReferenceRepository voices) =>
 {
-    if (!voices.EnabledIds().Contains(id)) return Results.NotFound();
-    var path = Path.Combine(voiceSampleDirectory, $"{id}.wav");
-    return File.Exists(path) ? Results.File(path, "audio/wav", enableRangeProcessing: true) : Results.NotFound();
+    if (!voices.EnabledIds().Contains(id))
+    {
+        await Results.NotFound().ExecuteAsync(context);
+        return;
+    }
+    var gate = voiceSampleLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+    (FileStream Stream, string ContentType)? snapshot;
+    await gate.WaitAsync(context.RequestAborted);
+    try
+    {
+        snapshot = voices.EnabledIds().Contains(id) ? OpenVoiceSampleSnapshot(voiceSampleDirectory, id) : null;
+    }
+    finally { gate.Release(); }
+    if (snapshot is null)
+    {
+        await Results.NotFound().ExecuteAsync(context);
+        return;
+    }
+    context.Response.Headers.CacheControl = "no-cache";
+    await using var sampleStream = snapshot.Value.Stream;
+    await Results.Stream(sampleStream, snapshot.Value.ContentType, enableRangeProcessing: true).ExecuteAsync(context);
 });
-
 api.MapGet("/projects", (HttpContext context, ProjectRepository projects, string? status, string? search, int page = 1, int pageSize = 10) =>
 {
     var user = CurrentUser(context);
@@ -757,6 +937,184 @@ static string NormalizeContentType(string contentType, string fileName)
         ? expected : "application/octet-stream";
 }
 
+static void CleanupOrphanedVoiceUploads(string sampleDirectory)
+{
+    foreach (var path in Directory.EnumerateFiles(sampleDirectory, "*.upload"))
+        File.Delete(path);
+}
+static List<(string Original, string Backup)> StageVoiceSamples(string sampleDirectory, string id)
+{
+    var staged = new List<(string Original, string Backup)>();
+    try
+    {
+        foreach (var extension in new[] { ".wav", ".mp3" })
+        {
+            var original = Path.Combine(sampleDirectory, id + extension);
+            if (!File.Exists(original)) continue;
+            var backup = original + ".backup";
+            if (File.Exists(backup)) throw new IOException("A pending voice sample operation must be recovered before retrying.");
+            File.Move(original, backup);
+            staged.Add((original, backup));
+        }
+        return staged;
+    }
+    catch
+    {
+        RestoreVoiceSamples(staged);
+        throw;
+    }
+}
+
+static void RestoreVoiceSamples(IEnumerable<(string Original, string Backup)> staged)
+{
+    foreach (var entry in staged.Reverse())
+        if (File.Exists(entry.Backup)) File.Move(entry.Backup, entry.Original, true);
+}
+
+static void DeleteVoiceSampleBackups(IEnumerable<(string Original, string Backup)> staged)
+{
+    foreach (var entry in staged)
+        if (File.Exists(entry.Backup)) File.Delete(entry.Backup);
+}
+
+static void RecoverVoiceSampleBackups(string sampleDirectory, VoiceReferenceRepository voices)
+{
+    var voiceStates = voices.ListAdmin().ToDictionary(item => item.Id, item => item.AudioUrl is not null, StringComparer.Ordinal);
+    var groups = Directory.EnumerateFiles(sampleDirectory, "*.backup")
+        .Select(backup => (Original: backup[..^".backup".Length], Backup: backup))
+        .Where(entry => Path.GetExtension(entry.Original) is ".wav" or ".mp3")
+        .GroupBy(entry => Path.GetFileNameWithoutExtension(entry.Original), StringComparer.Ordinal);
+    foreach (var group in groups)
+    {
+        var hasRegularSample = File.Exists(Path.Combine(sampleDirectory, group.Key + ".wav")) || File.Exists(Path.Combine(sampleDirectory, group.Key + ".mp3"));
+        var databaseHasSample = voiceStates.TryGetValue(group.Key, out var available) && available;
+        if (hasRegularSample || !databaseHasSample) DeleteVoiceSampleBackups(group);
+        else RestoreVoiceSamples(group);
+    }
+}
+static (FileStream Stream, string ContentType)? OpenVoiceSampleSnapshot(string sampleDirectory, string id)
+{
+    var wav = Path.Combine(sampleDirectory, id + ".wav");
+    if (IsPlayableVoiceSample(wav)) return (OpenSharedVoiceSample(wav), "audio/wav");
+    var mp3 = Path.Combine(sampleDirectory, id + ".mp3");
+    return IsPlayableVoiceSample(mp3) ? (OpenSharedVoiceSample(mp3), "audio/mpeg") : null;
+}
+
+static bool IsPlayableVoiceSample(string path)
+{
+    var file = new FileInfo(path);
+    return file.Exists && file.Length is > 0 and <= 20_000_000;
+}
+
+static FileStream OpenSharedVoiceSample(string path) =>
+    new(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+static string? NormalizeAudioContentType(string contentType, string fileName)
+{
+    var normalized = contentType.Split(';', 2)[0].Trim().ToLowerInvariant();
+    var extension = Path.GetExtension(fileName).ToLowerInvariant();
+    if (normalized is "audio/wav" or "audio/x-wav" || extension == ".wav") return "audio/wav";
+    if (normalized == "audio/mpeg" || extension == ".mp3") return "audio/mpeg";
+    return null;
+}
+
+static async Task<bool> HasExpectedAudioSignature(IFormFile file, string contentType, CancellationToken cancellationToken)
+{
+    await using var stream = file.OpenReadStream();
+    return contentType switch
+    {
+        "audio/wav" => await HasValidWaveStructure(stream, file.Length, cancellationToken),
+        "audio/mpeg" => await HasValidMp3Frame(stream, file.Length, cancellationToken),
+        _ => false
+    };
+}
+
+static async Task<bool> HasValidWaveStructure(Stream stream, long fileLength, CancellationToken cancellationToken)
+{
+    if (!stream.CanSeek || fileLength < 46 || fileLength > uint.MaxValue + 8L) return false;
+    var header = new byte[12];
+    await stream.ReadExactlyAsync(header, cancellationToken);
+    if (!header.AsSpan(0, 4).SequenceEqual("RIFF"u8) || !header.AsSpan(8, 4).SequenceEqual("WAVE"u8)) return false;
+    if (BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(4)) + 8L != fileLength) return false;
+
+    var foundFormat = false;
+    ushort sampleBlockAlign = 0;
+    var chunkHeader = new byte[8];
+    for (var chunk = 0; chunk < 128 && stream.Position + chunkHeader.Length <= fileLength; chunk++)
+    {
+        await stream.ReadExactlyAsync(chunkHeader, cancellationToken);
+        var chunkSize = BinaryPrimitives.ReadUInt32LittleEndian(chunkHeader.AsSpan(4));
+        var chunkStart = stream.Position;
+        var next = chunkStart + chunkSize + (chunkSize & 1u);
+        if (next > fileLength) return false;
+        if (chunkHeader.AsSpan(0, 4).SequenceEqual("fmt "u8))
+        {
+            if (chunkSize < 16) return false;
+            var format = new byte[16];
+            await stream.ReadExactlyAsync(format, cancellationToken);
+            var formatTag = BinaryPrimitives.ReadUInt16LittleEndian(format);
+            var channels = BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(2));
+            var sampleRate = BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(4));
+            var byteRate = BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(8));
+            var blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(12));
+            var bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(14));
+            if (formatTag != 1 || channels is < 1 or > 8 || sampleRate is < 8_000 or > 384_000 ||
+                bitsPerSample is not (8 or 16 or 24 or 32) || blockAlign == 0 ||
+                (ulong)byteRate != (ulong)sampleRate * blockAlign || blockAlign != channels * bitsPerSample / 8)
+                return false;
+            sampleBlockAlign = blockAlign;
+            foundFormat = true;
+        }
+        if (chunkHeader.AsSpan(0, 4).SequenceEqual("data"u8))
+            return foundFormat && chunkSize > 0 && sampleBlockAlign > 0 && chunkSize % sampleBlockAlign == 0;
+        stream.Position = next;
+    }
+    return false;
+}
+
+static async Task<bool> HasValidMp3Frame(Stream stream, long fileLength, CancellationToken cancellationToken)
+{
+    if (!stream.CanSeek || fileLength < 4) return false;
+    var id3Header = new byte[10];
+    var frameOffset = 0L;
+    if (fileLength >= id3Header.Length)
+    {
+        await stream.ReadExactlyAsync(id3Header, cancellationToken);
+        if (id3Header.AsSpan(0, 3).SequenceEqual("ID3"u8))
+        {
+            if ((id3Header[6] | id3Header[7] | id3Header[8] | id3Header[9]) >= 0x80) return false;
+            var tagSize = (id3Header[6] << 21) | (id3Header[7] << 14) | (id3Header[8] << 7) | id3Header[9];
+            frameOffset = 10L + tagSize + ((id3Header[5] & 0x10) == 0x10 ? 10 : 0);
+        }
+    }
+    var first = await ReadMp3FrameLength(stream, frameOffset, fileLength, cancellationToken);
+    if (!first.Valid) return false;
+    var nextOffset = frameOffset + first.Length;
+    if (nextOffset == fileLength) return true;
+    var second = await ReadMp3FrameLength(stream, nextOffset, fileLength, cancellationToken);
+    return second.Valid && nextOffset + second.Length <= fileLength;
+}
+
+static async Task<(bool Valid, int Length)> ReadMp3FrameLength(Stream stream, long offset, long fileLength, CancellationToken cancellationToken)
+{
+    if (offset < 0 || offset + 4 > fileLength) return (false, 0);
+    stream.Position = offset;
+    var frame = new byte[4];
+    await stream.ReadExactlyAsync(frame, cancellationToken);
+    if (frame[0] != 0xff || (frame[1] & 0xe0) != 0xe0) return (false, 0);
+    var version = (frame[1] >> 3) & 0x03;
+    var layer = (frame[1] >> 1) & 0x03;
+    var bitrateIndex = (frame[2] >> 4) & 0x0f;
+    var sampleRateIndex = (frame[2] >> 2) & 0x03;
+    if (version == 1 || layer != 1 || bitrateIndex is 0 or 15 || sampleRateIndex == 3) return (false, 0);
+    int[] mpeg1Bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+    int[] mpeg2Bitrates = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+    int[] sampleRates = [44_100, 48_000, 32_000];
+    var bitrate = (version == 3 ? mpeg1Bitrates : mpeg2Bitrates)[bitrateIndex] * 1000;
+    var sampleRate = sampleRates[sampleRateIndex] / (version == 3 ? 1 : version == 2 ? 2 : 4);
+    var padding = (frame[2] >> 1) & 1;
+    var frameLength = (version == 3 ? 144 : 72) * bitrate / sampleRate + padding;
+    return (frameLength >= 24 && offset + frameLength <= fileLength, frameLength);
+}
 static async Task<bool> HasExpectedSignature(IFormFile file, string contentType, CancellationToken cancellationToken)
 {
     var buffer = new byte[512];
