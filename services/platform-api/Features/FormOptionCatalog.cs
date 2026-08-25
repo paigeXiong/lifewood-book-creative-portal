@@ -26,8 +26,6 @@ internal static class FormOptionCatalog
     public static readonly IReadOnlySet<string> AccentIds = Set("neutral-us", "neutral-uk", "mandarin", "unspecified");
     public static readonly IReadOnlySet<string> VoiceEmotionIds = Set("warm", "confident", "calm", "energetic", "reflective");
     public static readonly IReadOnlySet<string> VoiceTagIds = Set("warm", "natural", "grounded", "professional", "bright", "clear");
-    public static readonly IReadOnlySet<string> SourceCategoryIds = Set("book-cover", "manuscript", "key-chapters", "brand-guidelines", "authorization", "supplemental-images");
-    public static readonly IReadOnlySet<string> ReferenceCategoryIds = Set("sample-video", "sample-image", "moodboard", "competitor", "scene-notes", "dos-donts");
 
     public static FormOptionsDto ForLocale(string locale)
     {

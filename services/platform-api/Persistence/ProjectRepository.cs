@@ -262,12 +262,12 @@ internal sealed class ProjectRepository(string connectionString)
             : new SaveResult(SaveOutcome.VersionConflict, current, current.Version);
     }
 
-    public SaveResult AddAsset(string ownerId, string id, int version, ReferenceAssetDto asset)
+    public SaveResult AddAsset(string ownerId, string id, int version, ReferenceAssetDto asset, bool isSource)
     {
         var current = Get(ownerId, id);
         if (current is null) return new SaveResult(SaveOutcome.NotFound, null, null);
         if (current.Status != "draft") return new SaveResult(SaveOutcome.NotEditable, current, current.Version);
-        if (FormOptionCatalog.SourceCategoryIds.Contains(asset.CategoryId))
+        if (isSource)
         {
             var updatedBook = current.Book with { SourceAssets = [.. current.Book.SourceAssets ?? [], asset] };
             return Save(ownerId, id, new SaveDraftRequest(version, current.Project, updatedBook));

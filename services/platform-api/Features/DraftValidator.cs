@@ -1,10 +1,11 @@
 using Lifewood.PlatformApi.Contracts;
+using Lifewood.PlatformApi.Persistence;
 
 namespace Lifewood.PlatformApi.Features;
 
 internal static class DraftValidator
 {
-    public static FieldErrorDto[] Validate(SaveDraftRequest? request)
+    public static FieldErrorDto[] Validate(SaveDraftRequest? request, FormOptionRepository options, FileCategoryRepository fileCategories, TaskDraftDto? current = null)
     {
         var errors = new List<FieldErrorDto>();
         if (request is null) return [Error("request", "required")];
@@ -50,19 +51,22 @@ internal static class DraftValidator
         else if (DateOnly.TryParseExact(request.Project.Deadline, "yyyy-MM-dd", out var deadline) && deadline < DateOnly.FromDateTime(DateTime.Today))
             errors.Add(Error("project.deadline", "past_date"));
 
-        Option(errors, "project.brandId", request.Project.BrandId, FormOptionCatalog.BrandIds, optional: true);
-        Option(errors, "project.videoGoalId", request.Project.VideoGoalId, FormOptionCatalog.VideoGoalIds, optional: true);
-        Options(errors, "project.audienceIds", request.Project.AudienceIds, FormOptionCatalog.AudienceIds);
-        Option(errors, "book.genreId", request.Book.GenreId, FormOptionCatalog.GenreIds, optional: true);
-        Option(errors, "book.contentLanguageId", request.Book.ContentLanguageId, FormOptionCatalog.ContentLanguageIds, optional: true);
-        Option(errors, "book.videoDurationId", request.Book.VideoDurationId, FormOptionCatalog.VideoDurationIds, optional: true);
-        Options(errors, "book.publishingPlatformIds", request.Book.PublishingPlatformIds, FormOptionCatalog.PublishingPlatformIds);
+        var previousProject = current?.Project;
+        var previousBook = current?.Book;
+        Option(errors, "project.brandId", request.Project.BrandId, Allowed(options, FormOptionGroups.Brands, previousProject?.BrandId), optional: true);
+        Option(errors, "project.videoGoalId", request.Project.VideoGoalId, Allowed(options, FormOptionGroups.VideoGoals, previousProject?.VideoGoalId), optional: true);
+        Options(errors, "project.audienceIds", request.Project.AudienceIds, Allowed(options, FormOptionGroups.Audiences, previousProject?.AudienceIds ?? []));
+        Option(errors, "book.genreId", request.Book.GenreId, Allowed(options, FormOptionGroups.Genres, previousBook?.GenreId), optional: true);
+        Option(errors, "book.contentLanguageId", request.Book.ContentLanguageId, Allowed(options, FormOptionGroups.ContentLanguages, previousBook?.ContentLanguageId), optional: true);
+        Option(errors, "book.videoDurationId", request.Book.VideoDurationId, Allowed(options, FormOptionGroups.VideoDurations, previousBook?.VideoDurationId), optional: true);
+        Options(errors, "book.publishingPlatformIds", request.Book.PublishingPlatformIds, Allowed(options, FormOptionGroups.PublishingPlatforms, previousBook?.PublishingPlatformIds ?? []));
 
         var assets = request.Book.SourceAssets;
         if (assets is null) errors.Add(Error("book.sourceAssets", "required"));
         else
         {
-            var categories = FormOptionCatalog.ForLocale("en-US").SourceCategories.ToDictionary(item => item.Id, StringComparer.Ordinal);
+            var categories = fileCategories.ForLocale(FileCategoryScopes.Source, "en-US", enabledOnly: false).ToDictionary(item => item.Id, StringComparer.Ordinal);
+            var existingIds = new HashSet<string>((current?.Book.SourceAssets ?? []).Select(asset => asset.Id), StringComparer.Ordinal);
             foreach (var asset in assets)
             {
                 if (asset is null || string.IsNullOrWhiteSpace(asset.Id) || string.IsNullOrWhiteSpace(asset.CategoryId) ||
@@ -73,13 +77,21 @@ internal static class DraftValidator
                     continue;
                 }
                 if (!categories.TryGetValue(asset.CategoryId, out var category)) errors.Add(Error("book.sourceAssets", "unknown_option"));
-                else if (asset.SizeBytes > category.MaxBytes || !category.Accept.Contains(asset.ContentType, StringComparer.OrdinalIgnoreCase)) errors.Add(Error("book.sourceAssets", "file"));
+                else if (!existingIds.Contains(asset.Id) && (asset.SizeBytes > category.MaxBytes || !category.Accept.Contains(asset.ContentType, StringComparer.OrdinalIgnoreCase))) errors.Add(Error("book.sourceAssets", "file"));
             }
             foreach (var group in assets.Where(asset => asset is not null && !string.IsNullOrWhiteSpace(asset.CategoryId)).GroupBy(asset => asset.CategoryId))
-                if (categories.TryGetValue(group.Key, out var category) && group.Count() > category.MaxFiles) errors.Add(Error("book.sourceAssets", "too_many"));
+                if (categories.TryGetValue(group.Key, out var category) && group.Any(asset => !existingIds.Contains(asset.Id)) && group.Count() > category.MaxFiles) errors.Add(Error("book.sourceAssets", "too_many"));
         }
 
         return errors.ToArray();
+    }
+
+    private static IReadOnlySet<string> Allowed(FormOptionRepository options, string groupId, params string?[] previousValues)
+    {
+        var allowed = new HashSet<string>(options.EnabledIds(groupId), StringComparer.Ordinal);
+        foreach (var value in previousValues)
+            if (!string.IsNullOrWhiteSpace(value)) allowed.Add(value);
+        return allowed;
     }
 
     private static void Max(List<FieldErrorDto> errors, string field, string? value, int length, bool optional = false)

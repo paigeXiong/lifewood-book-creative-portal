@@ -11,9 +11,10 @@ import { Field } from "../components/Field";
 import { ChoiceField } from "../components/ChoiceField";
 import { StepProgress } from "../components/StepProgress";
 import { createCreativeDraftSchema, createCreativeStepSchema, emptyCharacter, type CreativeFormValues } from "./creativeFormSchema";
+import { mergeLegacyOptions, type DisplayConfigOption } from "../legacy-options";
 
-function Options({ items }: { items: ConfigOption[] }) {
-  return <>{items.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</>;
+function Options({ items }: { items: DisplayConfigOption[] }) {
+  return <>{items.map((item) => <option key={item.id} value={item.id} disabled={item.unavailable}>{item.label}</option>)}</>;
 }
 
 function CharacterIdentity({ control, index, roleTypes }: { control: Control<CreativeFormValues>; index: number; roleTypes: ConfigOption[] }) {
@@ -44,16 +45,14 @@ export function CreativeFormPage() {
   const stepSchema = useMemo(() => createCreativeStepSchema(t), [t]);
   const draftQuery = useQuery({ queryKey: ["project", taskId], queryFn: () => projectService.getProject(taskId!, validLocale), enabled: Boolean(taskId) });
   const optionsQuery = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
-  const styleTagMap = useMemo(() => new Map([
-    ...(optionsQuery.data?.moodTags ?? []),
-    ...(optionsQuery.data?.imageStyleTags ?? []),
-    ...(optionsQuery.data?.paceTags ?? []),
-  ].map((item) => [item.id, item.label])), [optionsQuery.data]);
   const form = useForm<CreativeFormValues>({
     resolver: zodResolver(draftSchema),
     defaultValues: { characters: [], visualStyleId: "", moodTagIds: [], imageStyleTagIds: [], paceTagIds: [], styleReferenceImageUrls: [] },
   });
   const characters = useFieldArray({ control: form.control, name: "characters", keyName: "formKey" });
+  const selectedMoodTagIds = useWatch({ control: form.control, name: "moodTagIds" });
+  const selectedImageStyleTagIds = useWatch({ control: form.control, name: "imageStyleTagIds" });
+  const selectedPaceTagIds = useWatch({ control: form.control, name: "paceTagIds" });
 
   useEffect(() => {
     const draft = draftQuery.data;
@@ -113,6 +112,16 @@ export function CreativeFormPage() {
   if (draftQuery.data.status !== "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
 
   const options = optionsQuery.data;
+  const previous = draftQuery.data.creative;
+  const unavailable = t("wizard.unavailableOption");
+  const roleOptions = mergeLegacyOptions(options.roleTypes, previous.characters.map((item) => item.roleTypeId), unavailable);
+  const ageOptions = mergeLegacyOptions(options.ageRanges, previous.characters.map((item) => item.ageRangeId), unavailable);
+  const genderOptions = mergeLegacyOptions(options.genders, previous.characters.map((item) => item.genderId), unavailable);
+  const visualStyleOptions = mergeLegacyOptions(options.visualStyles, [previous.visualStyleId], unavailable);
+  const moodOptions = mergeLegacyOptions(options.moodTags, previous.moodTagIds, unavailable);
+  const imageStyleOptions = mergeLegacyOptions(options.imageStyleTags, previous.imageStyleTagIds, unavailable);
+  const paceOptions = mergeLegacyOptions(options.paceTags, previous.paceTagIds, unavailable);
+  const styleTagMap = new Map([...moodOptions, ...imageStyleOptions, ...paceOptions].map((item) => [item.id, item.label]));
   const conflict = saveCreative.error instanceof ApiError && saveCreative.error.details.code === "project.version_conflict";
   const statusText = saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
   const guardLink = (event: MouseEvent<HTMLAnchorElement>) => { if (form.formState.isDirty && !window.confirm(t("wizard.unsavedChanges"))) event.preventDefault(); };
@@ -142,15 +151,15 @@ export function CreativeFormPage() {
             <div className="character-list">{characters.fields.map((character, index) => <article className="character-card" key={character.formKey}>
               <div className="character-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</div>
               <div className="character-content">
-                <div className="character-card-heading"><CharacterIdentity control={form.control} index={index} roleTypes={options.roleTypes} /><div className="character-actions"><button type="button" aria-label={t("creative.moveUp")} disabled={index === 0} onClick={() => characters.swap(index, index - 1)}>↑</button><button type="button" aria-label={t("creative.moveDown")} disabled={index === characters.fields.length - 1} onClick={() => characters.swap(index, index + 1)}>↓</button><button type="button" className="danger-link" onClick={() => { if (window.confirm(t("creative.deleteConfirm"))) characters.remove(index); }}>{t("creative.delete")}</button></div></div>
+                <div className="character-card-heading"><CharacterIdentity control={form.control} index={index} roleTypes={roleOptions} /><div className="character-actions"><button type="button" aria-label={t("creative.moveUp")} disabled={index === 0} onClick={() => characters.swap(index, index - 1)}>↑</button><button type="button" aria-label={t("creative.moveDown")} disabled={index === characters.fields.length - 1} onClick={() => characters.swap(index, index + 1)}>↓</button><button type="button" className="danger-link" onClick={() => { if (window.confirm(t("creative.deleteConfirm"))) characters.remove(index); }}>{t("creative.delete")}</button></div></div>
                 <div className="form-grid character-grid">
-                  <Field label={t("creative.fields.roleType")} htmlFor={`roleType-${index}`} required error={form.formState.errors.characters?.[index]?.roleTypeId?.message}><select id={`roleType-${index}`} {...form.register(`characters.${index}.roleTypeId`)}><option value="" /><Options items={options.roleTypes} /></select></Field>
+                  <Field label={t("creative.fields.roleType")} htmlFor={`roleType-${index}`} required error={form.formState.errors.characters?.[index]?.roleTypeId?.message}><select id={`roleType-${index}`} {...form.register(`characters.${index}.roleTypeId`)}><option value="" /><Options items={roleOptions} /></select></Field>
                   <Field label={t("creative.fields.characterName")} htmlFor={`characterName-${index}`} required error={form.formState.errors.characters?.[index]?.name?.message}><input id={`characterName-${index}`} {...form.register(`characters.${index}.name`)} /></Field>
                   <Field label={t("creative.fields.storyRole")} htmlFor={`storyRole-${index}`} required className="field-wide" error={form.formState.errors.characters?.[index]?.storyRole?.message}><textarea id={`storyRole-${index}`} rows={2} maxLength={200} {...form.register(`characters.${index}.storyRole`)} /></Field>
                   <Field label={t("creative.fields.personality")} htmlFor={`personality-${index}`} required error={form.formState.errors.characters?.[index]?.personality?.message}><textarea id={`personality-${index}`} rows={3} maxLength={300} {...form.register(`characters.${index}.personality`)} /></Field>
                   <Field label={t("creative.fields.appearance")} htmlFor={`appearance-${index}`} required error={form.formState.errors.characters?.[index]?.appearance?.message}><textarea id={`appearance-${index}`} rows={3} maxLength={300} {...form.register(`characters.${index}.appearance`)} /></Field>
-                  <Field label={t("creative.fields.ageRange")} htmlFor={`ageRange-${index}`}><select id={`ageRange-${index}`} {...form.register(`characters.${index}.ageRangeId`)}><option value="" /><Options items={options.ageRanges} /></select></Field>
-                  <Field label={t("creative.fields.gender")} htmlFor={`gender-${index}`}><select id={`gender-${index}`} {...form.register(`characters.${index}.genderId`)}><option value="" /><Options items={options.genders} /></select></Field>
+                  <Field label={t("creative.fields.ageRange")} htmlFor={`ageRange-${index}`}><select id={`ageRange-${index}`} {...form.register(`characters.${index}.ageRangeId`)}><option value="" /><Options items={ageOptions} /></select></Field>
+                  <Field label={t("creative.fields.gender")} htmlFor={`gender-${index}`}><select id={`gender-${index}`} {...form.register(`characters.${index}.genderId`)}><option value="" /><Options items={genderOptions} /></select></Field>
                   <Field label={t("creative.fields.clothing")} htmlFor={`clothing-${index}`} error={form.formState.errors.characters?.[index]?.clothing?.message}><input id={`clothing-${index}`} maxLength={200} {...form.register(`characters.${index}.clothing`)} /></Field>
                   <Field label={t("creative.fields.emotion")} htmlFor={`emotion-${index}`} error={form.formState.errors.characters?.[index]?.emotion?.message}><input id={`emotion-${index}`} maxLength={150} {...form.register(`characters.${index}.emotion`)} /></Field>
                   <Field label={t("creative.fields.voiceHint")} htmlFor={`voiceHint-${index}`} className="field-wide" error={form.formState.errors.characters?.[index]?.voiceHint?.message}><input id={`voiceHint-${index}`} className="input-long" maxLength={100} {...form.register(`characters.${index}.voiceHint`)} /></Field>
@@ -161,14 +170,14 @@ export function CreativeFormPage() {
 
           <section className="form-panel style-section">
             <h2><span>2.2</span>{t("creative.sections.style")}</h2>
-            <fieldset className="style-fieldset" aria-required="true" aria-invalid={form.formState.errors.visualStyleId ? true : undefined} aria-describedby={form.formState.errors.visualStyleId ? "visual-style-error" : undefined}><legend>{t("creative.fields.visualStyle")}<span className="required" aria-hidden="true">*</span></legend><div className="style-grid">{options.visualStyles.map((item) => <label className="style-option" key={item.id}><input type="radio" value={item.id} {...form.register("visualStyleId")} /><span className="style-swatch" style={{ backgroundColor: item.previewColor ?? "#d8d4c7" }} aria-hidden="true"><i /></span><strong>{item.label}</strong></label>)}</div>{form.formState.errors.visualStyleId?.message && <div className="field-error" id="visual-style-error" role="alert">{form.formState.errors.visualStyleId.message}</div>}</fieldset>
-            <ChoiceField label={t("creative.fields.moodTags")} id="mood-tags" error={form.formState.errors.moodTagIds?.message}><div className="choice-row">{options.moodTags.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} {...form.register("moodTagIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
-            <ChoiceField label={t("creative.fields.imageTags")} id="image-tags" error={form.formState.errors.imageStyleTagIds?.message}><div className="choice-row">{options.imageStyleTags.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} {...form.register("imageStyleTagIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
-            <ChoiceField label={t("creative.fields.paceTags")} id="pace-tags" error={form.formState.errors.paceTagIds?.message}><div className="choice-row">{options.paceTags.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} {...form.register("paceTagIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
+            <fieldset className="style-fieldset" aria-required="true" aria-invalid={form.formState.errors.visualStyleId ? true : undefined} aria-describedby={form.formState.errors.visualStyleId ? "visual-style-error" : undefined}><legend>{t("creative.fields.visualStyle")}<span className="required" aria-hidden="true">*</span></legend><div className="style-grid">{visualStyleOptions.map((item) => <label className="style-option" key={item.id}><input type="radio" value={item.id} disabled={item.unavailable} {...form.register("visualStyleId")} /><span className="style-swatch" style={{ backgroundColor: item.previewColor ?? "#d8d4c7" }} aria-hidden="true"><i /></span><strong>{item.label}</strong></label>)}</div>{form.formState.errors.visualStyleId?.message && <div className="field-error" id="visual-style-error" role="alert">{form.formState.errors.visualStyleId.message}</div>}</fieldset>
+            <ChoiceField label={t("creative.fields.moodTags")} id="mood-tags" error={form.formState.errors.moodTagIds?.message}><div className="choice-row">{moodOptions.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedMoodTagIds.includes(item.id)} {...form.register("moodTagIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
+            <ChoiceField label={t("creative.fields.imageTags")} id="image-tags" error={form.formState.errors.imageStyleTagIds?.message}><div className="choice-row">{imageStyleOptions.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedImageStyleTagIds.includes(item.id)} {...form.register("imageStyleTagIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
+            <ChoiceField label={t("creative.fields.paceTags")} id="pace-tags" error={form.formState.errors.paceTagIds?.message}><div className="choice-row">{paceOptions.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedPaceTagIds.includes(item.id)} {...form.register("paceTagIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
           </section>
         </div>
 
-        <CreativeSummary control={form.control} visualStyles={options.visualStyles} roleTypes={options.roleTypes} styleTagMap={styleTagMap} />
+        <CreativeSummary control={form.control} visualStyles={visualStyleOptions} roleTypes={roleOptions} styleTagMap={styleTagMap} />
       </div>
       <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/project`)} onClick={guardLink}>{t("wizard.actions.backUpload")}</Link><p className="sticky-note">{t("wizard.footerNotes.characters")}</p><div><button className="button button-secondary" type="button" disabled={saveCreative.isPending} onClick={form.handleSubmit((values) => saveCreative.mutate({ values, continueAfter: false }))}>{saveCreative.isPending ? t("common.saving") : t("common.save")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={saveCreative.isPending}>{saveCreative.isPending ? t("common.saving") : t("wizard.actions.toVoice")}<span aria-hidden="true">→</span></button></div></div>
     </form>

@@ -6,14 +6,16 @@ import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
-import type { ConfigOption, ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
+import type { ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
 import { Field } from "../components/Field";
 import { ChoiceField } from "../components/ChoiceField";
 import { StepProgress } from "../components/StepProgress";
 import { createDraftSchema, createStepSchema, type ProjectFormValues } from "./projectFormSchema";
+import { mergeLegacyOptions, type DisplayConfigOption } from "../legacy-options";
+import { mergeLegacyCategories, type DisplayReferenceCategory } from "../legacy-categories";
 
-function SelectOptions({ items }: { items?: ConfigOption[] }) {
-  return <>{items?.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</>;
+function SelectOptions({ items }: { items?: DisplayConfigOption[] }) {
+  return <>{items?.map((item) => <option key={item.id} value={item.id} disabled={item.unavailable}>{item.label}</option>)}</>;
 }
 
 type SourceTransfer = { id: string; categoryId: string; file: File; status: "uploading" | "error" | "cancelled"; error?: string };
@@ -23,7 +25,7 @@ function formatBytes(bytes: number, locale: string) {
 }
 
 function SourceFilesSection({ categories, assets, locale, uploadCategory, transfers, uploadError, onUpload, onRemove, onCancel, onRetry }: {
-  categories: ReferenceCategory[]; assets: ReferenceAsset[]; locale: string; uploadCategory?: string; transfers: SourceTransfer[]; uploadError?: string;
+  categories: DisplayReferenceCategory[]; assets: ReferenceAsset[]; locale: string; uploadCategory?: string; transfers: SourceTransfer[]; uploadError?: string;
   onUpload: (category: ReferenceCategory, files: FileList | null) => Promise<void>; onRemove: (id: string) => Promise<void>; onCancel: (id: string) => void; onRetry: (item: SourceTransfer) => Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -33,8 +35,8 @@ function SourceFilesSection({ categories, assets, locale, uploadCategory, transf
     <div className="upload-grid source-upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <div className="upload-card" key={category.id}>
       <div><strong>{category.label}{category.required && <em className="required-badge">{t("sourceFiles.required")}</em>}</strong><small>{category.description}</small><small>{t("voice.fileLimit", { size: formatBytes(category.maxBytes, locale), count: category.maxFiles })}</small></div>
       {category.id === "book-cover" && files[0] && <img className="source-cover-preview" src={files[0].url} alt={t("sourceFiles.coverAlt", { title: files[0].fileName })} width="320" height="128" />}
-      <label className={`button button-secondary ${uploadCategory || files.length >= category.maxFiles ? "disabled" : ""}`} aria-disabled={Boolean(uploadCategory) || files.length >= category.maxFiles} htmlFor={`source-upload-${category.id}`} aria-label={t("sourceFiles.chooseFor", { category: category.label })}>{uploadCategory === category.id ? t("voice.uploading") : t("voice.chooseFiles")}</label>
-      <input id={`source-upload-${category.id}`} name={`source-upload-${category.id}`} autoComplete="off" className="visually-hidden" type="file" multiple={category.maxFiles > 1} accept={category.accept.join(",")} disabled={Boolean(uploadCategory) || files.length >= category.maxFiles} onChange={(event) => { void onUpload(category, event.target.files); event.target.value = ""; }} />
+      <label className={`button button-secondary ${uploadCategory || category.unavailable || files.length >= category.maxFiles ? "disabled" : ""}`} aria-disabled={Boolean(uploadCategory) || category.unavailable || files.length >= category.maxFiles} htmlFor={`source-upload-${category.id}`} aria-label={t("sourceFiles.chooseFor", { category: category.label })}>{uploadCategory === category.id ? t("voice.uploading") : t("voice.chooseFiles")}</label>
+      <input id={`source-upload-${category.id}`} name={`source-upload-${category.id}`} autoComplete="off" className="visually-hidden" type="file" multiple={category.maxFiles > 1} accept={category.accept.join(",")} disabled={Boolean(uploadCategory) || category.unavailable || files.length >= category.maxFiles} onChange={(event) => { void onUpload(category, event.target.files); event.target.value = ""; }} />
       {files.length > 0 && <ul className="uploaded-files">{files.map((asset) => <li key={asset.id}><span title={asset.fileName}>{asset.fileName}</span><small>{formatBytes(asset.sizeBytes, locale)}</small><button type="button" aria-label={t("sourceFiles.removeFile", { fileName: asset.fileName })} onClick={() => void onRemove(asset.id)}>{t("voice.remove")}</button></li>)}</ul>}
     </div>; })}</div>
     {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancel(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetry(item)}>{t("common.retry")}</button>}</li>)}</ul>}
@@ -116,6 +118,8 @@ export function ProjectFormPage() {
     },
   });
 
+  const selectedAudienceIds = useWatch({ control: form.control, name: "audienceIds" }) ?? [];
+  const selectedPlatformIds = useWatch({ control: form.control, name: "publishingPlatformIds" }) ?? [];
   useEffect(() => {
     const draft = draftQuery.data;
     if (!draft || form.formState.isDirty) return;
@@ -184,7 +188,16 @@ export function ProjectFormPage() {
   }
 
   const options = optionsQuery.data;
+  const unavailable = t("wizard.unavailableOption");
+  const brandOptions = mergeLegacyOptions(options.brands, [draftQuery.data.project.brandId], unavailable);
+  const videoGoalOptions = mergeLegacyOptions(options.videoGoals, [draftQuery.data.project.videoGoalId], unavailable);
+  const audienceOptions = mergeLegacyOptions(options.audiences, draftQuery.data.project.audienceIds, unavailable);
+  const genreOptions = mergeLegacyOptions(options.genres, [draftQuery.data.book.genreId], unavailable);
+  const languageOptions = mergeLegacyOptions(options.contentLanguages, [draftQuery.data.book.contentLanguageId], unavailable);
+  const durationOptions = mergeLegacyOptions(options.videoDurations, [draftQuery.data.book.videoDurationId], unavailable);
+  const platformOptions = mergeLegacyOptions(options.publishingPlatforms, draftQuery.data.book.publishingPlatformIds, unavailable);
   const sourceAssets = draftQuery.data.book.sourceAssets;
+  const sourceCategories = mergeLegacyCategories(options.sourceCategories, sourceAssets, unavailable);
   const cover = sourceAssets.find((asset) => asset.categoryId === "book-cover");
   const conflict = saveDraft.error instanceof ApiError && saveDraft.error.details.code === "project.version_conflict";
   const statusText = saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
@@ -285,17 +298,17 @@ export function ProjectFormPage() {
                 </Field>
                 <Field label={t("wizard.fields.phone")} htmlFor="phone"><input id="phone" type="tel" inputMode="tel" autoComplete="tel" className="input-short" {...form.register("phone")} /></Field>
                 <Field label={t("wizard.fields.brand")} htmlFor="brandId">
-                  <select id="brandId" className="input-medium" {...form.register("brandId")}><option value="" /><SelectOptions items={options.brands} /></select>
+                  <select id="brandId" className="input-medium" {...form.register("brandId")}><option value="" /><SelectOptions items={brandOptions} /></select>
                 </Field>
                 <Field label={t("wizard.fields.projectName")} htmlFor="projectName" required error={form.formState.errors.projectName?.message}>
                   <input id="projectName" className="input-long" {...form.register("projectName")} />
                 </Field>
                 <Field label={t("wizard.fields.videoGoal")} htmlFor="videoGoalId" required error={form.formState.errors.videoGoalId?.message}>
-                  <select id="videoGoalId" className="input-medium" {...form.register("videoGoalId")}><option value="" /><SelectOptions items={options.videoGoals} /></select>
+                  <select id="videoGoalId" className="input-medium" {...form.register("videoGoalId")}><option value="" /><SelectOptions items={videoGoalOptions} /></select>
                 </Field>
                 <Field label={t("wizard.fields.deadline")} htmlFor="deadline"><input id="deadline" type="date" className="input-short" {...form.register("deadline")} /></Field>
                 <ChoiceField label={t("wizard.fields.audiences")} id="audience-group" required error={form.formState.errors.audienceIds?.message}>
-                  <div className="choice-row" id="audience-group">{options.audiences.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} {...form.register("audienceIds")} /><span>{item.label}</span></label>)}</div>
+                  <div className="choice-row" id="audience-group">{audienceOptions.map((item) => <label className="choice-chip" key={item.id} aria-disabled={item.unavailable}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedAudienceIds.includes(item.id)} {...form.register("audienceIds")} /><span>{item.label}</span></label>)}</div>
                 </ChoiceField>
               </div>
             </section>
@@ -307,18 +320,18 @@ export function ProjectFormPage() {
                 <Field label={t("wizard.fields.bookTitle")} htmlFor="title" required error={form.formState.errors.title?.message}><input id="title" className="input-long" {...form.register("title")} /></Field>
                 <Field label={t("wizard.fields.subtitle")} htmlFor="subtitle"><input id="subtitle" className="input-long" {...form.register("subtitle")} /></Field>
                 <Field label={t("wizard.fields.authorName")} htmlFor="authorName" required error={form.formState.errors.authorName?.message}><input id="authorName" className="input-medium" {...form.register("authorName")} /></Field>
-                <Field label={t("wizard.fields.genre")} htmlFor="genreId" required error={form.formState.errors.genreId?.message}><select id="genreId" className="input-medium" {...form.register("genreId")}><option value="" /><SelectOptions items={options.genres} /></select></Field>
+                <Field label={t("wizard.fields.genre")} htmlFor="genreId" required error={form.formState.errors.genreId?.message}><select id="genreId" className="input-medium" {...form.register("genreId")}><option value="" /><SelectOptions items={genreOptions} /></select></Field>
                 <Field label={t("wizard.fields.sellingPoint")} htmlFor="sellingPoint" required className="field-wide" error={form.formState.errors.sellingPoint?.message}><textarea id="sellingPoint" rows={2} maxLength={150} {...form.register("sellingPoint")} /></Field>
                 <Field label={t("wizard.fields.synopsis")} htmlFor="synopsis" required className="field-wide" error={form.formState.errors.synopsis?.message}><textarea id="synopsis" rows={4} maxLength={600} {...form.register("synopsis")} /></Field>
-                <Field label={t("wizard.fields.contentLanguage")} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message}><select id="contentLanguageId" className="input-medium" {...form.register("contentLanguageId")}><option value="" /><SelectOptions items={options.contentLanguages} /></select></Field>
-                <Field label={t("wizard.fields.duration")} htmlFor="videoDurationId" required error={form.formState.errors.videoDurationId?.message}><select id="videoDurationId" className="input-short" {...form.register("videoDurationId")}><option value="" /><SelectOptions items={options.videoDurations} /></select></Field>
-                <ChoiceField label={t("wizard.fields.platforms")} id="platform-group"><div className="choice-row" id="platform-group">{options.publishingPlatforms.map((item) => <label className="choice-chip" key={item.id}><input type="checkbox" value={item.id} {...form.register("publishingPlatformIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
+                <Field label={t("wizard.fields.contentLanguage")} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message}><select id="contentLanguageId" className="input-medium" {...form.register("contentLanguageId")}><option value="" /><SelectOptions items={languageOptions} /></select></Field>
+                <Field label={t("wizard.fields.duration")} htmlFor="videoDurationId" required error={form.formState.errors.videoDurationId?.message}><select id="videoDurationId" className="input-short" {...form.register("videoDurationId")}><option value="" /><SelectOptions items={durationOptions} /></select></Field>
+                <ChoiceField label={t("wizard.fields.platforms")} id="platform-group"><div className="choice-row" id="platform-group">{platformOptions.map((item) => <label className="choice-chip" key={item.id} aria-disabled={item.unavailable}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedPlatformIds.includes(item.id)} {...form.register("publishingPlatformIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
               </div>
             </section>
-            <SourceFilesSection categories={options.sourceCategories} assets={sourceAssets} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemove={removeAsset} onCancel={cancelUpload} onRetry={retryUpload} />
+            <SourceFilesSection categories={sourceCategories} assets={sourceAssets} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemove={removeAsset} onCancel={cancelUpload} onRetry={retryUpload} />
           </div>
 
-          <ProjectSummaryRail control={form.control} cover={cover} assets={sourceAssets} genres={options.genres} statusLabel={options.taskStatuses.find((item) => item.id === draftQuery.data.status)?.label ?? draftQuery.data.status} createdAt={draftQuery.data.createdAt} locale={validLocale} />
+          <ProjectSummaryRail control={form.control} cover={cover} assets={sourceAssets} genres={genreOptions} statusLabel={options.taskStatuses.find((item) => item.id === draftQuery.data.status)?.label ?? draftQuery.data.status} createdAt={draftQuery.data.createdAt} locale={validLocale} />
         </div>
 
         <div className="sticky-actions">

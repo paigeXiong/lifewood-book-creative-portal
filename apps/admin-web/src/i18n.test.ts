@@ -23,6 +23,17 @@ const requiredKeys = [
   "admin.voices.title",
   "admin.voices.create",
   "admin.voices.descriptionEn",
+  "admin.settings.sections",
+  "admin.settings.formOptions",
+  "admin.settings.fileCategories",
+  "admin.fileCategories.scopes.source",
+  "admin.fileCategories.accept",
+  "admin.formOptions.groups.brands",
+  "admin.formOptions.groups.publishing-platforms",
+  "admin.formOptions.groups.visual-styles",
+  "admin.formOptions.groups.voice-emotions",
+  "admin.formOptions.previewColor",
+  "admin.formOptions.createTitle",
 ];
 
 describe("administrator locale resources", () => {

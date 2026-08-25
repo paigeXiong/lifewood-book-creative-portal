@@ -96,6 +96,7 @@ const resources = {
         saveFailed: "草稿保存失败，请检查连接后重试。",
         versionConflict: "此草稿已在别处更新，请重新载入后继续。",
         unsavedChanges: "有尚未保存的修改，确定离开当前页面吗？",
+        unavailableOption: "已停用选项",
       },
       sourceFiles: {
         hint: "上传真实书籍文件。封面和手稿是提交项目资料包的必需内容。",
@@ -202,7 +203,8 @@ const resources = {
         validation: { required: "Enter {{field}}", email: "Enter a valid email", chooseOne: "Choose at least one option", max: "Use no more than {{max}} characters", futureDate: "The deadline cannot be before today" },
         saveFailed: "The draft could not be saved. Check your connection and try again.",
         versionConflict: "This draft changed elsewhere. Reload it before continuing.",
-        unsavedChanges: "You have unsaved changes. Leave this page?"
+        unsavedChanges: "You have unsaved changes. Leave this page?",
+        unavailableOption: "No longer available",
       },
       sourceFiles: {
         hint: "Upload the actual book files. The cover and manuscript are required before submitting the project package.",

@@ -98,6 +98,12 @@ builder.Services.AddSingleton(deliveries);
 var voiceReferences = new VoiceReferenceRepository(databaseConnection);
 voiceReferences.Initialize();
 builder.Services.AddSingleton(voiceReferences);
+var formOptions = new FormOptionRepository(databaseConnection);
+formOptions.Initialize();
+builder.Services.AddSingleton(formOptions);
+var fileCategories = new FileCategoryRepository(databaseConnection);
+fileCategories.Initialize();
+builder.Services.AddSingleton(fileCategories);
 
 var app = builder.Build();
 app.UseForwardedHeaders();
@@ -223,8 +229,15 @@ api.MapPost("/me/password", async (ChangePasswordRequest? request, HttpContext c
     return Results.NoContent();
 }).RequireRateLimiting("authentication");
 
-api.MapGet("/form-options", (HttpContext context) =>
-    Results.Ok(FormOptionCatalog.ForLocale(Locale(context))));
+api.MapGet("/form-options", (HttpContext context, FormOptionRepository options, FileCategoryRepository categories) =>
+{
+    var locale = Locale(context);
+    return Results.Ok(options.ForLocale(locale) with
+    {
+        SourceCategories = categories.ForLocale(FileCategoryScopes.Source, locale),
+        ReferenceCategories = categories.ForLocale(FileCategoryScopes.Reference, locale)
+    });
+});
 
 api.MapGet("/admin/users", (HttpContext context, AdminRepository admin, string? search, string? role, int page = 1, int pageSize = 20) =>
 {
@@ -360,6 +373,65 @@ api.MapGet("/admin/projects/{id}/files/{fileId}", (string id, string fileId, Htt
         : Results.File(path, asset.ContentType, asset.FileName, enableRangeProcessing: true);
 });
 
+api.MapGet("/admin/file-content-types", (HttpContext context) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(UploadContentTypes.All.Order(StringComparer.Ordinal).ToArray());
+});
+
+api.MapGet("/admin/file-categories/{scope}", (string scope, HttpContext context, FileCategoryRepository categories) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return FileCategoryScopes.All.Contains(scope)
+        ? Results.Ok(categories.ListAdmin(scope))
+        : Error(context, 404, "config.group_not_found", "errors.http.notFound", "The file category scope was not found.", false);
+});
+
+api.MapPut("/admin/file-categories/{scope}/{id}", (string scope, string id, UpsertFileCategoryRequest? request, HttpContext context, FileCategoryRepository categories) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (!FileCategoryScopes.All.Contains(scope)) return Error(context, 404, "config.group_not_found", "errors.http.notFound", "The file category scope was not found.", false);
+    var result = categories.Upsert(scope, id, request, out var saved);
+    return result.Outcome switch
+    {
+        FileCategoryWriteOutcome.Saved => Results.Ok(saved),
+        FileCategoryWriteOutcome.Conflict => Error(context, 409, "config.version_conflict", "admin.formOptions.conflict", "This category changed elsewhere. Reload it before saving.", false),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The file category is invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+    };
+});
+
+api.MapGet("/admin/form-options/{groupId}", (string groupId, HttpContext context, FormOptionRepository options) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return FormOptionGroups.Configurable.Contains(groupId)
+        ? Results.Ok(options.ListAdmin(groupId))
+        : Error(context, 404, "config.group_not_found", "errors.http.notFound", "The configuration group was not found.", false);
+});
+
+api.MapPut("/admin/form-options/{groupId}/{id}", (string groupId, string id, UpsertFormOptionRequest? request, HttpContext context, FormOptionRepository options) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (!FormOptionGroups.Configurable.Contains(groupId))
+        return Error(context, 404, "config.group_not_found", "errors.http.notFound", "The configuration group was not found.", false);
+    var result = options.Upsert(groupId, id, request, out var saved);
+    return result.Outcome switch
+    {
+        FormOptionWriteOutcome.Saved => Results.Ok(saved),
+        FormOptionWriteOutcome.Conflict => Error(context, 409, "config.version_conflict", "admin.formOptions.conflict", "This option changed elsewhere. Reload it before saving.", false),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The form option is invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+    };
+});
+
 api.MapGet("/admin/voices", (HttpContext context, VoiceReferenceRepository voices) =>
 {
     var user = CurrentUser(context);
@@ -419,19 +491,19 @@ api.MapGet("/projects/{id}", (string id, HttpContext context, ProjectRepository 
         : Results.Ok(project);
 });
 
-api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpContext context, ProjectRepository projects) =>
+api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
     if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false, [new FieldErrorDto("request", "required", "errors.validation.required")]);
-    var fieldErrors = DraftValidator.Validate(request);
-    if (fieldErrors.Length > 0)
-        return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
     var current = projects.Get(user.Id, id);
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The task was not found.", false);
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This task is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This draft was changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
+    var fieldErrors = DraftValidator.Validate(request, options, fileCategories, current);
+    if (fieldErrors.Length > 0)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
     if (!AssetsMatch(current.Book.SourceAssets ?? [], request.Book.SourceAssets ?? []))
         return Error(context, 400, "validation.assets", "errors.validation.invalid", "Source assets must match stored uploads.", false, [new FieldErrorDto("book.sourceAssets", "invalid", "errors.validation.invalid")]);
     var result = projects.Save(user.Id, id, request);
@@ -444,12 +516,17 @@ api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpCo
     };
 });
 
-api.MapPut("/projects/{id}/creative", (string id, SaveCreativeRequest? request, HttpContext context, ProjectRepository projects) =>
+api.MapPut("/projects/{id}/creative", (string id, SaveCreativeRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var fieldErrors = CreativeValidator.Validate(request);
+    var current = projects.Get(user.Id, id);
+    if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
+    if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
+    if (request is not null && current.Version != request.Version)
+        return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
+    var fieldErrors = CreativeValidator.Validate(request, options, current);
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
     var result = projects.SaveCreative(user.Id, id, request!);
@@ -462,7 +539,7 @@ api.MapPut("/projects/{id}/creative", (string id, SaveCreativeRequest? request, 
     };
 });
 
-api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndReferencesRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices) =>
+api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndReferencesRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -472,7 +549,7 @@ api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndRefere
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (request is not null && current.Version != request.Version)
         return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
-    var fieldErrors = VoiceAndReferencesValidator.Validate(request, voices.EnabledIds());
+    var fieldErrors = VoiceAndReferencesValidator.Validate(request, voices.EnabledIds(), options, fileCategories, current);
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
     if (!AssetsMatch(current.VoiceAndReferences.Assets, request!.VoiceAndReferences.Assets ?? []))
@@ -487,7 +564,7 @@ api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndRefere
     };
 });
 
-api.MapPost("/projects/{id}/validate", (string id, ValidateProjectRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices) =>
+api.MapPost("/projects/{id}/validate", (string id, ValidateProjectRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -497,11 +574,11 @@ api.MapPost("/projects/{id}/validate", (string id, ValidateProjectRequest? reque
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before validating.", false, currentVersion: current.Version);
-    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds());
+    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds(), options, fileCategories);
     return Results.Ok(new ValidationResultDto(fieldErrors.Length == 0, fieldErrors));
 });
 
-api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices) =>
+api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -519,7 +596,7 @@ api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, 
     }
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before submitting.", false, currentVersion: current.Version);
-    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds());
+    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds(), options, fileCategories);
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The application is incomplete.", false, fieldErrors);
     var result = projects.Submit(user.Id, id, request.Version, request.IdempotencyKey);
@@ -532,7 +609,7 @@ api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, 
     };
 });
 
-api.MapPost("/projects/{id}/files", async (string id, HttpContext context, ProjectRepository projects) =>
+api.MapPost("/projects/{id}/files", async (string id, HttpContext context, ProjectRepository projects, FileCategoryRepository categories) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -544,15 +621,16 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     var form = await context.Request.ReadFormAsync(context.RequestAborted);
     var categoryId = form["categoryId"].ToString();
     if (!int.TryParse(form["version"].ToString(), out var version)) return Error(context, 400, "validation.failed", "errors.validation.failed", "The draft version is required.", false);
-    var catalog = FormOptionCatalog.ForLocale("en-US");
-    var category = catalog.SourceCategories.Concat(catalog.ReferenceCategories).FirstOrDefault(item => item.Id == categoryId);
+    var definition = categories.FindEnabled(categoryId);
+    var category = definition?.Category;
     var file = form.Files.GetFile("file");
-    if (category is null || file is null || file.Length <= 0)
+    if (definition is null || category is null || file is null || file.Length <= 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The file or category is invalid.", false);
     var contentType = NormalizeContentType(file.ContentType, file.FileName);
     if (project.Version != version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before uploading.", false, currentVersion: project.Version);
-    var storedAssets = FormOptionCatalog.SourceCategoryIds.Contains(categoryId) ? project.Book.SourceAssets ?? [] : project.VoiceAndReferences.Assets;
-    var assetField = FormOptionCatalog.SourceCategoryIds.Contains(categoryId) ? "book.sourceAssets" : "voiceAndReferences.assets";
+    var isSource = definition.Scope == FileCategoryScopes.Source;
+    var storedAssets = isSource ? project.Book.SourceAssets ?? [] : project.VoiceAndReferences.Assets;
+    var assetField = isSource ? "book.sourceAssets" : "voiceAndReferences.assets";
     if (storedAssets.Count(asset => asset.CategoryId == categoryId) >= category.MaxFiles)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The category file limit was reached.", false, [new FieldErrorDto(assetField, "too_many", "errors.validation.too_many")]);
     if (file.Length > category.MaxBytes || !category.Accept.Contains(contentType, StringComparer.OrdinalIgnoreCase) || !await HasExpectedSignature(file, contentType, context.RequestAborted))
@@ -575,7 +653,7 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     }
     context.RequestAborted.ThrowIfCancellationRequested();
     var asset = new ReferenceAssetDto(fileId, categoryId, safeName, contentType, file.Length, $"/api/projects/{id}/files/{fileId}");
-    var result = projects.AddAsset(user.Id, id, version, asset);
+    var result = projects.AddAsset(user.Id, id, version, asset, isSource);
     if (result.Outcome == SaveOutcome.Saved) return Results.Ok(new UploadReferenceResultDto(result.Draft!, asset));
     File.Delete(path);
     return result.Outcome switch

@@ -16,7 +16,7 @@ import type {
   UploadReferenceResult,
   VoiceReference,
 } from "@lifewood/domain";
-import type { AdminVoiceReference } from "@lifewood/domain";
+import type { AdminFileCategory, AdminFormOption, AdminVoiceReference } from "@lifewood/domain";
 
 export class ApiError extends Error {
   readonly details: AppErrorShape;
@@ -248,6 +248,18 @@ export const adminService = {
   resetUserPassword: (id: string, newPassword: string) =>
     request<void>(`/admin/users/${encodeURIComponent(id)}/password`, { method: "PUT", body: JSON.stringify({ newPassword }) }),
   listVoiceReferences: () => request<AdminVoiceReference[]>("/admin/voices"),
+  listSupportedFileContentTypes: () => request<string[]>("/admin/file-content-types"),
+  listFileCategories: (scope: "source" | "reference") => request<AdminFileCategory[]>(`/admin/file-categories/${scope}`),
+  saveFileCategory: (category: AdminFileCategory) => {
+    const { updatedAt, ...payload } = category;
+    return request<AdminFileCategory>(`/admin/file-categories/${category.scope}/${encodeURIComponent(category.id)}`, { method: "PUT", body: JSON.stringify({ ...payload, expectedUpdatedAt: updatedAt }) });
+  },
+  listFormOptions: (groupId: string) => request<AdminFormOption[]>(`/admin/form-options/${encodeURIComponent(groupId)}`),
+  saveFormOption: (option: AdminFormOption) => {
+    const { updatedAt, ...payload } = option;
+    return request<AdminFormOption>(`/admin/form-options/${encodeURIComponent(option.groupId)}/${encodeURIComponent(option.id)}`, { method: "PUT", body: JSON.stringify({ ...payload, expectedUpdatedAt: updatedAt }) });
+  },
+
   saveVoiceReference: (voice: AdminVoiceReference) =>
     request<AdminVoiceReference>(`/admin/voices/${encodeURIComponent(voice.id)}`, { method: "PUT", body: JSON.stringify(voice) }),
 };

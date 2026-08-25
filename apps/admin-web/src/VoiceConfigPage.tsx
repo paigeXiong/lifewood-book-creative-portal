@@ -5,6 +5,7 @@ import type { AdminVoiceReference, SupportedLocale } from "@lifewood/domain";
 import { useTranslation } from "react-i18next";
 import { ModalFrame } from "./ModalFrame";
 import "./voice-config.css";
+import { SettingsTabs } from "./SettingsTabs";
 
 const emptyVoice: AdminVoiceReference = {
   id: "",
@@ -35,6 +36,7 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
   });
 
   return <main className="content config-content">
+    <SettingsTabs locale={locale} />
     <section className="page-toolbar">
       <h1 className="config-context">{t("admin.voices.title")}</h1>
       <span className="result-count">{t("admin.voices.count", { count: voices.data?.length ?? 0 })}</span>

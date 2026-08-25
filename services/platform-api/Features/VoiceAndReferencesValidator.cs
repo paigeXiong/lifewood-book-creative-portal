@@ -1,10 +1,16 @@
 using Lifewood.PlatformApi.Contracts;
+using Lifewood.PlatformApi.Persistence;
 
 namespace Lifewood.PlatformApi.Features;
 
 internal static class VoiceAndReferencesValidator
 {
-    public static FieldErrorDto[] Validate(SaveVoiceAndReferencesRequest? request, IReadOnlySet<string> enabledVoiceIds)
+    public static FieldErrorDto[] Validate(
+        SaveVoiceAndReferencesRequest? request,
+        IReadOnlySet<string> enabledVoiceIds,
+        FormOptionRepository options,
+        FileCategoryRepository fileCategories,
+        TaskDraftDto? current = null)
     {
         var errors = new List<FieldErrorDto>();
         if (request?.VoiceAndReferences is null)
@@ -15,18 +21,19 @@ internal static class VoiceAndReferencesValidator
 
         var step = request.VoiceAndReferences;
         var voice = step.Voiceover;
+        var previous = current?.VoiceAndReferences.Voiceover;
         if (voice is null) errors.Add(Error("voiceAndReferences.voiceover", "required"));
         else
         {
             Action<List<FieldErrorDto>, string, string?, IReadOnlySet<string>> optionRule =
                 request.RequireComplete ? RequiredOption : OptionalOption;
-            optionRule(errors, "voiceAndReferences.voiceover.contentLanguageId", voice.ContentLanguageId, FormOptionCatalog.ContentLanguageIds);
-            optionRule(errors, "voiceAndReferences.voiceover.narrationToneId", voice.NarrationToneId, FormOptionCatalog.NarrationToneIds);
-            optionRule(errors, "voiceAndReferences.voiceover.speechRateId", voice.SpeechRateId, FormOptionCatalog.SpeechRateIds);
-            OptionalOption(errors, "voiceAndReferences.voiceover.voiceGenderId", voice.VoiceGenderId, FormOptionCatalog.VoiceGenderIds);
-            OptionalOption(errors, "voiceAndReferences.voiceover.voiceAgeId", voice.VoiceAgeId, FormOptionCatalog.VoiceAgeIds);
-            OptionalOption(errors, "voiceAndReferences.voiceover.accentId", voice.AccentId, FormOptionCatalog.AccentIds);
-            OptionalOption(errors, "voiceAndReferences.voiceover.emotionStyleId", voice.EmotionStyleId, FormOptionCatalog.VoiceEmotionIds);
+            optionRule(errors, "voiceAndReferences.voiceover.contentLanguageId", voice.ContentLanguageId, Allowed(options, FormOptionGroups.ContentLanguages, previous?.ContentLanguageId ?? current?.Book.ContentLanguageId));
+            optionRule(errors, "voiceAndReferences.voiceover.narrationToneId", voice.NarrationToneId, Allowed(options, FormOptionGroups.NarrationTones, previous?.NarrationToneId));
+            optionRule(errors, "voiceAndReferences.voiceover.speechRateId", voice.SpeechRateId, Allowed(options, FormOptionGroups.SpeechRates, previous?.SpeechRateId));
+            OptionalOption(errors, "voiceAndReferences.voiceover.voiceGenderId", voice.VoiceGenderId, Allowed(options, FormOptionGroups.VoiceGenders, previous?.VoiceGenderId));
+            OptionalOption(errors, "voiceAndReferences.voiceover.voiceAgeId", voice.VoiceAgeId, Allowed(options, FormOptionGroups.VoiceAges, previous?.VoiceAgeId));
+            OptionalOption(errors, "voiceAndReferences.voiceover.accentId", voice.AccentId, Allowed(options, FormOptionGroups.Accents, previous?.AccentId));
+            OptionalOption(errors, "voiceAndReferences.voiceover.emotionStyleId", voice.EmotionStyleId, Allowed(options, FormOptionGroups.VoiceEmotions, previous?.EmotionStyleId));
             Max(errors, "voiceAndReferences.voiceover.pronunciationNotes", voice.PronunciationNotes, 200);
             Max(errors, "voiceAndReferences.voiceover.customVoiceDescription", voice.CustomVoiceDescription, 300);
             if (voice.SelectedVoiceIds is null) errors.Add(Error("voiceAndReferences.voiceover.selectedVoiceIds", "required"));
@@ -38,8 +45,8 @@ internal static class VoiceAndReferencesValidator
 
         if (step.Assets is null) errors.Add(Error("voiceAndReferences.assets", "required"));
         var assets = step.Assets ?? [];
-        if (assets.Length > 38) errors.Add(Error("voiceAndReferences.assets", "too_many"));
-        var categories = FormOptionCatalog.ForLocale("en-US").ReferenceCategories.ToDictionary(item => item.Id, StringComparer.Ordinal);
+        var categories = fileCategories.ForLocale(FileCategoryScopes.Reference, "en-US", enabledOnly: false).ToDictionary(item => item.Id, StringComparer.Ordinal);
+        var existingIds = new HashSet<string>((current?.VoiceAndReferences.Assets ?? []).Select(asset => asset.Id), StringComparer.Ordinal);
         foreach (var asset in assets)
         {
             if (asset is null) { errors.Add(Error("voiceAndReferences.assets", "invalid")); continue; }
@@ -50,14 +57,18 @@ internal static class VoiceAndReferencesValidator
                 continue;
             }
             if (!categories.TryGetValue(asset.CategoryId, out var category)) errors.Add(Error("voiceAndReferences.assets", "unknown_option"));
-            else if (asset.SizeBytes > category.MaxBytes || !category.Accept.Contains(asset.ContentType, StringComparer.OrdinalIgnoreCase)) errors.Add(Error("voiceAndReferences.assets", "file"));
-            if (!Guid.TryParseExact(asset.Id, "N", out _) || string.IsNullOrWhiteSpace(asset.FileName) || asset.SizeBytes <= 0) errors.Add(Error("voiceAndReferences.assets", "invalid"));
+            else if (!existingIds.Contains(asset.Id) && (asset.SizeBytes > category.MaxBytes || !category.Accept.Contains(asset.ContentType, StringComparer.OrdinalIgnoreCase))) errors.Add(Error("voiceAndReferences.assets", "file"));
+            if (!Guid.TryParseExact(asset.Id, "N", out _) || asset.SizeBytes <= 0) errors.Add(Error("voiceAndReferences.assets", "invalid"));
         }
         foreach (var group in assets.Where(asset => asset is not null && !string.IsNullOrWhiteSpace(asset.CategoryId)).GroupBy(asset => asset.CategoryId))
-            if (categories.TryGetValue(group.Key, out var category) && group.Count() > category.MaxFiles) errors.Add(Error("voiceAndReferences.assets", "too_many"));
+            if (categories.TryGetValue(group.Key, out var category) && group.Any(asset => !existingIds.Contains(asset.Id)) && group.Count() > category.MaxFiles) errors.Add(Error("voiceAndReferences.assets", "too_many"));
         if (step.CompetitorUrls is null) errors.Add(Error("voiceAndReferences.competitorUrls", "required"));
         var competitorUrls = step.CompetitorUrls ?? [];
         if (competitorUrls.Length > 5) errors.Add(Error("voiceAndReferences.competitorUrls", "too_many"));
+        var linksEnabled = fileCategories.ForLocale(FileCategoryScopes.Reference, "en-US").Any(category => category.AllowsUrl);
+        var previousUrls = new HashSet<string>(current?.VoiceAndReferences.CompetitorUrls ?? [], StringComparer.Ordinal);
+        if (!linksEnabled && competitorUrls.Any(url => !previousUrls.Contains(url)))
+            errors.Add(Error("voiceAndReferences.competitorUrls", "unknown_option"));
         foreach (var url in competitorUrls)
             if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)) errors.Add(Error("voiceAndReferences.competitorUrls", "url"));
 
@@ -75,6 +86,13 @@ internal static class VoiceAndReferencesValidator
             Max(errors, "voiceAndReferences.creativeDirection.avoidContent", direction.AvoidContent, 200);
         }
         return [.. errors];
+    }
+
+    private static IReadOnlySet<string> Allowed(FormOptionRepository options, string groupId, string? previous)
+    {
+        var allowed = new HashSet<string>(options.EnabledIds(groupId), StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(previous)) allowed.Add(previous);
+        return allowed;
     }
 
     private static void RequiredOption(List<FieldErrorDto> errors, string field, string? value, IReadOnlySet<string> allowed)

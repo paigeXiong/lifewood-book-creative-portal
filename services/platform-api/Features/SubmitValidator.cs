@@ -1,15 +1,16 @@
 using Lifewood.PlatformApi.Contracts;
+using Lifewood.PlatformApi.Persistence;
 
 namespace Lifewood.PlatformApi.Features;
 
 internal static class SubmitValidator
 {
-    public static FieldErrorDto[] Validate(TaskDraftDto draft, IReadOnlySet<string> enabledVoiceIds)
+    public static FieldErrorDto[] Validate(TaskDraftDto draft, IReadOnlySet<string> enabledVoiceIds, FormOptionRepository options, FileCategoryRepository fileCategories)
     {
         var errors = new List<FieldErrorDto>();
-        errors.AddRange(DraftValidator.Validate(new SaveDraftRequest(draft.Version, draft.Project, draft.Book)));
-        errors.AddRange(CreativeValidator.Validate(new SaveCreativeRequest(draft.Version, draft.Creative)));
-        errors.AddRange(VoiceAndReferencesValidator.Validate(new SaveVoiceAndReferencesRequest(draft.Version, draft.VoiceAndReferences, true), enabledVoiceIds));
+        errors.AddRange(DraftValidator.Validate(new SaveDraftRequest(draft.Version, draft.Project, draft.Book), options, fileCategories, draft));
+        errors.AddRange(CreativeValidator.Validate(new SaveCreativeRequest(draft.Version, draft.Creative), options, draft));
+        errors.AddRange(VoiceAndReferencesValidator.Validate(new SaveVoiceAndReferencesRequest(draft.Version, draft.VoiceAndReferences, true), enabledVoiceIds, options, fileCategories, draft));
 
         Required(errors, "project.clientName", draft.Project.ClientName);
         Required(errors, "project.contactName", draft.Project.ContactName);
@@ -24,7 +25,7 @@ internal static class SubmitValidator
         Required(errors, "book.synopsis", draft.Book.Synopsis);
         Required(errors, "book.contentLanguageId", draft.Book.ContentLanguageId);
         Required(errors, "book.videoDurationId", draft.Book.VideoDurationId);
-        foreach (var category in FormOptionCatalog.ForLocale("en-US").SourceCategories.Where(category => category.Required))
+        foreach (var category in fileCategories.ForLocale(FileCategoryScopes.Source, "en-US").Where(category => category.Required))
             if (!(draft.Book.SourceAssets ?? []).Any(asset => asset.CategoryId == category.Id)) errors.Add(Error($"book.sourceAssets.{category.Id}"));
         if (draft.Creative.Characters.Length == 0) errors.Add(Error("creative.characters"));
         foreach (var (character, index) in draft.Creative.Characters.Select((value, index) => (value, index)))

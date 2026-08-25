@@ -77,6 +77,60 @@ public sealed record UpsertVoiceReferenceRequest(
     bool Enabled,
     int SortOrder);
 
+public sealed record AdminFormOptionDto(
+    string GroupId,
+    string Id,
+    string LabelZhCn,
+    string LabelEnUs,
+    string? DescriptionZhCn,
+    string? DescriptionEnUs,
+    string? Tone,
+    string? PreviewColor,
+    bool Enabled,
+    int SortOrder,
+    DateTimeOffset UpdatedAt);
+
+public sealed record AdminFileCategoryDto(
+    string Scope,
+    string Id,
+    string LabelZhCn,
+    string LabelEnUs,
+    string? DescriptionZhCn,
+    string? DescriptionEnUs,
+    string[] Accept,
+    long MaxBytes,
+    int MaxFiles,
+    bool AllowsUrl,
+    bool Required,
+    bool Enabled,
+    int SortOrder,
+    DateTimeOffset UpdatedAt);
+
+public sealed record UpsertFileCategoryRequest(
+    string LabelZhCn,
+    string LabelEnUs,
+    string? DescriptionZhCn,
+    string? DescriptionEnUs,
+    string[] Accept,
+    long MaxBytes,
+    int MaxFiles,
+    bool AllowsUrl,
+    bool Required,
+    bool Enabled,
+    int SortOrder,
+    DateTimeOffset? ExpectedUpdatedAt = null);
+
+public sealed record UpsertFormOptionRequest(
+    string LabelZhCn,
+    string LabelEnUs,
+    string? DescriptionZhCn,
+    string? DescriptionEnUs,
+    string? Tone,
+    string? PreviewColor,
+    bool Enabled,
+    int SortOrder,
+    DateTimeOffset? ExpectedUpdatedAt = null);
+
 public sealed record FormOptionsDto(
     ConfigOptionDto[] Brands,
     ConfigOptionDto[] VideoGoals,

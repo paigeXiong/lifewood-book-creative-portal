@@ -52,6 +52,38 @@ export interface AdminVoiceReference {
   sortOrder: number;
 }
 
+export interface AdminFileCategory {
+  scope: "source" | "reference";
+  id: string;
+  labelZhCn: string;
+  labelEnUs: string;
+  descriptionZhCn?: string;
+  descriptionEnUs?: string;
+  accept: string[];
+  maxBytes: number;
+  maxFiles: number;
+  allowsUrl: boolean;
+  required: boolean;
+  enabled: boolean;
+  sortOrder: number;
+  updatedAt?: string;
+}
+
+export interface AdminFormOption {
+  groupId: string;
+  id: string;
+  labelZhCn: string;
+  labelEnUs: string;
+  descriptionZhCn?: string;
+  descriptionEnUs?: string;
+  tone?: "neutral" | "info" | "warning" | "success" | "danger";
+  previewColor?: string;
+  enabled: boolean;
+  sortOrder: number;
+  updatedAt?: string;
+}
+
+
 export interface FormOptions {
   brands: ConfigOption[];
   videoGoals: ConfigOption[];

@@ -10,6 +10,8 @@ import { ModalFrame } from "./ModalFrame";
 import { ChangeOwnPasswordDialog, ResetUserPasswordDialog } from "./PasswordDialogs";
 import { VoiceConfigPage } from "./VoiceConfigPage";
 
+import { FormOptionConfigPage } from "./FormOptionConfigPage";
+import { FileCategoryConfigPage } from "./FileCategoryConfigPage";
 
 function formatDate(value: string, locale: SupportedLocale) {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -177,7 +179,7 @@ function AdminRoot() {
   if (me.isPending || (me.isError && authStatus.isPending)) return <main className="center-state">{t("common.loading")}</main>;
   if (!me.data) return <IdentityGate requiresBootstrap={authStatus.data?.requiresBootstrap === true} busy={busy} error={error} onAuthenticate={(value) => void authenticate(value)} />;
   if (!me.data.permissions.includes("admin.access")) return <main className="center-state"><div><h1>{t("admin.forbidden.title")}</h1><p>{t("admin.forbidden.body")}</p><button onClick={() => void authService.logout().then(() => window.location.reload())}>{t("nav.logout")}</button></div></main>;
-  return <AdminShell user={me.data} locale={locale}><Routes><Route index element={<Navigate replace to="projects" />} /><Route path="projects" element={<ProjectsPage locale={locale} />} /><Route path="users" element={<UsersPage locale={locale} />} /><Route path="settings" element={<VoiceConfigPage locale={locale} />} /><Route path="voices" element={<Navigate replace to={localizedPath(locale, "/settings")} />} /><Route path="*" element={<Navigate replace to="projects" />} /></Routes></AdminShell>;
+  return <AdminShell user={me.data} locale={locale}><Routes><Route index element={<Navigate replace to="projects" />} /><Route path="projects" element={<ProjectsPage locale={locale} />} /><Route path="users" element={<UsersPage locale={locale} />} /><Route path="settings" element={<Navigate replace to="options" />} /><Route path="settings/options" element={<FormOptionConfigPage locale={locale} />} /><Route path="settings/files" element={<FileCategoryConfigPage locale={locale} />} /><Route path="settings/voices" element={<VoiceConfigPage locale={locale} />} /><Route path="voices" element={<Navigate replace to={localizedPath(locale, "/settings/voices")} />} /><Route path="*" element={<Navigate replace to="projects" />} /></Routes></AdminShell>;
 }
 
 export function App() {

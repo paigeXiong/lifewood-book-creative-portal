@@ -55,4 +55,37 @@ describe("administrator API client", () => {
     expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-admin");
     expect(JSON.parse(String(options.body))).toEqual({ newPassword: "temporary-password" });
   });
+
+  it("saves bilingual form options with CSRF protection", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-admin" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify({ groupId: "genres", id: "memoir" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminService.saveFormOption({ groupId: "genres", id: "memoir", labelZhCn: "回忆录", labelEnUs: "Memoir", enabled: true, sortOrder: 30 });
+
+    const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/admin/form-options/genres/memoir");
+    expect(options.method).toBe("PUT");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-admin");
+    expect(JSON.parse(String(options.body))).toMatchObject({ labelZhCn: "回忆录", labelEnUs: "Memoir", enabled: true });
+  });
+
+
+  it("saves file constraints with CSRF protection", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-admin" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify({ scope: "source", id: "cover-art" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminService.saveFileCategory({ scope: "source", id: "cover-art", labelZhCn: "封面图", labelEnUs: "Cover art", accept: ["image/jpeg"], maxBytes: 12000000, maxFiles: 2, allowsUrl: false, required: true, enabled: true, sortOrder: 10 });
+
+    const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/admin/file-categories/source/cover-art");
+    expect(options.method).toBe("PUT");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-admin");
+    expect(JSON.parse(String(options.body))).toMatchObject({ accept: ["image/jpeg"], maxBytes: 12000000, maxFiles: 2, required: true });
+  });
 });
