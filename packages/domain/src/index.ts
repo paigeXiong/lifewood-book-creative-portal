@@ -291,6 +291,7 @@ export interface TaskDraft {
 export interface TaskSummary {
   id: string;
   taskNumber?: string;
+  version: number;
   projectName: string;
   clientName: string;
   bookTitle: string;

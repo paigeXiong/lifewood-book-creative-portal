@@ -149,6 +149,8 @@ export const projectService = {
     request<TaskDraft>("/projects", { method: "POST", locale, body: "{}" }),
   getProject: (projectId: string, locale: SupportedLocale) =>
     request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}`, { locale }),
+  deleteDraft: (projectId: string, version: number, locale: SupportedLocale) =>
+    request<void>(`/projects/${encodeURIComponent(projectId)}?version=${version}`, { method: "DELETE", locale }),
   saveDraft: (projectId: string, draft: TaskDraft, locale: SupportedLocale) =>
     request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}/draft`, {
       method: "PUT",

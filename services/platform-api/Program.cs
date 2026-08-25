@@ -44,6 +44,7 @@ var dataDirectory = string.IsNullOrWhiteSpace(configuredDataDirectory)
 var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db")}";
 var voiceSampleDirectory = Path.Combine(dataDirectory, "voice-samples");
 var voiceSampleLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
+var projectWriteLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
 Directory.CreateDirectory(dataDirectory);
 var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
 using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
@@ -132,6 +133,8 @@ fileCategories.Initialize();
 builder.Services.AddSingleton(fileCategories);
 
 var app = builder.Build();
+RecoverDraftUploadTombstones(dataDirectory, repository, app.Logger);
+RecoverDeletedReferenceFiles(dataDirectory, repository, app.Logger);
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
@@ -671,6 +674,52 @@ api.MapGet("/projects/{id}", (string id, HttpContext context, ProjectRepository 
         : Results.Ok(project);
 });
 
+api.MapDelete("/projects/{id}", async (string id, int version, HttpContext context, ProjectRepository projects) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
+    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
+    await projectWriteLock.WaitAsync(context.RequestAborted);
+    try
+    {
+
+    var current = projects.Get(user.Id, id);
+    if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The project was not found.", false);
+    if (!current.Status.Equals("draft", StringComparison.Ordinal))
+        return Error(context, 409, "project.not_editable", "errors.project.notEditable", "Submitted projects cannot be deleted.", false, currentVersion: current.Version);
+    if (current.Version != version)
+        return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This draft changed elsewhere. Reload before deleting.", false, currentVersion: current.Version);
+
+    string? stagedUploads;
+    try { stagedUploads = StageDraftUploadDeletion(dataDirectory, user.Id, id); }
+    catch (Exception exception)
+    {
+        app.Logger.LogError(exception, "Could not stage uploads before deleting draft {ProjectId}", id);
+        return Error(context, 500, "system.unexpected", "errors.system.unexpected", "The draft could not be safely deleted. Try again.", true);
+    }
+
+    var result = projects.DeleteDraft(user.Id, id, version);
+    if (result.Outcome != SaveOutcome.Saved)
+    {
+        if (stagedUploads is not null) RestoreDraftUploadDeletion(dataDirectory, user.Id, id, stagedUploads, app.Logger);
+        return result.Outcome switch
+        {
+            SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The project was not found.", false),
+            SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "Submitted projects cannot be deleted.", false, currentVersion: result.CurrentVersion),
+            _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This draft changed elsewhere. Reload before deleting.", false, currentVersion: result.CurrentVersion)
+        };
+    }
+
+    if (stagedUploads is not null)
+    {
+        try { Directory.Delete(stagedUploads, recursive: true); CleanupEmptyDraftUploadTombstoneParents(dataDirectory, stagedUploads); }
+        catch (Exception exception) { app.Logger.LogWarning(exception, "Staged uploads for deleted draft {ProjectId} will be cleaned on restart", id); }
+    }
+    return Results.NoContent();
+    }
+    finally { projectWriteLock.Release(); }
+});
 api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
     var user = CurrentUser(context);
@@ -794,6 +843,10 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
+    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
+    await projectWriteLock.WaitAsync(context.RequestAborted);
+    try
+    {
     var project = projects.Get(user.Id, id);
     if (project is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
     if (project.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false);
@@ -842,6 +895,8 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
         SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: result.CurrentVersion),
         _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before uploading.", false, currentVersion: result.CurrentVersion)
     };
+    }
+    finally { projectWriteLock.Release(); }
 }).DisableAntiforgery();
 
 api.MapGet("/projects/{id}/files/{fileId}", (string id, string fileId, HttpContext context, ProjectRepository projects) =>
@@ -860,34 +915,50 @@ api.MapGet("/projects/{id}/files/{fileId}", (string id, string fileId, HttpConte
         : Results.File(path, asset.ContentType, asset.FileName, enableRangeProcessing: true);
 });
 
-api.MapDelete("/projects/{id}/files/{fileId}", (string id, string fileId, int version, HttpContext context, ProjectRepository projects) =>
+api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, int version, HttpContext context, ProjectRepository projects) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var project = projects.Get(user.Id, id);
-    if (project is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
-    if (project.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false);
-    if (!Guid.TryParseExact(fileId, "N", out _)) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
-    var asset = (project.Book.SourceAssets ?? []).Concat(project.VoiceAndReferences.Assets).FirstOrDefault(item => item.Id == fileId);
-    if (asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
-    var result = projects.RemoveAsset(user.Id, id, version, fileId);
-    if (result.Outcome != SaveOutcome.Saved) return result.Outcome switch
+    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
+    await projectWriteLock.WaitAsync(context.RequestAborted);
+    try
     {
-        SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
-        SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: result.CurrentVersion),
-        _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before deleting.", false, currentVersion: result.CurrentVersion)
-    };
-    var folder = Path.Combine(dataDirectory, "uploads", user.Id, id);
-    var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
-    if (path is not null)
-    {
-        try { File.Delete(path); }
-        catch (Exception exception) { app.Logger.LogWarning(exception, "Could not remove detached reference file {FileId}", fileId); }
-    }
-    return Results.Ok(result.Draft);
-});
+        var project = projects.Get(user.Id, id);
+        if (project is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
+        if (project.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false);
+        if (!Guid.TryParseExact(fileId, "N", out _)) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
+        var asset = (project.Book.SourceAssets ?? []).Concat(project.VoiceAndReferences.Assets).FirstOrDefault(item => item.Id == fileId);
+        if (asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
 
+        (string Original, string Staged)? stagedFile;
+        try { stagedFile = StageReferenceFileDeletion(dataDirectory, user.Id, id, fileId); }
+        catch (Exception exception)
+        {
+            app.Logger.LogError(exception, "Could not stage reference file {FileId} before deletion", fileId);
+            return Error(context, 500, "system.unexpected", "errors.system.unexpected", "The file could not be safely deleted. Try again.", true);
+        }
+
+        var result = projects.RemoveAsset(user.Id, id, version, fileId);
+        if (result.Outcome != SaveOutcome.Saved)
+        {
+            if (stagedFile is { } pending) RestoreReferenceFileDeletion(pending, app.Logger);
+            return result.Outcome switch
+            {
+                SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
+                SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: result.CurrentVersion),
+                _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before deleting.", false, currentVersion: result.CurrentVersion)
+            };
+        }
+        if (stagedFile is { } removed)
+        {
+            try { File.Delete(removed.Staged); }
+            catch (Exception exception) { app.Logger.LogWarning(exception, "Staged reference file {FileId} will be cleaned on restart", fileId); }
+        }
+        return Results.Ok(result.Draft);
+    }
+    finally { projectWriteLock.Release(); }
+});
 app.Run();
 
 static CurrentUserDto? CurrentUser(HttpContext context)
@@ -935,6 +1006,132 @@ static string NormalizeContentType(string contentType, string fileName)
     };
     return string.IsNullOrWhiteSpace(contentType) || contentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase) || contentType.Equals(expected, StringComparison.OrdinalIgnoreCase)
         ? expected : "application/octet-stream";
+}
+
+static (string Original, string Staged)? StageReferenceFileDeletion(string dataDirectory, string ownerId, string projectId, string fileId)
+{
+    var folder = Path.Combine(dataDirectory, "uploads", ownerId, projectId);
+    var original = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
+    if (original is null) return null;
+    var stagingFolder = Path.Combine(dataDirectory, "uploads", ".deleted-files", ownerId, projectId);
+    Directory.CreateDirectory(stagingFolder);
+    var staged = Path.Combine(stagingFolder, $"{fileId}_{Guid.NewGuid():N}_{Path.GetFileName(original)}");
+    File.Move(original, staged);
+    return (original, staged);
+}
+
+static void RestoreReferenceFileDeletion((string Original, string Staged) pending, ILogger logger)
+{
+    try
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(pending.Original)!);
+        if (!File.Exists(pending.Original)) File.Move(pending.Staged, pending.Original);
+        else logger.LogCritical("Could not restore staged reference file because {Path} already exists", pending.Original);
+    }
+    catch (Exception exception)
+    {
+        logger.LogCritical(exception, "Could not restore staged reference file {Path}; startup recovery will retry", pending.Staged);
+    }
+}
+
+static void RecoverDeletedReferenceFiles(string dataDirectory, ProjectRepository projects, ILogger logger)
+{
+    var root = Path.Combine(dataDirectory, "uploads", ".deleted-files");
+    if (!Directory.Exists(root)) return;
+    foreach (var ownerFolder in Directory.EnumerateDirectories(root))
+    foreach (var projectFolder in Directory.EnumerateDirectories(ownerFolder))
+    foreach (var staged in Directory.EnumerateFiles(projectFolder))
+    {
+        try
+        {
+            var ownerId = Path.GetFileName(ownerFolder);
+            var projectId = Path.GetFileName(projectFolder);
+            var name = Path.GetFileName(staged);
+            if (name.Length < 67 || name[32] != '_' || name[65] != '_') throw new InvalidDataException("Unrecognized staged reference filename.");
+            var fileId = name[..32];
+            var originalName = name[66..];
+            var project = projects.Get(ownerId, projectId);
+            var referenced = project is not null && (project.Book.SourceAssets ?? []).Concat(project.VoiceAndReferences.Assets).Any(asset => asset.Id == fileId);
+            if (!referenced) File.Delete(staged);
+            else RestoreReferenceFileDeletion((Path.Combine(dataDirectory, "uploads", ownerId, projectId, originalName), staged), logger);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Could not recover staged reference file {Path}", staged);
+        }
+    }
+}
+
+static string? StageDraftUploadDeletion(string dataDirectory, string ownerId, string projectId)
+{
+    var source = Path.Combine(dataDirectory, "uploads", ownerId, projectId);
+    if (!Directory.Exists(source)) return null;
+    var stagingParent = Path.Combine(dataDirectory, "uploads", ".deleted", ownerId);
+    Directory.CreateDirectory(stagingParent);
+    var staged = Path.Combine(stagingParent, $"{projectId}_{Guid.NewGuid():N}");
+    Directory.Move(source, staged);
+    return staged;
+}
+
+static void RestoreDraftUploadDeletion(string dataDirectory, string ownerId, string projectId, string staged, ILogger logger)
+{
+    var destination = Path.Combine(dataDirectory, "uploads", ownerId, projectId);
+    try
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        if (!Directory.Exists(destination)) Directory.Move(staged, destination);
+        else
+        {
+            foreach (var source in Directory.EnumerateFiles(staged))
+            {
+                var target = Path.Combine(destination, Path.GetFileName(source));
+                if (File.Exists(target)) throw new IOException($"An upload already exists at {target}.");
+                File.Move(source, target);
+            }
+            if (!Directory.EnumerateFileSystemEntries(staged).Any()) Directory.Delete(staged);
+        }
+        if (!Directory.Exists(staged)) CleanupEmptyDraftUploadTombstoneParents(dataDirectory, staged);
+    }
+    catch (Exception exception)
+    {
+        logger.LogCritical(exception, "Could not restore staged uploads for draft {ProjectId}; startup recovery will retry", projectId);
+    }
+}
+
+static void CleanupEmptyDraftUploadTombstoneParents(string dataDirectory, string staged)
+{
+    var root = Path.Combine(dataDirectory, "uploads", ".deleted");
+    var ownerFolder = Path.GetDirectoryName(staged);
+    if (ownerFolder is not null && Directory.Exists(ownerFolder) && !Directory.EnumerateFileSystemEntries(ownerFolder).Any())
+        Directory.Delete(ownerFolder);
+    if (Directory.Exists(root) && !Directory.EnumerateFileSystemEntries(root).Any())
+        Directory.Delete(root);
+}
+
+static void RecoverDraftUploadTombstones(string dataDirectory, ProjectRepository projects, ILogger logger)
+{
+    var root = Path.Combine(dataDirectory, "uploads", ".deleted");
+    if (!Directory.Exists(root)) return;
+    foreach (var ownerFolder in Directory.EnumerateDirectories(root))
+    {
+        var ownerId = Path.GetFileName(ownerFolder);
+        foreach (var staged in Directory.EnumerateDirectories(ownerFolder))
+        {
+            var name = Path.GetFileName(staged);
+            var separator = name.IndexOf('_');
+            if (separator <= 0) { logger.LogWarning("Ignoring unrecognized draft upload tombstone {Path}", staged); continue; }
+            var projectId = name[..separator];
+            try
+            {
+                if (projects.Get(ownerId, projectId) is null) Directory.Delete(staged, recursive: true);
+                else RestoreDraftUploadDeletion(dataDirectory, ownerId, projectId, staged, logger);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Could not recover draft upload tombstone {Path}", staged);
+            }
+        }
+    }
 }
 
 static void CleanupOrphanedVoiceUploads(string sampleDirectory)

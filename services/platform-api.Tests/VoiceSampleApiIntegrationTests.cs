@@ -183,6 +183,37 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, missingAdminSample.StatusCode);
     }
 
+    [Fact]
+    public async Task DraftDeletionRequiresCurrentVersionAndRemovesOnlyDrafts()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var create = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        using var document = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var id = document.RootElement.GetProperty("id").GetString()!;
+        var version = document.RootElement.GetProperty("version").GetInt32();
+        using var meDocument = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/me"));
+        var ownerId = meDocument.RootElement.GetProperty("id").GetString()!;
+        var uploadFolder = Path.Combine(root, "uploads", ownerId, id);
+        Directory.CreateDirectory(uploadFolder);
+        await File.WriteAllTextAsync(Path.Combine(uploadFolder, "pending-upload.txt"), "draft attachment");
+
+        using var staleDelete = await Send(ownerClient, HttpMethod.Delete, $"/api/projects/{id}?version={version + 1}", csrf);
+        Assert.Equal(HttpStatusCode.Conflict, staleDelete.StatusCode);
+        Assert.Equal("project.version_conflict", await ErrorCode(staleDelete));
+        Assert.True(File.Exists(Path.Combine(uploadFolder, "pending-upload.txt")));
+        using var stillPresent = await ownerClient.GetAsync($"/api/projects/{id}");
+        Assert.Equal(HttpStatusCode.OK, stillPresent.StatusCode);
+
+        using var delete = await Send(ownerClient, HttpMethod.Delete, $"/api/projects/{id}?version={version}", csrf);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        Assert.False(Directory.Exists(uploadFolder));
+        var tombstoneRoot = Path.Combine(root, "uploads", ".deleted");
+        Assert.False(Directory.Exists(tombstoneRoot) && Directory.EnumerateDirectories(tombstoneRoot, "*", SearchOption.AllDirectories).Any());
+        using var missing = await ownerClient.GetAsync($"/api/projects/{id}");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
     private async Task BootstrapOwner()
     {
         var csrf = await GetCsrf(ownerClient);

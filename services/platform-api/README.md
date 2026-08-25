@@ -2,7 +2,7 @@
 
 This is the production backend for the customer book-project intake portal. It owns accounts, sessions, project drafts, submitted registrations, configurable form options, uploaded files, validation, and submission records.
 
-It is not a mock API and it does not implement production, review, or delivery workflows.
+It is not a mock API. It supports an administrator-operated final-delivery shortcut, but it does not implement the detailed production or review workflow.
 
 ## Authentication
 
@@ -18,8 +18,8 @@ It is not a mock API and it does not implement production, review, or delivery w
 
 ## Scope
 
-- Customer-owned draft creation and editing
-- Real file upload and download
+- Customer-owned draft creation, editing, and version-checked deletion
+- Real file upload, download, and recoverable deletion; interrupted cleanup is reconciled on restart
 - Server-managed form options and voices
 - Validation and idempotent submission
 - Submitted records are read-only to customers

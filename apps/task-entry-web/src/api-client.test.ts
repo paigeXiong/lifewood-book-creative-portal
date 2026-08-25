@@ -47,6 +47,21 @@ describe("API client", () => {
     expect(JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit).body))).toEqual({ version: 7, idempotencyKey: "0123456789abcdef0123456789abcdef" });
   });
 
+  it("deletes only the requested draft version with CSRF protection", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-delete" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await projectService.deleteDraft("draft/1", 9, "en-US");
+
+    const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/projects/draft%2F1?version=9");
+    expect(options.method).toBe("DELETE");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBeTruthy();
+    expect(new Headers(options.headers).get("Accept-Language")).toBe("en-US");
+  });
   it("changes the current password with CSRF protection", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: string) =>
       input.endsWith("/auth/csrf")

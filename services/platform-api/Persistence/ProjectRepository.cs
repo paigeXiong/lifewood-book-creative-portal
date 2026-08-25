@@ -196,6 +196,39 @@ internal sealed class ProjectRepository(string connectionString)
             : new SaveResult(SaveOutcome.VersionConflict, current, current.Version);
     }
 
+    public SaveResult DeleteDraft(string ownerId, string id, int version)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        if (HasTable(connection, transaction, "project_notes"))
+        {
+            using var notes = connection.CreateCommand();
+            notes.Transaction = transaction;
+            notes.CommandText = "DELETE FROM project_notes WHERE project_id = $id AND EXISTS (SELECT 1 FROM projects WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version);";
+            notes.Parameters.AddWithValue("$ownerId", ownerId);
+            notes.Parameters.AddWithValue("$id", id);
+            notes.Parameters.AddWithValue("$version", version);
+            notes.ExecuteNonQuery();
+        }
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM projects WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version;";
+        command.Parameters.AddWithValue("$ownerId", ownerId);
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$version", version);
+        if (command.ExecuteNonQuery() == 1)
+        {
+            transaction.Commit();
+            return new SaveResult(SaveOutcome.Saved, null, null);
+        }
+        transaction.Rollback();
+        var current = Get(ownerId, id);
+        if (current is null) return new SaveResult(SaveOutcome.NotFound, null, null);
+        return current.Status != "draft"
+            ? new SaveResult(SaveOutcome.NotEditable, current, current.Version)
+            : new SaveResult(SaveOutcome.VersionConflict, current, current.Version);
+    }
+
     public SaveResult SaveCreative(string ownerId, string id, SaveCreativeRequest request)
     {
         var now = DateTimeOffset.UtcNow;
@@ -410,6 +443,14 @@ internal sealed class ProjectRepository(string connectionString)
     private static CreativeInfoDto EmptyCreative() => new([], null, [], [], [], []);
     private static VoiceAndReferencesInfoDto EmptyVoiceAndReferences() => new(new(null, null, null, null, null, null, null, null, [], null, null), [], [], new("", null, null, null, null, null));
 
+    private static bool HasTable(SqliteConnection connection, SqliteTransaction transaction, string table)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $table;";
+        command.Parameters.AddWithValue("$table", table);
+        return command.ExecuteScalar() is not null;
+    }
     private static bool HasColumn(SqliteConnection connection, SqliteTransaction transaction, string table, string column)
     {
         using var command = connection.CreateCommand();
@@ -421,7 +462,7 @@ internal sealed class ProjectRepository(string connectionString)
     }
 
     private static ProjectSummaryDto ToSummary(TaskDraftDto task) => new(
-        task.Id, task.TaskNumber,
+        task.Id, task.TaskNumber, task.Version,
         string.IsNullOrWhiteSpace(task.Project.ProjectName) ? "—" : task.Project.ProjectName,
         string.IsNullOrWhiteSpace(task.Project.ClientName) ? "—" : task.Project.ClientName,
         string.IsNullOrWhiteSpace(task.Book.Title) ? "—" : task.Book.Title,

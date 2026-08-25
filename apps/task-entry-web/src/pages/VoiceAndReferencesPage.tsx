@@ -42,7 +42,7 @@ function ReferencesSection({ form, categories, locale, uploadCategory, transfers
   const [assets, competitorUrls] = useWatch({ control: form.control, name: ["assets", "competitorUrls"] });
   const linksEnabled = categories.some((category) => category.allowsUrl && !category.unavailable);
   return <section className="form-panel reference-section"><div className="section-heading"><div><h2><span>3.3</span>{t("voice.sections.references")}</h2><p>{t("voice.referenceHint")}</p></div></div>
-    <div className="upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <div className="upload-card" key={category.id}><div><strong>{category.label}</strong><small>{category.description}</small><small>{t("voice.fileLimit", { size: formatBytes(category.maxBytes, locale), count: category.maxFiles })}</small></div><label className={`button button-secondary ${uploadCategory || category.unavailable || files.length >= category.maxFiles ? "disabled" : ""}`} aria-disabled={Boolean(uploadCategory) || category.unavailable || files.length >= category.maxFiles} htmlFor={`upload-${category.id}`} aria-label={t("voice.chooseFor", { category: category.label })}>{uploadCategory === category.id ? t("voice.uploading") : t("voice.chooseFiles")}</label><input id={`upload-${category.id}`} name={`upload-${category.id}`} autoComplete="off" className="visually-hidden" type="file" multiple={category.maxFiles > 1} accept={category.accept.join(",")} disabled={Boolean(uploadCategory) || category.unavailable || files.length >= category.maxFiles} onChange={(event) => { void onUpload(category, event.target.files); event.target.value = ""; }} />{files.length > 0 && <ul className="uploaded-files">{files.map((asset) => <li key={asset.id}><span title={asset.fileName}>{asset.fileName}</span><small>{formatBytes(asset.sizeBytes, locale)}</small><button type="button" aria-label={t("voice.removeFile", { fileName: asset.fileName })} onClick={() => void onRemoveAsset(asset.id)}>{t("voice.remove")}</button></li>)}</ul>}</div>; })}</div>
+    <div className="upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <div className="upload-card" key={category.id}><div><strong>{category.label}</strong><small>{category.description}</small><small>{t("voice.fileLimit", { size: formatBytes(category.maxBytes, locale), count: category.maxFiles })}</small></div><label className={`button button-secondary ${uploadCategory || category.unavailable || files.length >= category.maxFiles ? "disabled" : ""}`} aria-disabled={Boolean(uploadCategory) || category.unavailable || files.length >= category.maxFiles} htmlFor={`upload-${category.id}`} aria-label={t("voice.chooseFor", { category: category.label })}>{uploadCategory === category.id ? t("voice.uploading") : t("voice.chooseFiles")}</label><input id={`upload-${category.id}`} name={`upload-${category.id}`} autoComplete="off" className="visually-hidden" type="file" multiple={category.maxFiles > 1} accept={category.accept.join(",")} disabled={Boolean(uploadCategory) || category.unavailable || files.length >= category.maxFiles} onChange={(event) => { void onUpload(category, event.target.files); event.target.value = ""; }} />{files.length > 0 && <ul className="uploaded-files">{files.map((asset) => <li key={asset.id}><span title={asset.fileName}>{asset.fileName}</span><small>{formatBytes(asset.sizeBytes, locale)}</small><button type="button" aria-label={t("voice.removeFile", { fileName: asset.fileName })} disabled={Boolean(uploadCategory)} onClick={() => void onRemoveAsset(asset.id)}>{t("voice.remove")}</button></li>)}</ul>}</div>; })}</div>
     {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancelUpload(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetryUpload(item)}>{t("common.retry")}</button>}</li>)}</ul>}
     {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
     <div className="competitor-links" hidden={!linksEnabled && competitorUrls.length === 0}><div className="section-heading compact"><div><h3>{t("voice.fields.competitorLinks")}</h3><p>{t("voice.competitorHint")}</p></div><button className="button button-secondary" type="button" disabled={!linksEnabled || competitorUrls.length >= 5} onClick={() => form.setValue("competitorUrls", [...competitorUrls, ""], { shouldDirty: true })}>{t("voice.addLink")}</button></div>{competitorUrls.map((_, index) => { const error = form.formState.errors.competitorUrls?.[index]?.message; const messageId = `competitor-url-${index}-message`; return <div className="field" key={index}><label htmlFor={`competitor-url-${index}`}>{t("voice.linkNumber", { index: index + 1 })}</label><div className="inline-input"><input id={`competitor-url-${index}`} type="url" inputMode="url" spellCheck={false} autoComplete="off" readOnly={!linksEnabled} placeholder="https://example.com/…" aria-invalid={error ? true : undefined} aria-describedby={error ? messageId : undefined} {...form.register(`competitorUrls.${index}`)} /><button type="button" aria-label={t("voice.removeLink", { index: index + 1 })} onClick={() => form.setValue("competitorUrls", competitorUrls.filter((_, itemIndex) => itemIndex !== index), { shouldDirty: true })}>{t("voice.remove")}</button></div>{error && <div className="field-error" id={messageId} role="alert">{error}</div>}</div>; })}</div>
@@ -55,7 +55,7 @@ export function VoiceAndReferencesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "pending" | "saving" | "saved" | "invalid" | "error">("idle");
   const [uploadCategory, setUploadCategory] = useState<string>();
   const [uploadError, setUploadError] = useState<string>();
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
@@ -65,6 +65,9 @@ export function VoiceAndReferencesPage() {
   const activeUploadRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const cancelledTransferIdsRef = useRef(new Set<string>());
   const uploadingRef = useRef(false);
+  const autosaveTimerRef = useRef<number | undefined>(undefined);
+  const saveInFlightRef = useRef(false);
+  const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
   const draftSchema = useMemo(() => createVoiceDraftSchema(t), [t]);
   const stepSchema = useMemo(() => createVoiceStepSchema(t), [t]);
   const draftQuery = useQuery({ queryKey: ["project", taskId], queryFn: () => projectService.getProject(taskId!, validLocale), enabled: Boolean(taskId) });
@@ -75,6 +78,7 @@ export function VoiceAndReferencesPage() {
     contentLanguageId: "", narrationToneId: "", speechRateId: "", pronunciationNotes: "", voiceGenderId: "", voiceAgeId: "", accentId: "", emotionStyleId: "",
     selectedVoiceIds: [], preferredVoiceId: "", customVoiceDescription: "", assets: [], competitorUrls: [], coreMessage: "", requiredScenes: "", authorPreferences: "", closingMessage: "", musicMood: "", avoidContent: "",
   }});
+  const autosaveValues = useWatch({ control: form.control });
 
   useEffect(() => {
     const draft = draftQuery.data;
@@ -112,7 +116,7 @@ export function VoiceAndReferencesPage() {
   const save = useMutation({
     mutationFn: async ({ values, continueAfter }: { values: VoiceFormValues; continueAfter: boolean }) => {
       setSaveState("saving");
-      const current = draftQuery.data!;
+      const current = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
       const next: TaskDraft = { ...current, voiceAndReferences: {
         voiceover: { contentLanguageId: values.contentLanguageId || undefined, narrationToneId: values.narrationToneId || undefined, speechRateId: values.speechRateId || undefined,
           pronunciationNotes: values.pronunciationNotes || undefined, voiceGenderId: values.voiceGenderId || undefined, voiceAgeId: values.voiceAgeId || undefined, accentId: values.accentId || undefined,
@@ -121,12 +125,33 @@ export function VoiceAndReferencesPage() {
         creativeDirection: { coreMessage: values.coreMessage, requiredScenes: values.requiredScenes || undefined, authorPreferences: values.authorPreferences || undefined,
           closingMessage: values.closingMessage || undefined, musicMood: values.musicMood || undefined, avoidContent: values.avoidContent || undefined },
       }};
-      return { saved: await projectService.saveVoiceAndReferences(current.id, next, validLocale, continueAfter), continueAfter };
+      return { saved: await projectService.saveVoiceAndReferences(current.id, next, validLocale, continueAfter), continueAfter, values };
     },
-    onSuccess: ({ saved, continueAfter }) => { queryClient.setQueryData(["project", taskId], saved); void queryClient.invalidateQueries({ queryKey: ["projects"] }); form.reset(form.getValues()); setSaveState("saved"); if (continueAfter) navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/review`)); },
-    onError: () => setSaveState("error"),
+    onSuccess: ({ saved, continueAfter, values }) => { queryClient.setQueryData(["project", taskId], saved); void queryClient.invalidateQueries({ queryKey: ["projects"] }); form.reset(values, { keepValues: true }); failedSaveSnapshotRef.current = undefined; setSaveState("saved"); if (continueAfter) navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/review`)); },
+    onError: (_error, variables) => { failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
+    onSettled: () => { saveInFlightRef.current = false; },
   });
 
+  const runSave = (values: VoiceFormValues, continueAfter: boolean, explicit: boolean) => {
+    const snapshot = JSON.stringify(values);
+    if (saveInFlightRef.current || (!explicit && failedSaveSnapshotRef.current === snapshot)) return;
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    if (explicit) failedSaveSnapshotRef.current = undefined;
+    saveInFlightRef.current = true;
+    save.mutate({ values, continueAfter });
+  };
+
+  useEffect(() => {
+    if (!form.formState.isDirty || save.isPending || uploadCategory) return;
+    const checked = draftSchema.safeParse(autosaveValues);
+    if (!checked.success) { setSaveState("invalid"); return; }
+    const snapshot = JSON.stringify(checked.data);
+    if (failedSaveSnapshotRef.current === snapshot) return;
+    setSaveState("pending");
+    autosaveTimerRef.current = window.setTimeout(() => runSave(checked.data, false, false), 2_000);
+    return () => { if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = undefined; };
+  }, [autosaveValues, form.formState.isDirty, save.isPending, uploadCategory, draftSchema]);
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (draftQuery.isPending || optionsQuery.isPending || voicesQuery.isPending) return <div className="screen-status" aria-busy="true">{t("common.loading")}</div>;
   if (draftQuery.isError || optionsQuery.isError || voicesQuery.isError || !draftQuery.data || !optionsQuery.data || !voicesQuery.data) return <div className="screen-status" role="alert">{localizedApiError(draftQuery.error ?? optionsQuery.error ?? voicesQuery.error, t)}</div>;
@@ -146,7 +171,7 @@ export function VoiceAndReferencesPage() {
   const referenceCategories = mergeLegacyCategories(options.referenceCategories, draftQuery.data.voiceAndReferences.assets, unavailable);
   const voices = voicesQuery.data.filter((voice) => voice.enabled);
   const conflict = save.error instanceof ApiError && save.error.details.code === "project.version_conflict";
-  const statusText = saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
+  const statusText = saveState === "pending" ? t("common.savePending") : saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
   const guardLink = (event: MouseEvent<HTMLAnchorElement>) => { if (form.formState.isDirty && !window.confirm(t("wizard.unsavedChanges"))) event.preventDefault(); };
   const selectVoice = (id: string, selected: boolean) => {
     const selectedIds = form.getValues("selectedVoiceIds");
@@ -186,7 +211,9 @@ export function VoiceAndReferencesPage() {
     } finally { if (activeUploadRef.current?.id === item.id) activeUploadRef.current = null; }
   };
   const upload = async (category: ReferenceCategory, files: FileList | null) => {
-    if (!files?.length || uploadingRef.current) return;
+    if (!files?.length || uploadingRef.current || saveInFlightRef.current) return;
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
     uploadingRef.current = true; setUploadError(undefined); setUploadCategory(category.id);
     const available = Math.max(0, category.maxFiles - form.getValues("assets").filter((asset) => asset.categoryId === category.id).length);
     const queue = Array.from(files).slice(0, available).map((file) => ({ id: crypto.randomUUID(), categoryId: category.id, file, status: "uploading" as const }));
@@ -197,28 +224,41 @@ export function VoiceAndReferencesPage() {
     }
     uploadingRef.current = false; setUploadCategory(undefined);
   };
-  const retryUpload = async (item: TransferItem) => { if (uploadingRef.current) return; uploadingRef.current = true; setUploadCategory(item.categoryId); await uploadOne(item); uploadingRef.current = false; setUploadCategory(undefined); };
+  const retryUpload = async (item: TransferItem) => { if (uploadingRef.current || saveInFlightRef.current) return; if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = undefined; uploadingRef.current = true; setUploadCategory(item.categoryId); await uploadOne(item); uploadingRef.current = false; setUploadCategory(undefined); };
   const cancelUpload = (id: string) => {
     cancelledTransferIdsRef.current.add(id);
     if (activeUploadRef.current?.id === id) activeUploadRef.current.controller.abort();
     else setTransfers((current) => current.filter((item) => item.id !== id));
   };
   const removeAsset = async (id: string) => {
-    if (!window.confirm(t("voice.removeConfirm"))) return;
-    try { const current = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!; const saved = await projectService.deleteAsset(taskId, id, current.version, validLocale); queryClient.setQueryData(["project", taskId], saved); form.setValue("assets", saved.voiceAndReferences.assets, { shouldDirty: true }); }
-    catch (error) { setUploadError(localizedApiError(error, t)); }
+    if (saveInFlightRef.current || !window.confirm(t("voice.removeConfirm"))) return;
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    saveInFlightRef.current = true;
+    setUploadCategory("__removing__");
+    try {
+      const current = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
+      const saved = await projectService.deleteAsset(taskId, id, current.version, validLocale);
+      queryClient.setQueryData(["project", taskId], saved);
+      form.setValue("assets", saved.voiceAndReferences.assets, { shouldDirty: true });
+    } catch (error) {
+      setUploadError(localizedApiError(error, t));
+    } finally {
+      saveInFlightRef.current = false;
+      setUploadCategory(undefined);
+    }
   };
   const continueStep = form.handleSubmit((values) => {
     const checked = stepSchema.safeParse(values);
     if (!checked.success) { checked.error.issues.forEach((issue) => form.setError(issue.path as never, { message: issue.message })); const first = checked.error.issues[0]?.path.join("."); if (first) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[name="${first}"]`)?.focus()); return; }
-    save.mutate({ values: checked.data, continueAfter: true });
+    runSave(checked.data, true, true);
   });
 
   return <div className="wizard-page voice-page">
     <div className="wizard-heading"><div><h1>{t("wizard.pageTitles.voice")}</h1><p>{t("wizard.pageSubtitles.voice")}</p></div><span className={`save-state save-${saveState}`} aria-live="polite">{statusText}</span></div>
     {removedVoiceCount > 0 && <div className="inline-notice" role="status">{t("voice.unavailableRemoved", { count: removedVoiceCount })}</div>}
     <StepProgress current={3} />
-    <form autoComplete="off" onSubmit={continueStep}>
+    <form autoComplete="off" onSubmit={continueStep} inert={save.isPending && Boolean(save.variables?.continueAfter)} aria-busy={save.isPending && Boolean(save.variables?.continueAfter)}>
       <div className="voice-layout"><div className="form-stack">
         <section className="form-panel voice-settings"><div className="section-heading"><div><h2><span>3.1</span>{t("voice.sections.settings")}</h2><p>{t("voice.settingsHint")}</p></div></div>
           <div className="form-grid voice-grid">
@@ -235,7 +275,7 @@ export function VoiceAndReferencesPage() {
 
         <VoiceSamplesSection form={form} voices={voices} maxSelected={options.maxSelectedVoices} playingVoice={playingVoice} voiceTagMap={voiceTagMap} onSelect={selectVoice} onPrefer={preferVoice} onToggleAudio={toggleAudio} />
 
-        <ReferencesSection form={form} categories={referenceCategories} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemoveAsset={removeAsset} onCancelUpload={cancelUpload} onRetryUpload={retryUpload} />
+        <ReferencesSection form={form} categories={referenceCategories} locale={validLocale} uploadCategory={uploadCategory ?? (save.isPending ? "__saving__" : undefined)} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemoveAsset={removeAsset} onCancelUpload={cancelUpload} onRetryUpload={retryUpload} />
 
         <section className="form-panel direction-section"><div className="section-heading"><div><h2><span>3.4</span>{t("voice.sections.direction")}</h2><p>{t("voice.directionHint")}</p></div></div><div className="form-grid">
           <Field className="field-wide" label={t("voice.fields.coreMessage")} htmlFor="core-message" required error={form.formState.errors.coreMessage?.message}><textarea id="core-message" rows={3} maxLength={300} autoComplete="off" {...form.register("coreMessage")} /></Field>
@@ -246,7 +286,7 @@ export function VoiceAndReferencesPage() {
           <Field className="field-wide" label={t("voice.fields.avoidContent")} htmlFor="avoid-content" error={form.formState.errors.avoidContent?.message}><textarea id="avoid-content" rows={2} maxLength={200} autoComplete="off" {...form.register("avoidContent")} /></Field>
         </div></section>
       </div><VoiceSummary control={form.control} voices={voices} /></div>
-      <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} onClick={guardLink}>{t("wizard.actions.backCharacters")}</Link><p className="sticky-note">{t("wizard.footerNotes.voice")}</p><div><button className="button button-secondary" type="button" disabled={save.isPending || Boolean(uploadCategory)} onClick={form.handleSubmit((values) => save.mutate({ values, continueAfter: false }))}>{save.isPending ? t("common.saving") : t("common.save")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={save.isPending || Boolean(uploadCategory)}>{save.isPending ? t("common.saving") : t("voice.continueToReview")}<span aria-hidden="true">→</span></button></div></div>
+      <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} onClick={guardLink}>{t("wizard.actions.backCharacters")}</Link><p className="sticky-note">{t("wizard.footerNotes.voice")}</p><div><button className="button button-secondary" type="button" disabled={save.isPending || Boolean(uploadCategory)} onClick={form.handleSubmit((values) => runSave(values, false, true))}>{save.isPending ? t("common.saving") : t("common.save")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={save.isPending || Boolean(uploadCategory)}>{save.isPending ? t("common.saving") : t("voice.continueToReview")}<span aria-hidden="true">→</span></button></div></div>
     </form>
   </div>;
 }

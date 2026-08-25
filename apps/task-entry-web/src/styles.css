@@ -74,6 +74,9 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .task-table td small, .task-table td strong { display: block; min-width: 0; overflow-wrap: anywhere; }
 .task-table td small { color: var(--lw-text-muted); margin-top: 3px; font-size: 11px; }
 .task-identity { min-width: 230px; width: 100%; border: 0; border-radius: 6px; background: transparent; padding: 2px; text-align: left; color: inherit; display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.task-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.task-delete { color: var(--lw-error); }
+.task-delete:hover:not(:disabled) { background: var(--lw-error-bg); color: var(--lw-error); }
 .list-cover { width: 34px; height: 42px; flex: 0 0 auto; border-radius: 4px; object-fit: cover; background: var(--lw-sea-salt); }
 .task-identity:hover strong { color: var(--lw-castleton); text-decoration: underline; text-underline-offset: 2px; }
 .status-badge { display: inline-flex; padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 700; background: #eef1ef; color: var(--lw-text-secondary); }

@@ -14,6 +14,25 @@ public sealed class PersistenceIntegrationTests : IDisposable
     public PersistenceIntegrationTests() => Directory.CreateDirectory(root);
 
     [Fact]
+    public void DraftDeletionProtectsNewerAndSubmittedProjects()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        new UserRepository(ConnectionString, root).Initialize();
+        new AdminRepository(ConnectionString).Initialize();
+        var draft = projects.Create("owner-id");
+
+        Assert.Equal(SaveOutcome.VersionConflict, projects.DeleteDraft("owner-id", draft.Id, draft.Version + 1).Outcome);
+        Assert.NotNull(projects.Get("owner-id", draft.Id));
+        Execute("UPDATE projects SET status = 'submitted' WHERE id = $id;", ("$id", draft.Id));
+        Assert.Equal(SaveOutcome.NotEditable, projects.DeleteDraft("owner-id", draft.Id, draft.Version).Outcome);
+        Assert.NotNull(projects.Get("owner-id", draft.Id));
+
+        var removable = projects.Create("owner-id");
+        Assert.Equal(SaveOutcome.Saved, projects.DeleteDraft("owner-id", removable.Id, removable.Version).Outcome);
+        Assert.Null(projects.Get("owner-id", removable.Id));
+    }
+    [Fact]
     public void UserMigrationAndPasswordUpdatesRevokeOldSessionVersions()
     {
         var projects = new ProjectRepository(ConnectionString);

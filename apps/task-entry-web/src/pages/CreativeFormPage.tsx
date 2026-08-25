@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFieldArray, useForm, useWatch, type Control } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -40,7 +40,10 @@ export function CreativeFormPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "pending" | "saving" | "saved" | "invalid" | "error">("idle");
+  const autosaveTimerRef = useRef<number | undefined>(undefined);
+  const saveInFlightRef = useRef(false);
+  const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
   const draftSchema = useMemo(() => createCreativeDraftSchema(t), [t]);
   const stepSchema = useMemo(() => createCreativeStepSchema(t), [t]);
   const draftQuery = useQuery({ queryKey: ["project", taskId], queryFn: () => projectService.getProject(taskId!, validLocale), enabled: Boolean(taskId) });
@@ -51,6 +54,7 @@ export function CreativeFormPage() {
   });
   const characters = useFieldArray({ control: form.control, name: "characters", keyName: "formKey" });
   const selectedMoodTagIds = useWatch({ control: form.control, name: "moodTagIds" });
+  const autosaveValues = useWatch({ control: form.control });
   const selectedImageStyleTagIds = useWatch({ control: form.control, name: "imageStyleTagIds" });
   const selectedPaceTagIds = useWatch({ control: form.control, name: "paceTagIds" });
 
@@ -83,7 +87,7 @@ export function CreativeFormPage() {
   const saveCreative = useMutation({
     mutationFn: async ({ values, continueAfter }: { values: CreativeFormValues; continueAfter: boolean }) => {
       setSaveState("saving");
-      const current = draftQuery.data!;
+      const current = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
       const next: TaskDraft = { ...current, creative: {
         characters: values.characters.map((character) => ({ ...character,
           roleTypeId: character.roleTypeId || undefined, ageRangeId: character.ageRangeId || undefined,
@@ -94,18 +98,40 @@ export function CreativeFormPage() {
         paceTagIds: values.paceTagIds, styleReferenceImageUrls: values.styleReferenceImageUrls,
       }};
       const saved = await projectService.saveCreative(current.id, next, validLocale);
-      return { saved, continueAfter };
+      return { saved, continueAfter, values };
     },
-    onSuccess: ({ saved, continueAfter }) => {
+    onSuccess: ({ saved, continueAfter, values }) => {
       queryClient.setQueryData(["project", taskId], saved);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      form.reset(form.getValues());
+      form.reset(values, { keepValues: true });
+      failedSaveSnapshotRef.current = undefined;
       setSaveState("saved");
       if (continueAfter) navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/voice`));
     },
-    onError: () => setSaveState("error"),
+    onError: (_error, variables) => { failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
+    onSettled: () => { saveInFlightRef.current = false; },
   });
 
+  const runSave = (values: CreativeFormValues, continueAfter: boolean, explicit: boolean) => {
+    const snapshot = JSON.stringify(values);
+    if (saveInFlightRef.current || (!explicit && failedSaveSnapshotRef.current === snapshot)) return;
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    if (explicit) failedSaveSnapshotRef.current = undefined;
+    saveInFlightRef.current = true;
+    saveCreative.mutate({ values, continueAfter });
+  };
+
+  useEffect(() => {
+    if (!form.formState.isDirty || saveCreative.isPending) return;
+    const checked = draftSchema.safeParse(autosaveValues);
+    if (!checked.success) { setSaveState("invalid"); return; }
+    const snapshot = JSON.stringify(checked.data);
+    if (failedSaveSnapshotRef.current === snapshot) return;
+    setSaveState("pending");
+    autosaveTimerRef.current = window.setTimeout(() => runSave(checked.data, false, false), 2_000);
+    return () => { if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = undefined; };
+  }, [autosaveValues, form.formState.isDirty, saveCreative.isPending, draftSchema]);
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
   if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) return <div className="screen-status" role="alert">{localizedApiError(draftQuery.error ?? optionsQuery.error, t)}</div>;
@@ -123,7 +149,7 @@ export function CreativeFormPage() {
   const paceOptions = mergeLegacyOptions(options.paceTags, previous.paceTagIds, unavailable);
   const styleTagMap = new Map([...moodOptions, ...imageStyleOptions, ...paceOptions].map((item) => [item.id, item.label]));
   const conflict = saveCreative.error instanceof ApiError && saveCreative.error.details.code === "project.version_conflict";
-  const statusText = saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
+  const statusText = saveState === "pending" ? t("common.savePending") : saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
   const guardLink = (event: MouseEvent<HTMLAnchorElement>) => { if (form.formState.isDirty && !window.confirm(t("wizard.unsavedChanges"))) event.preventDefault(); };
   const continueStep = form.handleSubmit((values) => {
     const checked = stepSchema.safeParse(values);
@@ -135,13 +161,13 @@ export function CreativeFormPage() {
         : document.querySelector<HTMLElement>(`[name="${first}"]`))?.focus());
       return;
     }
-    saveCreative.mutate({ values: checked.data, continueAfter: true });
+    runSave(checked.data, true, true);
   });
 
   return <div className="wizard-page creative-page">
     <div className="wizard-heading"><div><h1>{t("wizard.pageTitles.characters")}</h1><p>{t("wizard.pageSubtitles.characters")}</p></div><span className={`save-state save-${saveState}`} role={saveState === "error" ? "alert" : "status"}>{statusText}</span></div>
     <StepProgress current={2} />
-    <form autoComplete="off" onSubmit={continueStep}>
+    <form autoComplete="off" onSubmit={continueStep} inert={saveCreative.isPending && Boolean(saveCreative.variables?.continueAfter)} aria-busy={saveCreative.isPending && Boolean(saveCreative.variables?.continueAfter)}>
       <div className="creative-layout">
         <div className="form-stack">
           <section className="form-panel character-section" id="characters-error-target" tabIndex={-1}>
@@ -179,7 +205,7 @@ export function CreativeFormPage() {
 
         <CreativeSummary control={form.control} visualStyles={visualStyleOptions} roleTypes={roleOptions} styleTagMap={styleTagMap} />
       </div>
-      <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/project`)} onClick={guardLink}>{t("wizard.actions.backUpload")}</Link><p className="sticky-note">{t("wizard.footerNotes.characters")}</p><div><button className="button button-secondary" type="button" disabled={saveCreative.isPending} onClick={form.handleSubmit((values) => saveCreative.mutate({ values, continueAfter: false }))}>{saveCreative.isPending ? t("common.saving") : t("common.save")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={saveCreative.isPending}>{saveCreative.isPending ? t("common.saving") : t("wizard.actions.toVoice")}<span aria-hidden="true">→</span></button></div></div>
+      <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/project`)} onClick={guardLink}>{t("wizard.actions.backUpload")}</Link><p className="sticky-note">{t("wizard.footerNotes.characters")}</p><div><button className="button button-secondary" type="button" disabled={saveCreative.isPending} onClick={form.handleSubmit((values) => runSave(values, false, true))}>{saveCreative.isPending ? t("common.saving") : t("common.save")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={saveCreative.isPending}>{saveCreative.isPending ? t("common.saving") : t("wizard.actions.toVoice")}<span aria-hidden="true">→</span></button></div></div>
     </form>
   </div>;
 }

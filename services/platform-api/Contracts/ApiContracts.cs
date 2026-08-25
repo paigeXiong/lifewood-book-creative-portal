@@ -257,6 +257,7 @@ public sealed record TaskDraftDto(
 public sealed record ProjectSummaryDto(
     string Id,
     string? TaskNumber,
+    int Version,
     string ProjectName,
     string ClientName,
     string BookTitle,

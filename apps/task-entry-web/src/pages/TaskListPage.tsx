@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { localizedApiError, optionService, projectService } from "@lifewood/api-client";
+import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 
 export function TaskListPage() {
@@ -43,6 +43,22 @@ export function TaskListPage() {
         queryClient.invalidateQueries({ queryKey: ["project-count"] }),
       ]);
       navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
+    },
+  });
+  const deleteDraft = useMutation({
+    mutationFn: ({ id, version }: { id: string; version: number }) => projectService.deleteDraft(id, version, validLocale),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["project-count"] }),
+      ]);
+      if ((tasks.data?.items.length ?? 0) <= 1 && page > 1) {
+        setSearchParams((current) => {
+          const next = new URLSearchParams(current);
+          page - 1 > 1 ? next.set("page", String(page - 1)) : next.delete("page");
+          return next;
+        });
+      }
     },
   });
   const statusMap = useMemo(() => new Map([...(options.data?.taskStatuses ?? []), ...(options.data?.workflowStatuses ?? [])].map((item) => [item.id, item])), [options.data]);
@@ -108,6 +124,7 @@ export function TaskListPage() {
 
       <section className="task-surface main-panel reference-table-panel" aria-busy={tasks.isPending}>
         {createDraft.isError && <div className="inline-error" role="alert">{localizedApiError(createDraft.error, t)}</div>}
+        {deleteDraft.isError && <div className="inline-error" role="alert">{deleteDraft.error instanceof ApiError ? localizedApiError(deleteDraft.error, t) : t("tasks.deleteDraftFailed")}</div>}
         {options.isError && <div className="inline-error" role="alert">{localizedApiError(options.error, t)} <button className="button button-secondary" type="button" onClick={() => void options.refetch()}>{t("common.retry")}</button></div>}
         {tasks.isPending && <span className="sr-only" role="status">{t("common.loading")}</span>}
         {tasks.isError && <div className="inline-error" role="alert">{localizedApiError(tasks.error, t)} <button className="button button-secondary" type="button" onClick={() => void tasks.refetch()}>{t("common.retry")}</button></div>}
@@ -137,7 +154,7 @@ export function TaskListPage() {
                   <td data-label={t("tasks.columns.book")}>{task.authorName || "—"}</td>
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${statusOption?.tone ?? "neutral"}`}>{statusOption?.label ?? statusId}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{task.status === "draft" ? t("tasks.continueEditing") : t("tasks.view")}</Link></td>
+                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{task.status === "draft" ? t("tasks.continueEditing") : t("tasks.view")}</Link>{task.status === "draft" && <button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { if (window.confirm(t("tasks.deleteDraftConfirm"))) deleteDraft.mutate({ id: task.id, version: task.version }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t("tasks.deleteDraft")}</button>}</div></td>
                 </tr>;
               })}</tbody>
             </table>
