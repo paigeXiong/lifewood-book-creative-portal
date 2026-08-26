@@ -1,25 +1,22 @@
 [CmdletBinding()]
-param([string]$Destination)
+param([string]$Destination, [string]$DataDirectory)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$dataDirectory = Join-Path $repositoryRoot "services\platform-api\data"
-$stateFile = Join-Path $repositoryRoot "artifacts\dev-logs\local-services.json"
+$dataDirectory = if (-not [string]::IsNullOrWhiteSpace($DataDirectory)) { [IO.Path]::GetFullPath($DataDirectory) }
+    elseif (-not [string]::IsNullOrWhiteSpace($env:Lifewood__DataDirectory)) { [IO.Path]::GetFullPath($env:Lifewood__DataDirectory) }
+    elseif (Test-Path -LiteralPath (Join-Path $repositoryRoot "api")) { Join-Path $repositoryRoot "api\data" }
+    else { Join-Path $repositoryRoot "services\platform-api\data" }
 $backupRoot = if ([string]::IsNullOrWhiteSpace($Destination)) { Join-Path $repositoryRoot "backups" } else { $Destination }
-
-if (Test-Path -LiteralPath $stateFile) {
-    $state = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
-    $running = @($state.processes | Where-Object { Get-Process -Id $_.id -ErrorAction SilentlyContinue })
-    if ($running.Count -gt 0) {
-        throw "Stop the local platform before backup so the database and uploaded files remain consistent."
-    }
-}
 
 if (-not (Test-Path -LiteralPath $dataDirectory)) {
     throw "Platform data directory was not found: $dataDirectory"
 }
+
+$dataItem = Get-Item -LiteralPath $dataDirectory -Force
+if (($dataItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "The data directory cannot be a junction or symbolic link." }
 
 
 $lockPath = Join-Path $dataDirectory "platform.lock"

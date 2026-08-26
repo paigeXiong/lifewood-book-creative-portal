@@ -258,6 +258,18 @@ export interface AdminOverview {
   priorities: AdminCountMetric[];
 }
 
+export interface AuditEvent {
+  id: string;
+  actorUserId: string;
+  actorName: string;
+  actorEmail: string;
+  actionId: string;
+  targetType: string;
+  targetId?: string;
+  occurredAt: string;
+  traceId: string;
+}
+
 export interface FinalDelivery {
   id: string;
   projectId: string;

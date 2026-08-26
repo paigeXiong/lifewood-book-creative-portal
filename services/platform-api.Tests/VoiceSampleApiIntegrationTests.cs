@@ -198,6 +198,83 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         using var forbidden = await customerClient.GetAsync("/api/admin/overview");
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
     }
+
+    [Fact]
+    public async Task AdministratorWorkflowDoesNotExposeOrMutateCustomerDrafts()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var created = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var createdDocument = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var draftId = createdDocument.RootElement.GetProperty("id").GetString();
+
+        using var list = await ownerClient.GetAsync("/api/admin/projects");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        Assert.Equal(0, listDocument.RootElement.GetProperty("total").GetInt32());
+
+        using var detail = await ownerClient.GetAsync($"/api/admin/projects/{draftId}");
+        Assert.Equal(HttpStatusCode.NotFound, detail.StatusCode);
+        using var workflow = await Send(ownerClient, HttpMethod.Put, $"/api/admin/projects/{draftId}/workflow", csrf,
+            JsonContent.Create(new { workflowStatus = "contacting", priority = "normal", assigneeUserId = (string?)null }));
+        Assert.Equal(HttpStatusCode.NotFound, workflow.StatusCode);
+        using var note = await Send(ownerClient, HttpMethod.Post, $"/api/admin/projects/{draftId}/notes", csrf,
+            JsonContent.Create(new { body = "A draft must not enter internal follow-up." }));
+        Assert.Equal(HttpStatusCode.NotFound, note.StatusCode);
+    }
+
+    [Fact]
+    public async Task AuditQueryRecordsOnlySuccessfulAdministratorWritesAndRequiresPermission()
+    {
+        using var anonymous = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        using var unauthorized = await anonymous.GetAsync("/api/admin/audit-events");
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var created = await Send(ownerClient, HttpMethod.Post, "/api/admin/users", csrf,
+            JsonContent.Create(new { displayName = "Audit Customer", email = "audit@example.test", password = "audit-password-123", role = "customer" }));
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var createdUser = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var createdUserId = createdUser.RootElement.GetProperty("id").GetString();
+        using var duplicate = await Send(ownerClient, HttpMethod.Post, "/api/admin/users", csrf,
+            JsonContent.Create(new { displayName = "Duplicate", email = "audit@example.test", password = "audit-password-123", role = "customer" }));
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+
+        ownerClient.DefaultRequestHeaders.AcceptLanguage.Clear();
+        ownerClient.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US");
+        using var actionsResponse = await ownerClient.GetAsync("/api/admin/audit-actions");
+        Assert.Equal(HttpStatusCode.OK, actionsResponse.StatusCode);
+        using var actions = JsonDocument.Parse(await actionsResponse.Content.ReadAsStringAsync());
+        Assert.Contains(actions.RootElement.EnumerateArray(), item =>
+            item.GetProperty("id").GetString() == "user.create" && item.GetProperty("label").GetString() == "Created user");
+
+        using var eventsResponse = await ownerClient.GetAsync("/api/admin/audit-events?actionId=user.create&page=1&pageSize=30");
+        Assert.Equal(HttpStatusCode.OK, eventsResponse.StatusCode);
+        using var events = JsonDocument.Parse(await eventsResponse.Content.ReadAsStringAsync());
+        Assert.Equal(1, events.RootElement.GetProperty("total").GetInt32());
+        var auditEvent = Assert.Single(events.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("Test Owner", auditEvent.GetProperty("actorName").GetString());
+        Assert.Equal("user.create", auditEvent.GetProperty("actionId").GetString());
+        Assert.Equal(createdUserId, auditEvent.GetProperty("targetId").GetString());
+        Assert.False(auditEvent.TryGetProperty("password", out _));
+        var actorUserId = auditEvent.GetProperty("actorUserId").GetString();
+        using var avatar = await ownerClient.GetAsync($"/api/admin/audit-avatar/{actorUserId}?name=Test%20Owner");
+        Assert.Equal(HttpStatusCode.OK, avatar.StatusCode);
+        Assert.Equal("image/svg+xml", avatar.Content.Headers.ContentType?.MediaType);
+
+        using var customerClient = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        var customerCsrf = await GetCsrf(customerClient);
+        using var login = await Send(customerClient, HttpMethod.Post, "/api/auth/login", customerCsrf,
+            JsonContent.Create(new { email = "audit@example.test", password = "audit-password-123", rememberMe = false }));
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        using var forbidden = await customerClient.GetAsync("/api/admin/audit-events");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        using var forbiddenAvatar = await customerClient.GetAsync($"/api/admin/audit-avatar/{actorUserId}?name=Test%20Owner");
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenAvatar.StatusCode);
+    }
+
     [Fact]
     public async Task DraftDeletionRequiresCurrentVersionAndRemovesOnlyDrafts()
     {

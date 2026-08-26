@@ -13,6 +13,24 @@ describe("administrator API client", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/admin/overview");
   });
 
+  it("loads localized audit actions and sends audit filters", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "user.create", label: "Created user" }]), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], page: 2, pageSize: 30, total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminService.listAuditActions("en-US");
+    await adminService.listAuditEvents({ search: "owner", actionId: "user.create", from: "2026-08-01", to: "2026-08-26", page: 2 });
+
+    expect(new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get("Accept-Language")).toBe("en-US");
+    const url = String(fetchMock.mock.calls[1]?.[0]);
+    expect(url).toContain("search=owner");
+    expect(url).toContain("actionId=user.create");
+    expect(url).toContain("from=2026-08-01");
+    expect(url).toContain("to=2026-08-26");
+    expect(url).toContain("page=2");
+  });
+
   it("sends project filters to the server", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 2, pageSize: 20, total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);

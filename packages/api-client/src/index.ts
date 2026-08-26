@@ -1,5 +1,7 @@
 import type {
   AppErrorShape,
+  AuditEvent,
+  ConfigOption,
   AdminOverview,
   AdminProjectDetail,
   AdminProjectSummary,
@@ -215,8 +217,26 @@ export interface AdminUserListQuery {
   pageSize?: number;
 }
 
+export interface AuditEventListQuery {
+  search?: string;
+  actionId?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
 export const adminService = {
   getOverview: () => request<AdminOverview>("/admin/overview"),
+  listAuditActions: (locale: SupportedLocale) => request<ConfigOption[]>("/admin/audit-actions", { locale }),
+  listAuditEvents: ({ search, actionId, from, to, page = 1, pageSize = 30 }: AuditEventListQuery = {}) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) query.set("search", search);
+    if (actionId) query.set("actionId", actionId);
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+    return request<PagedResult<AuditEvent>>(`/admin/audit-events?${query}`);
+  },
   listProjects: ({ workflowStatus, priority, search, page = 1, pageSize = 20 }: AdminProjectListQuery = {}) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (workflowStatus) query.set("workflowStatus", workflowStatus);

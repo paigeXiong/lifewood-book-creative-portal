@@ -32,6 +32,32 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Equal(SaveOutcome.Saved, projects.DeleteDraft("owner-id", removable.Id, removable.Version).Outcome);
         Assert.Null(projects.Get("owner-id", removable.Id));
     }
+
+    [Fact]
+    public async Task StorageQuotaCountsExistingDataAndSerializesReservations()
+    {
+        var quotaRoot = Path.Combine(root, "quota");
+        Directory.CreateDirectory(quotaRoot);
+        await File.WriteAllBytesAsync(Path.Combine(quotaRoot, "existing.bin"), new byte[8]);
+        var quota = new StorageQuota(quotaRoot, new PlatformLimits(3, 10, 20));
+
+        Assert.Null(await quota.TryReserveAsync(3, CancellationToken.None));
+        await using var reservation = await quota.TryReserveAsync(2, CancellationToken.None);
+        Assert.NotNull(reservation);
+    }
+
+    [Fact]
+    public void DraftCountOnlyIncludesEditableDrafts()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var first = projects.Create("owner-id");
+        projects.Create("owner-id");
+        projects.Create("other-owner");
+        Execute("UPDATE projects SET status = 'submitted' WHERE id = $id;", ("$id", first.Id));
+
+        Assert.Equal(1, projects.CountDrafts("owner-id"));
+    }
     [Fact]
     public void AdminOverviewAggregatesProjectsUsersWorkflowAndPriority()
     {
@@ -42,20 +68,137 @@ public sealed class PersistenceIntegrationTests : IDisposable
         var admin = new AdminRepository(ConnectionString);
         admin.Initialize();
         var owner = Assert.IsType<CurrentUserDto>(users.CreateOwner("Owner", "owner@example.test", "initial-password-123").User);
-        projects.Create(owner.Id);
+        var draft = projects.Create(owner.Id);
         var submitted = projects.Create(owner.Id);
         Execute("UPDATE projects SET status = 'submitted', workflow_status = 'contacting', priority = 'urgent' WHERE id = $id;", ("$id", submitted.Id));
 
         var overview = admin.GetOverview();
 
-        Assert.Equal(2, overview.TotalProjects);
+        Assert.Equal(1, overview.TotalProjects);
         Assert.Equal(1, overview.UnassignedProjects);
         Assert.Equal(1, overview.TotalUsers);
         Assert.Equal(1, overview.ActiveUsers);
-        Assert.Equal(1, overview.SubmissionStatuses.Single(item => item.Id == "draft").Count);
+        Assert.DoesNotContain(overview.SubmissionStatuses, item => item.Id == "draft");
         Assert.Equal(1, overview.SubmissionStatuses.Single(item => item.Id == "submitted").Count);
         Assert.Equal(1, overview.WorkflowStatuses.Single(item => item.Id == "contacting").Count);
         Assert.Equal(1, overview.Priorities.Single(item => item.Id == "urgent").Count);
+
+        var listed = admin.ListProjects(null, null, null, 1, 20);
+        Assert.Equal(1, listed.Total);
+        Assert.Equal(submitted.Id, Assert.Single(listed.Items).Id);
+        Assert.Null(admin.GetProject(draft.Id));
+        Assert.Equal(AdminWriteOutcome.NotFound, admin.UpdateWorkflow(draft.Id, new("contacting", "normal", null)).Outcome);
+        Assert.Equal(AdminWriteOutcome.NotFound, admin.AddNote(draft.Id, owner.Id, new("Must not be added"), out _).Outcome);
+    }
+
+    [Fact]
+    public void AuditEventsAreSearchableFilterableAndPagedWithoutSensitivePayloads()
+    {
+        var audit = new AuditRepository(ConnectionString, root);
+        audit.Initialize();
+        var actor = new CurrentUserDto("owner-1", null, "Owner Name", null, "owner@example.test", null, ["owner"], ["admin.access"], "en-US", null);
+        audit.Record(actor, new AuditActionMatch("project.workflow_update", "project", "project-42"), "trace-project");
+        audit.Record(actor, new AuditActionMatch("user.password_reset", "user", "customer-7"), "trace-user");
+
+        var filtered = audit.List("project-42", "project.workflow_update", null, null, 1, 30);
+
+        var item = Assert.Single(filtered.Items);
+        Assert.Equal(1, filtered.Total);
+        Assert.Equal("Owner Name", item.ActorName);
+        Assert.Equal("project.workflow_update", item.ActionId);
+        Assert.Equal("project-42", item.TargetId);
+        Assert.Equal("trace-project", item.TraceId);
+        Assert.DoesNotContain("password", string.Join('|', item.ActorName, item.ActorEmail, item.TargetId, item.TraceId), StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(audit.List(null, "missing.action", null, null, 1, 30).Items);
+        var datedPage = audit.List(null, null, DateTimeOffset.UtcNow.AddDays(-1).ToString("O"), DateTimeOffset.UtcNow.AddDays(1).ToString("O"), 1, 1);
+        Assert.Equal(2, datedPage.Total);
+        Assert.Single(datedPage.Items);
+
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+        using var schema = connection.CreateCommand();
+        schema.CommandText = "PRAGMA table_info(audit_events);";
+        using var reader = schema.ExecuteReader();
+        var columns = new List<string>();
+        while (reader.Read()) columns.Add(reader.GetString(1));
+        Assert.DoesNotContain(columns, column => column.Contains("password", StringComparison.OrdinalIgnoreCase) || column is "body" or "payload");
+    }
+
+    [Fact]
+    public void SubmissionResetsLegacyDraftFollowUpWithoutDeletingHistoricalData()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+        var admin = new AdminRepository(ConnectionString);
+        admin.Initialize();
+        var owner = Assert.IsType<CurrentUserDto>(users.CreateOwner("Owner", "owner@example.test", "initial-password-123").User);
+        var draft = projects.Create(owner.Id);
+
+        Execute("UPDATE projects SET workflow_status = 'confirmed', priority = 'high', assignee_user_id = $owner, workflow_updated_at = '2000-01-01T00:00:00Z' WHERE id = $id;", ("$owner", owner.Id), ("$id", draft.Id));
+        Execute("INSERT INTO project_notes(id, project_id, author_user_id, body, created_at) VALUES ('legacy-note', $id, $owner, 'Must remain stored but hidden', '2000-01-01T00:00:00Z');", ("$id", draft.Id), ("$owner", owner.Id));
+
+        var submitted = projects.Submit(owner.Id, draft.Id, draft.Version, "submission-key");
+
+        Assert.Equal(SaveOutcome.Saved, submitted.Outcome);
+        var detail = Assert.IsType<AdminProjectDetailDto>(admin.GetProject(draft.Id));
+        Assert.Equal("new", detail.WorkflowStatus);
+        Assert.Equal("normal", detail.Priority);
+        Assert.Null(detail.AssigneeUserId);
+        Assert.Empty(detail.Notes);
+        Assert.Equal(1L, ScalarLong("SELECT COUNT(*) FROM project_notes WHERE project_id = $id;", ("$id", draft.Id)));
+        Assert.True(DateTimeOffset.Parse(Assert.IsType<string>(Scalar("SELECT workflow_updated_at FROM projects WHERE id = $id;", ("$id", draft.Id)))).Year > 2000);
+
+        Execute("UPDATE projects SET workflow_status = 'contacting', priority = 'urgent', assignee_user_id = $owner, workflow_updated_at = '2000-01-01T00:00:00.0000000+00:00' WHERE id = $id;", ("$owner", owner.Id), ("$id", draft.Id));
+        admin.Initialize();
+        var migrated = Assert.IsType<AdminProjectDetailDto>(admin.GetProject(draft.Id));
+        Assert.Equal("new", migrated.WorkflowStatus);
+        Assert.Equal("normal", migrated.Priority);
+        Assert.Null(migrated.AssigneeUserId);
+    }
+
+    [Theory]
+    [InlineData("POST", "/api/admin/users", "user.create", "user", null)]
+    [InlineData("PUT", "/api/admin/users/user-1", "user.update", "user", "user-1")]
+    [InlineData("PUT", "/api/admin/users/user-1/password", "user.password_reset", "user", "user-1")]
+    [InlineData("PUT", "/api/admin/projects/project-1/workflow", "project.workflow_update", "project", "project-1")]
+    [InlineData("POST", "/api/admin/projects/project-1/notes", "project.note_add", "project", "project-1")]
+    [InlineData("POST", "/api/admin/projects/project-1/deliveries", "delivery.publish", "delivery", null)]
+    [InlineData("DELETE", "/api/admin/projects/project-1/deliveries/delivery-1", "delivery.revoke", "delivery", "delivery-1")]
+    [InlineData("PUT", "/api/admin/file-categories/source/cover", "file_category.upsert", "file_category", "source/cover")]
+    [InlineData("PUT", "/api/admin/form-options/genres/memoir", "form_option.upsert", "form_option", "genres/memoir")]
+    [InlineData("PUT", "/api/admin/voices/voice-1", "voice.upsert", "voice", "voice-1")]
+    [InlineData("POST", "/api/admin/voices/voice-1/sample", "voice.sample_upload", "voice", "voice-1")]
+    [InlineData("DELETE", "/api/admin/voices/voice-1/sample", "voice.sample_remove", "voice", "voice-1")]
+    public void AuditActionMappingCoversAdministratorWriteRoutes(string method, string path, string actionId, string targetType, string? targetId)
+    {
+        var action = Assert.IsType<AuditActionMatch>(AuditActionCatalog.Resolve(method, path));
+        Assert.Equal(actionId, action.ActionId);
+        Assert.Equal(targetType, action.TargetType);
+        Assert.Equal(targetId, action.TargetId);
+    }
+
+    [Fact]
+    public void AuditEventsUseDurablePendingQueueWhenDatabaseIsBusy()
+    {
+        var audit = new AuditRepository(ConnectionString, root);
+        audit.Initialize();
+        var actor = new CurrentUserDto("owner-1", null, "Owner", null, "owner@example.test", null, ["owner"], ["admin.access"], "en-US", null);
+        using var blocker = new SqliteConnection(ConnectionString);
+        blocker.Open();
+        using var lockCommand = blocker.CreateCommand();
+        lockCommand.CommandText = "BEGIN EXCLUSIVE;";
+        lockCommand.ExecuteNonQuery();
+
+        audit.Record(actor, new AuditActionMatch("user.update", "user", "user-1"), "trace-pending");
+        Assert.True(File.Exists(Path.Combine(root, "audit-pending.ndjson")));
+
+        lockCommand.CommandText = "COMMIT;";
+        lockCommand.ExecuteNonQuery();
+        var replayed = audit.List("trace-pending", null, null, null, 1, 30);
+        Assert.Single(replayed.Items);
+        Assert.False(File.Exists(Path.Combine(root, "audit-pending.ndjson")));
     }
 
     [Fact]
@@ -369,6 +512,16 @@ public sealed class PersistenceIntegrationTests : IDisposable
         command.CommandText = sql;
         foreach (var parameter in parameters) command.Parameters.AddWithValue(parameter.Name, parameter.Value);
         return command.ExecuteScalar() as string;
+    }
+
+    private long ScalarLong(string sql, params (string Name, object Value)[] parameters)
+    {
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var parameter in parameters) command.Parameters.AddWithValue(parameter.Name, parameter.Value);
+        return Convert.ToInt64(command.ExecuteScalar());
     }
 
     public void Dispose()

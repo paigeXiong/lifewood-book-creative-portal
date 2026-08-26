@@ -36,6 +36,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 var configuredDataDirectory = builder.Configuration["Lifewood:DataDirectory"];
+var platformLimits = PlatformLimits.FromConfiguration(builder.Configuration);
 var dataDirectory = string.IsNullOrWhiteSpace(configuredDataDirectory)
     ? Path.Combine(builder.Environment.ContentRootPath, "data")
     : Path.GetFullPath(Path.IsPathRooted(configuredDataDirectory)
@@ -94,6 +95,14 @@ builder.Services.AddAntiforgery(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (rejected, cancellationToken) =>
+    {
+        if (rejected.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            rejected.HttpContext.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        await rejected.HttpContext.Response.WriteAsJsonAsync(
+            new ApiErrorDto("rate_limit.exceeded", "errors.rateLimit.exceeded", "Too many requests. Wait briefly and try again.", null, true, rejected.HttpContext.TraceIdentifier),
+            AppJsonContext.Default.ApiErrorDto);
+    };
     options.AddPolicy("authentication", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -103,6 +112,19 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
             AutoReplenishment = true
         }));
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method))
+            return RateLimitPartition.GetNoLimiter("read");
+        var key = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = platformLimits.WriteRequestsPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
 });
 
 var repository = new ProjectRepository(databaseConnection);
@@ -115,6 +137,9 @@ builder.Services.AddSingleton(users);
 var administration = new AdminRepository(databaseConnection);
 administration.Initialize();
 builder.Services.AddSingleton(administration);
+var auditEvents = new AuditRepository(databaseConnection, dataDirectory);
+auditEvents.Initialize();
+builder.Services.AddSingleton(auditEvents);
 var deliveries = new DeliveryRepository(databaseConnection);
 deliveries.Initialize();
 builder.Services.AddSingleton(deliveries);
@@ -131,6 +156,8 @@ builder.Services.AddSingleton(formOptions);
 var fileCategories = new FileCategoryRepository(databaseConnection);
 fileCategories.Initialize();
 builder.Services.AddSingleton(fileCategories);
+builder.Services.AddSingleton(platformLimits);
+builder.Services.AddSingleton(new StorageQuota(dataDirectory, platformLimits));
 
 var app = builder.Build();
 RecoverDraftUploadTombstones(dataDirectory, repository, app.Logger);
@@ -171,6 +198,7 @@ app.Use(async (context, next) =>
         app.Logger.LogError(exception, "Unhandled request failure {RequestId}", context.TraceIdentifier);
         if (!context.Response.HasStarted)
         {
+            context.Response.Clear();
             context.Response.StatusCode = 500;
             await context.Response.WriteAsJsonAsync(
                 new ApiErrorDto("system.unexpected", "errors.system.unexpected", "The request could not be completed.", null, true, context.TraceIdentifier),
@@ -192,6 +220,40 @@ app.Use(async (context, next) =>
         await context.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(context);
     }
     await next();
+});
+app.Use(async (context, next) =>
+{
+    var actor = context.Request.Path.StartsWithSegments("/api/admin") ? CurrentUser(context) : null;
+    var action = AuditActionCatalog.Resolve(context.Request.Method, context.Request.Path);
+    if (actor is null || action is null)
+    {
+        await next();
+        return;
+    }
+
+    var responseBody = context.Response.Body;
+    await using var bufferedBody = new MemoryStream();
+    context.Response.Body = bufferedBody;
+    try
+    {
+        await next();
+        if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 300)
+        {
+            if (context.Items.TryGetValue(AuditActionCatalog.TargetIdItemKey, out var targetId) && targetId is string value)
+                action = action with { TargetId = value };
+            try { auditEvents.Record(actor, action, context.TraceIdentifier); }
+            catch (Exception exception)
+            {
+                app.Logger.LogCritical(exception, "Failed to persist audit event {RequestId}; the business operation already committed and its response will be preserved.", context.TraceIdentifier);
+            }
+        }
+        bufferedBody.Position = 0;
+        await bufferedBody.CopyToAsync(responseBody);
+    }
+    finally
+    {
+        context.Response.Body = responseBody;
+    }
 });
 
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
@@ -277,6 +339,31 @@ api.MapGet("/admin/overview", (HttpContext context, AdminRepository admin) =>
     return Results.Ok(admin.GetOverview());
 });
 
+api.MapGet("/admin/audit-actions", (HttpContext context) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.access")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(AuditActionCatalog.ForLocale(Locale(context)));
+});
+
+api.MapGet("/admin/audit-events", (HttpContext context, AuditRepository audit, string? search, string? actionId, string? from, string? to, int page = 1, int pageSize = 30) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.access")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(audit.List(search, actionId, from, to, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+});
+
+api.MapGet("/admin/audit-avatar/{actorId}", (string actorId, string? name, HttpContext context) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.access")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.Text(AvatarImage.Create(actorId, string.IsNullOrWhiteSpace(name) ? "?" : name), "image/svg+xml", Encoding.UTF8);
+});
+
 api.MapGet("/admin/users", (HttpContext context, AdminRepository admin, string? search, string? role, int page = 1, int pageSize = 20) =>
 {
     var user = CurrentUser(context);
@@ -310,6 +397,8 @@ api.MapPost("/admin/users", (CreateUserRequest? request, HttpContext context, Ad
     if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     var result = admin.CreateUser(request, out var created);
+    if (result.Outcome == AdminWriteOutcome.Saved && created is not null)
+        context.Items[AuditActionCatalog.TargetIdItemKey] = created.Id;
     return result.Outcome switch
     {
         AdminWriteOutcome.Saved => Results.Ok(created),
@@ -500,7 +589,7 @@ api.MapPut("/admin/voices/{id}", async (string id, UpsertVoiceReferenceRequest? 
 });
 
 // Form endpoint metadata is disabled because the global unsafe-method middleware validates CSRF before route execution.
-api.MapPost("/admin/voices/{id}/sample", async (string id, HttpContext context, VoiceReferenceRepository voices) =>
+api.MapPost("/admin/voices/{id}/sample", async (string id, HttpContext context, VoiceReferenceRepository voices, StorageQuota storageQuota) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -518,6 +607,11 @@ api.MapPost("/admin/voices/{id}/sample", async (string id, HttpContext context, 
         var contentType = NormalizeAudioContentType(file.ContentType, file.FileName);
         if (contentType is null || !await HasExpectedAudioSignature(file, contentType, context.RequestAborted))
             return Error(context, 400, "validation.audio", "errors.validation.file", "Choose a valid WAV or MP3 audio file.", false);
+        var existingBytes = new[] { Path.Combine(voiceSampleDirectory, id + ".wav"), Path.Combine(voiceSampleDirectory, id + ".mp3") }
+            .Where(File.Exists).Sum(path => new FileInfo(path).Length);
+        await using var reservation = await storageQuota.TryReserveAsync(Math.Max(0, file.Length - existingBytes), context.RequestAborted);
+        if (reservation is null)
+            return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached. Contact an administrator.", true);
         var extension = contentType == "audio/wav" ? ".wav" : ".mp3";
         var target = Path.Combine(voiceSampleDirectory, id + extension);
         var temporary = Path.Combine(voiceSampleDirectory, id + "." + Guid.NewGuid().ToString("N") + ".upload");
@@ -663,12 +757,20 @@ api.MapGet("/projects", (HttpContext context, ProjectRepository projects, string
     return Results.Ok(projects.List(user.Id, status, search, page, pageSize));
 });
 
-api.MapPost("/projects", (HttpContext context, ProjectRepository projects) =>
+api.MapPost("/projects", async (HttpContext context, ProjectRepository projects, PlatformLimits limits) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    return Results.Ok(projects.Create(user.Id));
+    var gate = projectWriteLocks.GetOrAdd($"{user.Id}:create", static _ => new SemaphoreSlim(1, 1));
+    await gate.WaitAsync(context.RequestAborted);
+    try
+    {
+        if (projects.CountDrafts(user.Id) >= limits.MaxDraftsPerUser)
+            return Error(context, 409, "project.draft_limit", "errors.project.draftLimit", "Finish or delete an existing draft before creating another one.", false);
+        return Results.Ok(projects.Create(user.Id));
+    }
+    finally { gate.Release(); }
 });
 
 api.MapGet("/projects/{id}", (string id, HttpContext context, ProjectRepository projects) =>
@@ -846,7 +948,7 @@ api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, 
     };
 });
 
-api.MapPost("/projects/{id}/files", async (string id, HttpContext context, ProjectRepository projects, FileCategoryRepository categories) =>
+api.MapPost("/projects/{id}/files", async (string id, HttpContext context, ProjectRepository projects, FileCategoryRepository categories, StorageQuota storageQuota) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -876,6 +978,10 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The category file limit was reached.", false, [new FieldErrorDto(assetField, "too_many", "errors.validation.too_many")]);
     if (file.Length > category.MaxBytes || !category.Accept.Contains(contentType, StringComparer.OrdinalIgnoreCase) || !await HasExpectedSignature(file, contentType, context.RequestAborted))
         return Error(context, 400, "validation.file", "errors.validation.file", "The file type or size is not allowed.", false);
+
+    await using var reservation = await storageQuota.TryReserveAsync(file.Length, context.RequestAborted);
+    if (reservation is null)
+        return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached. Contact an administrator.", true);
 
     var fileId = Guid.NewGuid().ToString("N");
     var safeName = SanitizeFileName(file.FileName);

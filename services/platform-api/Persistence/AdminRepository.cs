@@ -39,6 +39,11 @@ internal sealed class AdminRepository(string connectionString)
             CREATE INDEX IF NOT EXISTS ix_projects_status ON projects(status);
             CREATE INDEX IF NOT EXISTS ix_projects_priority ON projects(priority);
             """);
+        Execute(connection, """
+            UPDATE projects
+            SET workflow_status = 'new', priority = 'normal', assignee_user_id = NULL, workflow_updated_at = updated_at
+            WHERE status = 'submitted' AND workflow_updated_at < updated_at;
+            """);
     }
 
     public AdminUserDto[] ListAssignees()
@@ -57,13 +62,13 @@ internal sealed class AdminRepository(string connectionString)
         using var connection = Open();
         using var transaction = connection.BeginTransaction(deferred: true);
         var overview = new AdminOverviewDto(
-            Count(connection, transaction, "SELECT COUNT(*) FROM projects;"),
+            Count(connection, transaction, "SELECT COUNT(*) FROM projects WHERE status = 'submitted';"),
             Count(connection, transaction, "SELECT COUNT(*) FROM projects WHERE status = 'submitted' AND assignee_user_id IS NULL AND workflow_status NOT IN ('completed', 'closed');"),
             Count(connection, transaction, "SELECT COUNT(*) FROM users;"),
             Count(connection, transaction, "SELECT COUNT(*) FROM users WHERE is_active = 1;"),
-            GroupCounts(connection, transaction, "SELECT status, COUNT(*) FROM projects GROUP BY status ORDER BY status;"),
-            GroupCounts(connection, transaction, "SELECT workflow_status, COUNT(*) FROM projects GROUP BY workflow_status ORDER BY workflow_status;"),
-            GroupCounts(connection, transaction, "SELECT priority, COUNT(*) FROM projects GROUP BY priority ORDER BY priority;"));
+            GroupCounts(connection, transaction, "SELECT status, COUNT(*) FROM projects WHERE status = 'submitted' GROUP BY status ORDER BY status;"),
+            GroupCounts(connection, transaction, "SELECT workflow_status, COUNT(*) FROM projects WHERE status = 'submitted' GROUP BY workflow_status ORDER BY workflow_status;"),
+            GroupCounts(connection, transaction, "SELECT priority, COUNT(*) FROM projects WHERE status = 'submitted' GROUP BY priority ORDER BY priority;"));
         transaction.Commit();
         return overview;
     }
@@ -162,7 +167,8 @@ internal sealed class AdminRepository(string connectionString)
     {
         using var connection = Open();
         const string where = """
-            WHERE ($workflow = '' OR p.workflow_status = $workflow)
+            WHERE p.status = 'submitted'
+              AND ($workflow = '' OR p.workflow_status = $workflow)
               AND ($priority = '' OR p.priority = $priority)
               AND ($search = '' OR p.task_number LIKE '%' || $search || '%' COLLATE NOCASE OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.project_json, '$.projectName') LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE)
             """;
@@ -194,7 +200,8 @@ internal sealed class AdminRepository(string connectionString)
             SELECT p.id, p.task_number, p.status, p.version, p.project_json, p.book_json, p.creative_json, p.voice_json,
                    p.created_at, p.updated_at, p.owner_id, u.display_name, u.email, p.workflow_status, p.priority,
                    p.assignee_user_id, a.display_name
-            FROM projects p JOIN users u ON u.id = p.owner_id LEFT JOIN users a ON a.id = p.assignee_user_id WHERE p.id = $id;
+            FROM projects p JOIN users u ON u.id = p.owner_id LEFT JOIN users a ON a.id = p.assignee_user_id
+            WHERE p.id = $id AND p.status = 'submitted';
             """;
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
@@ -224,7 +231,7 @@ internal sealed class AdminRepository(string connectionString)
             if (Convert.ToInt32(assignee.ExecuteScalar()) == 0) return new(AdminWriteOutcome.Invalid, "assigneeUserId");
         }
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE projects SET workflow_status = $workflow, priority = $priority, assignee_user_id = $assignee, workflow_updated_at = $now WHERE id = $id;";
+        command.CommandText = "UPDATE projects SET workflow_status = $workflow, priority = $priority, assignee_user_id = $assignee, workflow_updated_at = $now WHERE id = $id AND status = 'submitted';";
         command.Parameters.AddWithValue("$workflow", request.WorkflowStatus);
         command.Parameters.AddWithValue("$priority", request.Priority);
         command.Parameters.AddWithValue("$assignee", (object?)request.AssigneeUserId ?? DBNull.Value);
@@ -240,7 +247,7 @@ internal sealed class AdminRepository(string connectionString)
         if (string.IsNullOrWhiteSpace(body) || body.Length > 4000) return new(AdminWriteOutcome.Invalid, "body");
         using var connection = Open();
         using var exists = connection.CreateCommand();
-        exists.CommandText = "SELECT COUNT(*) FROM projects WHERE id = $id;";
+        exists.CommandText = "SELECT COUNT(*) FROM projects WHERE id = $id AND status = 'submitted';";
         exists.Parameters.AddWithValue("$id", projectId);
         if (Convert.ToInt32(exists.ExecuteScalar()) == 0) return new(AdminWriteOutcome.NotFound);
         var id = Guid.NewGuid().ToString("N");
@@ -266,7 +273,14 @@ internal sealed class AdminRepository(string connectionString)
     private static AdminNoteDto[] ListNotes(SqliteConnection connection, string projectId)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT n.id, n.project_id, n.author_user_id, u.display_name, n.body, n.created_at FROM project_notes n JOIN users u ON u.id = n.author_user_id WHERE n.project_id = $projectId ORDER BY n.created_at DESC;";
+        command.CommandText = """
+            SELECT n.id, n.project_id, n.author_user_id, u.display_name, n.body, n.created_at
+            FROM project_notes n
+            JOIN users u ON u.id = n.author_user_id
+            JOIN projects p ON p.id = n.project_id
+            WHERE n.project_id = $projectId AND n.created_at >= p.updated_at
+            ORDER BY n.created_at DESC;
+            """;
         command.Parameters.AddWithValue("$projectId", projectId);
         using var reader = command.ExecuteReader();
         var notes = new List<AdminNoteDto>();

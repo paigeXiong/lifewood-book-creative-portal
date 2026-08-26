@@ -31,6 +31,7 @@ npm run stop:local
 3. [UI 设计规范](./ui-design-specification.md)：品牌化项目资料提交体验、紧凑布局、组件和 i18n 规则。
 4. [开发准备与实施基线](./development-readiness.md)：仓库结构、路由、API、组件清单和第一轮顺序。
 5. [正式部署与数据备份](./deployment-and-backup.md)：同域路由、Native AOT 发布、数据目录、备份和恢复要求。
+6. [发布就绪检查](./release-readiness.md)：一键验证、真实 AOT 冒烟、CI、正式发布包和上线前人工确认项。
 
 ## 设计研究与参考
 

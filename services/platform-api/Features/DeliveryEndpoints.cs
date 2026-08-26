@@ -23,7 +23,7 @@ internal static class DeliveryEndpoints
                 : Results.Ok(deliveries.ListForAdmin(id));
         });
 
-        api.MapPost("/admin/projects/{id}/deliveries", async (string id, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
+        api.MapPost("/admin/projects/{id}/deliveries", async (string id, HttpContext context, AdminRepository admin, DeliveryRepository deliveries, StorageQuota storageQuota) =>
         {
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
@@ -38,6 +38,9 @@ internal static class DeliveryEndpoints
             if (!AllowedContentTypes.Contains(contentType, StringComparer.OrdinalIgnoreCase))
                 return Error(context, 400, "delivery.file", "errors.delivery.file", "Choose an MP4 or MOV file up to 500 MB.");
             if (note.Trim().Length > 2000) return Error(context, 400, "delivery.note", "errors.delivery.note", "The delivery note is too long.");
+
+            await using var reservation = await storageQuota.TryReserveAsync(file.Length, context.RequestAborted);
+            if (reservation is null) return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached. Contact an administrator.");
 
             var deliveryId = Guid.NewGuid().ToString("N");
             var safeName = SanitizeFileName(file.FileName);
@@ -65,7 +68,11 @@ internal static class DeliveryEndpoints
             try
             {
                 var result = deliveries.Publish(deliveryId, id, user.Id, safeName, contentType, file.Length, note, out var delivery);
-                if (result.Outcome == AdminWriteOutcome.Saved) return Results.Ok(delivery);
+                if (result.Outcome == AdminWriteOutcome.Saved)
+                {
+                    context.Items[AuditActionCatalog.TargetIdItemKey] = delivery!.Id;
+                    return Results.Ok(delivery);
+                }
                 File.Delete(path);
                 return result.Outcome == AdminWriteOutcome.Conflict
                     ? Error(context, 409, "project.not_submitted", "errors.project.notSubmitted", "Only submitted projects can receive a final delivery.")

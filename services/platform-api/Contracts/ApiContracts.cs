@@ -292,6 +292,19 @@ public sealed record AdminOverviewDto(
     AdminCountDto[] WorkflowStatuses,
     AdminCountDto[] Priorities);
 
+public sealed record AuditEventDto(
+    string Id,
+    string ActorUserId,
+    string ActorName,
+    string ActorEmail,
+    string ActionId,
+    string TargetType,
+    string? TargetId,
+    DateTimeOffset OccurredAt,
+    string TraceId);
+
+public sealed record PagedAuditEventsDto(AuditEventDto[] Items, int Page, int PageSize, int Total);
+
 public sealed record AdminNoteDto(string Id, string ProjectId, string AuthorUserId, string AuthorName, string Body, DateTimeOffset CreatedAt);
 
 public sealed record AdminProjectDetailDto(

@@ -149,6 +149,15 @@ internal sealed class ProjectRepository(string connectionString)
         return draft;
     }
 
+    public int CountDrafts(string ownerId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM projects WHERE owner_id = $ownerId AND status = 'draft';";
+        command.Parameters.AddWithValue("$ownerId", ownerId);
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
     public TaskDraftDto? Get(string ownerId, string id)
     {
         using var connection = Open();
@@ -331,7 +340,8 @@ internal sealed class ProjectRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE projects
-            SET task_number = $taskNumber, status = 'submitted', submission_key = $idempotencyKey, version = version + 1, updated_at = $updatedAt
+            SET task_number = $taskNumber, status = 'submitted', submission_key = $idempotencyKey, version = version + 1,
+                updated_at = $updatedAt, workflow_status = 'new', priority = 'normal', assignee_user_id = NULL, workflow_updated_at = $updatedAt
             WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version
             RETURNING id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status;
             """;

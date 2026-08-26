@@ -1,0 +1,52 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: npm ci
+      - run: npm run test:web
+      - run: npm run test:admin
+      - run: npm run build:web
+      - run: npm run build:admin
+      - run: dotnet build services/platform-api/Lifewood.PlatformApi.csproj --configuration Release --nologo
+      - run: npm exec playwright install chromium
+      - run: npm run test:e2e
+      - run: dotnet test services/platform-api.Tests/Lifewood.PlatformApi.Tests.csproj --configuration Release --nologo
+      - run: dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-ci
+      - shell: powershell
+        run: ./scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-ci
+      - shell: powershell
+        run: |
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-ci
+          $revision = (git rev-parse HEAD).Substring(0, 12)
+          $archive = Get-Item "artifacts/release/lifewood-book-creative-portal-win-x64-$revision.zip"
+          $firstHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-ci
+          $secondHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
+          if ($firstHash -ne $secondHash) { throw "Release package is not reproducible." }
+          if (Test-Path artifacts/release-staging) { throw "Release staging directory was not cleaned." }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lifewood-win-x64
+          path: |
+            artifacts/release/*.zip
+            artifacts/release/*.sha256
+          if-no-files-found: error

@@ -14,9 +14,18 @@
     "build:web": "npm run build --workspace @lifewood/task-entry-web",
     "build:admin": "npm run build --workspace @lifewood/admin-web",
     "test:web": "npm run test --workspace @lifewood/task-entry-web",
-    "test:admin": "npm run test --workspace @lifewood/admin-web"
+    "test:admin": "npm run test --workspace @lifewood/admin-web",
+    "test:api": "dotnet test services/platform-api.Tests/Lifewood.PlatformApi.Tests.csproj -c Release --nologo",
+    "test:e2e": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e2e.ps1",
+    "verify": "npm run test:web && npm run test:admin && npm run test:api && npm run build:web && npm run build:admin",
+    "publish:aot": "dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-local",
+    "smoke:aot": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-local",
+    "build:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
   }
 }
