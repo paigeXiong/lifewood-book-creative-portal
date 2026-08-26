@@ -281,6 +281,17 @@ public sealed record AdminProjectSummaryDto(
 
 public sealed record PagedAdminProjectsDto(AdminProjectSummaryDto[] Items, int Page, int PageSize, int Total);
 
+public sealed record AdminCountDto(string Id, int Count);
+
+public sealed record AdminOverviewDto(
+    int TotalProjects,
+    int UnassignedProjects,
+    int TotalUsers,
+    int ActiveUsers,
+    AdminCountDto[] SubmissionStatuses,
+    AdminCountDto[] WorkflowStatuses,
+    AdminCountDto[] Priorities);
+
 public sealed record AdminNoteDto(string Id, string ProjectId, string AuthorUserId, string AuthorName, string Body, DateTimeOffset CreatedAt);
 
 public sealed record AdminProjectDetailDto(

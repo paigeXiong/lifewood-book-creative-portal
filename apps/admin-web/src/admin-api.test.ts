@@ -4,6 +4,15 @@ import { adminService } from "@lifewood/api-client";
 describe("administrator API client", () => {
   beforeEach(() => vi.restoreAllMocks());
 
+  it("loads the administrator overview from the server", async () => {
+    const payload = { totalProjects: 3, unassignedProjects: 1, totalUsers: 2, activeUsers: 2, submissionStatuses: [], workflowStatuses: [], priorities: [] };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(adminService.getOverview()).resolves.toEqual(payload);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/admin/overview");
+  });
+
   it("sends project filters to the server", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 2, pageSize: 20, total: 0 }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);

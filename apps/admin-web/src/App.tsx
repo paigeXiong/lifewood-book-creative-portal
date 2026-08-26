@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { adminService, authService, localizedApiError, optionService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath, setLocale } from "@lifewood/i18n";
@@ -9,6 +9,7 @@ import { FinalDeliveryPanel } from "./FinalDeliveryPanel";
 import { ModalFrame } from "./ModalFrame";
 import { ChangeOwnPasswordDialog, ResetUserPasswordDialog } from "./PasswordDialogs";
 import { VoiceConfigPage } from "./VoiceConfigPage";
+import { OverviewPage } from "./OverviewPage";
 
 import { FormOptionConfigPage } from "./FormOptionConfigPage";
 import { FileCategoryConfigPage } from "./FileCategoryConfigPage";
@@ -20,6 +21,28 @@ function formatDate(value: string, locale: SupportedLocale) {
 function adminAssetUrl(projectId: string, url: string) {
   const fileId = url.split("/").at(-1);
   return fileId ? `/api/admin/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}` : url;
+}
+
+export function resolveProjectSelection(
+  currentId: string | undefined,
+  requestedId: string | undefined,
+  itemIds: readonly string[],
+  hasLoaded: boolean,
+): string | undefined {
+  if (!hasLoaded) return currentId;
+  if (requestedId) return requestedId;
+  if (!itemIds.length) return undefined;
+  return currentId && itemIds.includes(currentId) ? currentId : itemIds[0];
+}
+
+export function localizedAdminLocation(
+  pathname: string,
+  search: string,
+  hash: string,
+  currentLocale: SupportedLocale,
+  nextLocale: SupportedLocale,
+): string {
+  return `${pathname.replace(`/${currentLocale}`, `/${nextLocale}`)}${search}${hash}`;
 }
 
 export function customerPortalUrl(locale: SupportedLocale, configuredBase = import.meta.env.VITE_CUSTOMER_APP_URL): string {
@@ -74,9 +97,12 @@ function AdminShell({ user, locale, children }: { user: CurrentUser; locale: Sup
     try { await authService.logout(); queryClient.clear(); window.location.reload(); }
     catch { setLogoutFailed(true); setLogoutPending(false); }
   };
-  const changeLocale = (next: string) => { if (isSupportedLocale(next)) navigate(window.location.pathname.replace(`/${locale}`, `/${next}`)); };
+  const changeLocale = (next: string) => {
+    if (isSupportedLocale(next)) navigate(localizedAdminLocation(window.location.pathname, window.location.search, window.location.hash, locale, next));
+  };
   return <div className="admin-shell"><aside className="sidebar"><div className="brand"><span>LW</span><div><strong>Lifewood</strong><small>{t("admin.productName")}</small></div></div><nav>
     <a href={customerPortalUrl(locale)}><span className="nav-icon" aria-hidden="true">←</span>{t("admin.nav.home")}</a>
+    <NavLink to={localizedPath(locale, "/overview")}><span className="nav-icon" aria-hidden="true">◫</span>{t("admin.nav.overview")}</NavLink>
     <NavLink to={localizedPath(locale, "/projects")}><span className="nav-icon">▤</span>{t("admin.nav.projects")}</NavLink>
     <NavLink to={localizedPath(locale, "/users")}><span className="nav-icon">◎</span>{t("admin.nav.users")}</NavLink>
     <NavLink to={localizedPath(locale, "/settings")}><span className="nav-icon" aria-hidden="true">⚙</span>{t("admin.nav.settings")}</NavLink>
@@ -86,12 +112,13 @@ function AdminShell({ user, locale, children }: { user: CurrentUser; locale: Sup
 function ProjectsPage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [workflow, setWorkflow] = useState<WorkflowStatus | "">("");
   const [priority, setPriority] = useState<ProjectPriority | "">("");
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(() => searchParams.get("project") ?? undefined);
   const projects = useQuery({ queryKey: ["admin-projects", workflow, priority, search, page], queryFn: () => adminService.listProjects({ workflowStatus: workflow || undefined, priority: priority || undefined, search: search || undefined, page, pageSize: 20 }) });
   const detail = useQuery({ queryKey: ["admin-project", selectedId], queryFn: () => adminService.getProject(selectedId!), enabled: Boolean(selectedId) });
   const staff = useQuery({ queryKey: ["admin-assignees"], queryFn: adminService.listAssignees });
@@ -99,7 +126,16 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
   const workflowOptions = options.data?.workflowStatuses ?? [];
   const priorityOptions = options.data?.projectPriorities ?? [];
   const workflowLabels = useMemo(() => new Map(workflowOptions.map((item) => [item.id, item.label])), [workflowOptions]);
-  useEffect(() => { const items = projects.data?.items; if (!items?.length) setSelectedId(undefined); else if (!selectedId || !items.some((item) => item.id === selectedId)) setSelectedId(items[0].id); }, [projects.data?.items, selectedId]);
+  const requestedProjectId = searchParams.get("project") ?? undefined;
+  useEffect(() => {
+    const nextId = resolveProjectSelection(
+      selectedId,
+      requestedProjectId,
+      projects.data?.items.map((item) => item.id) ?? [],
+      Boolean(projects.data),
+    );
+    if (nextId !== selectedId) setSelectedId(nextId);
+  }, [projects.data, requestedProjectId, selectedId]);
   const assignees = useMemo(() => staff.data ?? [], [staff.data]);
   const pages = Math.max(1, Math.ceil((projects.data?.total ?? 0) / 20));
   const submitSearch = (event: FormEvent) => { event.preventDefault(); setPage(1); setSearch(searchInput.trim()); };
@@ -179,9 +215,9 @@ function AdminRoot() {
   if (me.isPending || (me.isError && authStatus.isPending)) return <main className="center-state">{t("common.loading")}</main>;
   if (!me.data) return <IdentityGate requiresBootstrap={authStatus.data?.requiresBootstrap === true} busy={busy} error={error} onAuthenticate={(value) => void authenticate(value)} />;
   if (!me.data.permissions.includes("admin.access")) return <main className="center-state"><div><h1>{t("admin.forbidden.title")}</h1><p>{t("admin.forbidden.body")}</p><button onClick={() => void authService.logout().then(() => window.location.reload())}>{t("nav.logout")}</button></div></main>;
-  return <AdminShell user={me.data} locale={locale}><Routes><Route index element={<Navigate replace to="projects" />} /><Route path="projects" element={<ProjectsPage locale={locale} />} /><Route path="users" element={<UsersPage locale={locale} />} /><Route path="settings" element={<Navigate replace to="options" />} /><Route path="settings/options" element={<FormOptionConfigPage locale={locale} />} /><Route path="settings/files" element={<FileCategoryConfigPage locale={locale} />} /><Route path="settings/voices" element={<VoiceConfigPage locale={locale} />} /><Route path="voices" element={<Navigate replace to={localizedPath(locale, "/settings/voices")} />} /><Route path="*" element={<Navigate replace to="projects" />} /></Routes></AdminShell>;
+  return <AdminShell user={me.data} locale={locale}><Routes><Route index element={<Navigate replace to="overview" />} /><Route path="overview" element={<OverviewPage locale={locale} />} /><Route path="projects" element={<ProjectsPage locale={locale} />} /><Route path="users" element={<UsersPage locale={locale} />} /><Route path="settings" element={<Navigate replace to="options" />} /><Route path="settings/options" element={<FormOptionConfigPage locale={locale} />} /><Route path="settings/files" element={<FileCategoryConfigPage locale={locale} />} /><Route path="settings/voices" element={<VoiceConfigPage locale={locale} />} /><Route path="voices" element={<Navigate replace to={localizedPath(locale, "/settings/voices")} />} /><Route path="*" element={<Navigate replace to="overview" />} /></Routes></AdminShell>;
 }
 
 export function App() {
-  return <Routes><Route path="/" element={<Navigate replace to="/zh-CN/projects" />} /><Route path="/:locale/*" element={<AdminRoot />} /><Route path="*" element={<Navigate replace to="/zh-CN/projects" />} /></Routes>;
+  return <Routes><Route path="/" element={<Navigate replace to="/zh-CN/overview" />} /><Route path="/:locale/*" element={<AdminRoot />} /><Route path="*" element={<Navigate replace to="/zh-CN/overview" />} /></Routes>;
 }

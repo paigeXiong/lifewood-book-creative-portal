@@ -1,5 +1,6 @@
 import type {
   AppErrorShape,
+  AdminOverview,
   AdminProjectDetail,
   AdminProjectSummary,
   AdminUser,
@@ -215,6 +216,7 @@ export interface AdminUserListQuery {
 }
 
 export const adminService = {
+  getOverview: () => request<AdminOverview>("/admin/overview"),
   listProjects: ({ workflowStatus, priority, search, page = 1, pageSize = 20 }: AdminProjectListQuery = {}) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (workflowStatus) query.set("workflowStatus", workflowStatus);

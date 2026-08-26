@@ -36,6 +36,8 @@ internal sealed class AdminRepository(string connectionString)
             );
             CREATE INDEX IF NOT EXISTS ix_project_notes_project_created ON project_notes(project_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS ix_projects_workflow_updated ON projects(workflow_status, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS ix_projects_status ON projects(status);
+            CREATE INDEX IF NOT EXISTS ix_projects_priority ON projects(priority);
             """);
     }
 
@@ -50,6 +52,21 @@ internal sealed class AdminRepository(string connectionString)
         return [.. items];
     }
 
+    public AdminOverviewDto GetOverview()
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var overview = new AdminOverviewDto(
+            Count(connection, transaction, "SELECT COUNT(*) FROM projects;"),
+            Count(connection, transaction, "SELECT COUNT(*) FROM projects WHERE status = 'submitted' AND assignee_user_id IS NULL AND workflow_status NOT IN ('completed', 'closed');"),
+            Count(connection, transaction, "SELECT COUNT(*) FROM users;"),
+            Count(connection, transaction, "SELECT COUNT(*) FROM users WHERE is_active = 1;"),
+            GroupCounts(connection, transaction, "SELECT status, COUNT(*) FROM projects GROUP BY status ORDER BY status;"),
+            GroupCounts(connection, transaction, "SELECT workflow_status, COUNT(*) FROM projects GROUP BY workflow_status ORDER BY workflow_status;"),
+            GroupCounts(connection, transaction, "SELECT priority, COUNT(*) FROM projects GROUP BY priority ORDER BY priority;"));
+        transaction.Commit();
+        return overview;
+    }
     public PagedAdminUsersDto ListUsers(string? search, string? role, int page, int pageSize)
     {
         using var connection = Open();
@@ -276,6 +293,24 @@ internal sealed class AdminRepository(string connectionString)
         return new(reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetString(2), reader.GetInt32(3), project, book with { SourceAssets = book.SourceAssets ?? [] }, creative, voice, DateTimeOffset.Parse(reader.GetString(8)), DateTimeOffset.Parse(reader.GetString(9)));
     }
 
+    private static int Count(SqliteConnection connection, SqliteTransaction transaction, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    private static AdminCountDto[] GroupCounts(SqliteConnection connection, SqliteTransaction transaction, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        using var reader = command.ExecuteReader();
+        var items = new List<AdminCountDto>();
+        while (reader.Read()) items.Add(new(reader.GetString(0), reader.GetInt32(1)));
+        return [.. items];
+    }
     private static AdminUserDto ReadUser(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4) == 1, DateTimeOffset.Parse(reader.GetString(5)), DateTimeOffset.Parse(reader.GetString(6)));
     private static void AddUserFilters(SqliteCommand command, string? search, string? role) { command.Parameters.AddWithValue("$search", search?.Trim() ?? ""); command.Parameters.AddWithValue("$role", role?.Trim() ?? ""); }
     private static void AddProjectFilters(SqliteCommand command, string? workflow, string? priority, string? search) { command.Parameters.AddWithValue("$workflow", workflow?.Trim() ?? ""); command.Parameters.AddWithValue("$priority", priority?.Trim() ?? ""); command.Parameters.AddWithValue("$search", search?.Trim() ?? ""); }

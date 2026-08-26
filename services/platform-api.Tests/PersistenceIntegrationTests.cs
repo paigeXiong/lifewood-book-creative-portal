@@ -33,6 +33,32 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Null(projects.Get("owner-id", removable.Id));
     }
     [Fact]
+    public void AdminOverviewAggregatesProjectsUsersWorkflowAndPriority()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+        var admin = new AdminRepository(ConnectionString);
+        admin.Initialize();
+        var owner = Assert.IsType<CurrentUserDto>(users.CreateOwner("Owner", "owner@example.test", "initial-password-123").User);
+        projects.Create(owner.Id);
+        var submitted = projects.Create(owner.Id);
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'contacting', priority = 'urgent' WHERE id = $id;", ("$id", submitted.Id));
+
+        var overview = admin.GetOverview();
+
+        Assert.Equal(2, overview.TotalProjects);
+        Assert.Equal(1, overview.UnassignedProjects);
+        Assert.Equal(1, overview.TotalUsers);
+        Assert.Equal(1, overview.ActiveUsers);
+        Assert.Equal(1, overview.SubmissionStatuses.Single(item => item.Id == "draft").Count);
+        Assert.Equal(1, overview.SubmissionStatuses.Single(item => item.Id == "submitted").Count);
+        Assert.Equal(1, overview.WorkflowStatuses.Single(item => item.Id == "contacting").Count);
+        Assert.Equal(1, overview.Priorities.Single(item => item.Id == "urgent").Count);
+    }
+
+    [Fact]
     public void UserMigrationAndPasswordUpdatesRevokeOldSessionVersions()
     {
         var projects = new ProjectRepository(ConnectionString);

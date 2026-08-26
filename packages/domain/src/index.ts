@@ -243,6 +243,21 @@ export interface AdminProjectSummary {
   updatedAt: string;
 }
 
+export interface AdminCountMetric {
+  id: string;
+  count: number;
+}
+
+export interface AdminOverview {
+  totalProjects: number;
+  unassignedProjects: number;
+  totalUsers: number;
+  activeUsers: number;
+  submissionStatuses: AdminCountMetric[];
+  workflowStatuses: AdminCountMetric[];
+  priorities: AdminCountMetric[];
+}
+
 export interface FinalDelivery {
   id: string;
   projectId: string;

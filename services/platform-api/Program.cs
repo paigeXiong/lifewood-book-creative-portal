@@ -269,6 +269,14 @@ api.MapGet("/form-options", (HttpContext context, FormOptionRepository options, 
     });
 });
 
+api.MapGet("/admin/overview", (HttpContext context, AdminRepository admin) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(admin.GetOverview());
+});
+
 api.MapGet("/admin/users", (HttpContext context, AdminRepository admin, string? search, string? role, int page = 1, int pageSize = 20) =>
 {
     var user = CurrentUser(context);

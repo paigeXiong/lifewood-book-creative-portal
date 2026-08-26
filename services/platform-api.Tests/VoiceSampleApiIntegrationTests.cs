@@ -184,6 +184,21 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task AdminOverviewRequiresAdministratorPermission()
+    {
+        await BootstrapOwner();
+        using var ownerOverview = await ownerClient.GetAsync("/api/admin/overview");
+        Assert.Equal(HttpStatusCode.OK, ownerOverview.StatusCode);
+        using var overview = JsonDocument.Parse(await ownerOverview.Content.ReadAsStringAsync());
+        Assert.True(overview.RootElement.TryGetProperty("totalProjects", out _));
+        Assert.True(overview.RootElement.TryGetProperty("workflowStatuses", out _));
+
+        var csrf = await GetCsrf(ownerClient);
+        using var customerClient = await CreateCustomerClient(csrf);
+        using var forbidden = await customerClient.GetAsync("/api/admin/overview");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+    [Fact]
     public async Task DraftDeletionRequiresCurrentVersionAndRemovesOnlyDrafts()
     {
         await BootstrapOwner();
