@@ -109,7 +109,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
 
         <div className="topbar-actions">
           {canAccessAdmin ? (
-            <a className="admin-entry" href={adminCenterUrl(locale)} onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}>
+            <a className="admin-entry" href={adminCenterUrl(locale)} aria-label={t("nav.adminCenter")} onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}>
               <span className="admin-entry-icon" aria-hidden="true">⚙</span>
               <span>{t("nav.adminCenter")}</span>
             </a>

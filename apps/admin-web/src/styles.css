@@ -6,12 +6,20 @@
 }
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: rgba(0, 107, 76, 0.14);
 }
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: hidden;
   background: #eef2ef;
   color: #17372c;
+}
+button,
+a,
+select,
+label[for] {
+  touch-action: manipulation;
 }
 button,
 input,
@@ -1108,6 +1116,7 @@ td {
   }
   .workspace {
     grid-row: 2;
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .content {
     padding: 0.45rem;
@@ -1140,8 +1149,45 @@ td {
     grid-template-columns: 1fr;
   }
   table {
-    min-width: 45rem;
+    min-width: 42rem;
   }
+  .sidebar {
+    gap: 0.35rem;
+    padding: calc(0.4rem + env(safe-area-inset-top)) max(0.4rem, env(safe-area-inset-right)) 0.4rem max(0.4rem, env(safe-area-inset-left));
+  }
+  .sidebar nav {
+    gap: 0.2rem;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+  .sidebar nav a,
+  .sidebar nav a:not(.active) {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding-inline: 0.65rem;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+  button,
+  input,
+  select,
+  textarea,
+  .admin-avatar-trigger,
+  .admin-account-trigger,
+  .admin-account-popover button {
+    min-height: 44px;
+  }
+  .admin-avatar-trigger { width: 44px; height: 44px; }
+  .topbar {
+    min-height: 52px;
+    padding-inline: max(0.55rem, env(safe-area-inset-left)) max(0.55rem, env(safe-area-inset-right));
+  }
+  .table-card {
+    max-width: calc(100vw - 0.9rem);
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+  .project-pane { min-height: 20rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   *,

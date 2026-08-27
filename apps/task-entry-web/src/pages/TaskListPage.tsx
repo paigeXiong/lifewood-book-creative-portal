@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -16,6 +16,8 @@ export function TaskListPage() {
   const parsedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
   const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const [searchInput, setSearchInput] = useState(search);
+  const [showMobileCreate, setShowMobileCreate] = useState(false);
+  const createButtonRef = useRef<HTMLButtonElement>(null);
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
 
   const options = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
@@ -66,6 +68,16 @@ export function TaskListPage() {
   const formatter = useMemo(() => new Intl.DateTimeFormat(validLocale, { dateStyle: "medium", timeStyle: "short" }), [validLocale]);
 
   useEffect(() => setSearchInput(search), [search]);
+  useEffect(() => {
+    const button = createButtonRef.current;
+    if (!button || !("IntersectionObserver" in window)) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowMobileCreate(!entry.isIntersecting),
+      { rootMargin: "-72px 0px 0px", threshold: 0.01 },
+    );
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, []);
   const updateFilters = (values: { q?: string; status?: string; page?: number }) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -85,13 +97,13 @@ export function TaskListPage() {
   if (!isSupportedLocale(locale)) return null;
 
   return (
-    <div className="page page-list reference-dashboard">
+    <div className={`page page-list reference-dashboard${showMobileCreate ? " mobile-create-visible" : ""}`}>
       <div className="page-header page-header-row">
         <div>
           <h1>{t("tasks.title")}</h1>
           <p>{t("tasks.subtitle")}</p>
         </div>
-        <button className="button button-primary header-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
+        <button ref={createButtonRef} className="button button-primary header-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
           {!createDraft.isPending && <span aria-hidden="true">＋</span>}
           {createDraft.isPending ? t("common.creating") : t("common.createTask")}
         </button>
@@ -167,6 +179,18 @@ export function TaskListPage() {
         <span aria-current="page">{t("common.pageOf", { page, pages: totalPages })}</span>
         {page >= totalPages ? <span className="button button-secondary disabled" aria-disabled="true">{t("common.next")}</span> : <Link className="button button-secondary" to={pageHref(page + 1)}>{t("common.next")}</Link>}
       </nav>}
+      {showMobileCreate ? (
+        <button
+          className="mobile-create-fab"
+          type="button"
+          aria-label={t("common.createTask")}
+          aria-busy={createDraft.isPending}
+          disabled={createDraft.isPending}
+          onClick={() => createDraft.mutate()}
+        >
+          <span aria-hidden="true">＋</span>
+        </button>
+      ) : null}
     </div>
   );
 }
