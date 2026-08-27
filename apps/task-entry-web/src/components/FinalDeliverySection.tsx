@@ -19,7 +19,7 @@ export function FinalDeliverySection({ projectId, locale }: { projectId: string;
   const date = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
 
   if (deliveries.isPending) return <section className="form-panel customer-delivery" aria-busy="true"><h2><span>✓</span>{t("delivery.title")}</h2><p>{t("common.loading")}</p></section>;
-  if (deliveries.isError) return <section className="form-panel customer-delivery"><h2><span>!</span>{t("delivery.title")}</h2><div className="inline-error" role="alert">{localizedApiError(deliveries.error, t)} <button className="button button-secondary" onClick={() => void deliveries.refetch()}>{t("common.retry")}</button></div></section>;
+  if (deliveries.isError) return <section className="form-panel customer-delivery"><h2><span>!</span>{t("delivery.title")}</h2><div className="inline-error" role="alert">{localizedApiError(deliveries.error, t)} <button type="button" className="button button-secondary" onClick={() => void deliveries.refetch()}>{t("common.retry")}</button></div></section>;
   if (!deliveries.data.length) return <section className="form-panel customer-delivery pending"><h2><span>○</span>{t("delivery.title")}</h2><strong>{t("delivery.pendingTitle")}</strong><p>{t("delivery.pendingBody")}</p></section>;
 
   return <section className="form-panel customer-delivery ready"><div className="customer-delivery-heading"><div><h2><span>✓</span>{t("delivery.title")}</h2><strong>{t("delivery.readyTitle")}</strong><p>{t("delivery.readyBody")}</p></div><span className="delivery-ready-badge">{t("delivery.readyBadge")}</span></div>

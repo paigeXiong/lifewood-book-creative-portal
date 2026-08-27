@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createCreativeDraftSchema, createCreativeStepSchema, emptyCharacter, isCreativeComplete } from "./pages/creativeFormSchema";
 
 const t = (key: string) => key;
-const empty = { characters: [], visualStyleId: "", moodTagIds: [], imageStyleTagIds: [], paceTagIds: [], styleReferenceImageUrls: [] };
+const empty = { characters: [], visualStyleId: "", moodTagIds: [], imageStyleTagIds: [], paceTagIds: [], styleReferenceImageUrls: [], styleReferenceImages: [] };
 
 describe("creative form validation", () => {
   it("allows an incomplete creative draft", () => {
@@ -21,6 +21,12 @@ describe("creative form validation", () => {
   it("accepts a complete character and configured style id shape", () => {
     const character = { ...emptyCharacter(), roleTypeId: "protagonist", name: "Mara", storyRole: "Leads the journey", personality: "Curious", appearance: "Traveler" };
     expect(createCreativeStepSchema(t).safeParse({ ...empty, characters: [character], visualStyleId: "cinematic" }).success).toBe(true);
+  });
+
+  it("accepts stored character and style reference image metadata", () => {
+    const asset = { id: "file-1", categoryId: "style-reference", fileName: "style.png", contentType: "image/png", sizeBytes: 128, url: "/api/projects/p/files/file-1" };
+    const character = { ...emptyCharacter(), referenceImages: [{ ...asset, categoryId: "character-reference" }] };
+    expect(createCreativeDraftSchema(t).safeParse({ ...empty, characters: [character], styleReferenceImages: [asset] }).success).toBe(true);
   });
 
   it("keeps every added character complete before advancing", () => {

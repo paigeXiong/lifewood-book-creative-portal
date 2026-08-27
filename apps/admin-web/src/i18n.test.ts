@@ -11,6 +11,12 @@ const requiredKeys = [
   "admin.roles.customer",
   "admin.projects.statusFilter",
   "admin.users.roleFilter",
+  "admin.users.organization",
+  "admin.nav.organizations",
+  "admin.organizations.create",
+  "admin.organizations.deactivateConfirm",
+  "errors.admin.organizationExists",
+  "errors.admin.organizationNotFound",
   "admin.delivery.title",
   "admin.delivery.draftHint",
   "errors.delivery.file",
@@ -34,6 +40,15 @@ const requiredKeys = [
   "admin.formOptions.groups.voice-emotions",
   "admin.formOptions.previewColor",
   "admin.formOptions.createTitle",
+  "admin.account.openAvatarEditor",
+  "admin.account.avatarEditorTitle",
+  "admin.account.avatarCropInstruction",
+  "admin.account.saveAvatar",
+  "admin.account.avatarSourceInvalid",
+  "creative.fields.roleType",
+  "creative.fields.visualStyle",
+  "voice.fields.narrationTone",
+  "voice.fields.coreMessage",
 ];
 
 describe("administrator locale resources", () => {

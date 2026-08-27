@@ -11,6 +11,7 @@ internal enum AccountLoginOutcome { Success, InvalidCredentials, Locked }
 internal sealed record AccountLoginResult(AccountLoginOutcome Outcome, CurrentUserDto? User, DateTimeOffset? LockedUntil = null);
 internal enum PasswordUpdateOutcome { Updated, Invalid, NotFound }
 internal sealed record PasswordUpdateResult(PasswordUpdateOutcome Outcome, string? Field = null);
+internal sealed record StoredAvatar(FileStream Stream, string ContentType);
 
 internal sealed class UserRepository
 {
@@ -18,6 +19,7 @@ internal sealed class UserRepository
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
     private readonly string connectionString;
     private readonly string uploadsDirectory;
+    private readonly string avatarDirectory;
     private readonly PasswordHasher<AccountPasswordTarget> passwordHasher = new();
     private readonly string dummyPasswordHash;
 
@@ -25,12 +27,14 @@ internal sealed class UserRepository
     {
         this.connectionString = connectionString;
         uploadsDirectory = Path.Combine(dataDirectory, "uploads");
+        avatarDirectory = Path.Combine(dataDirectory, "avatars");
         dummyPasswordHash = passwordHasher.HashPassword(new AccountPasswordTarget("dummy"), Guid.NewGuid().ToString("N"));
     }
 
     public void Initialize()
     {
         using var connection = Open();
+        OrganizationSchema.EnsureOrganizationTable(connection);
         using var command = connection.CreateCommand();
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS users (
@@ -43,13 +47,19 @@ internal sealed class UserRepository
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
                 locked_until TEXT NULL,
                 session_version INTEGER NOT NULL DEFAULT 0,
+                avatar_file_name TEXT NULL,
+                organization_id TEXT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(organization_id) REFERENCES organizations(id) ON DELETE SET NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS ux_users_normalized_email ON users(normalized_email);
             """;
         command.ExecuteNonQuery();
         if (!HasColumn(connection, "users", "session_version")) Execute(connection, "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0;");
+        if (!HasColumn(connection, "users", "avatar_file_name")) Execute(connection, "ALTER TABLE users ADD COLUMN avatar_file_name TEXT NULL;");
+        OrganizationSchema.Ensure(connection);
+        CleanupAvatarDirectory(connection);
     }
 
     public bool RequiresBootstrap()
@@ -110,7 +120,7 @@ internal sealed class UserRepository
                 claim.ExecuteNonQuery();
             }
             transaction.Commit();
-            return new(AccountCreateOutcome.Created, ToCurrentUser(id, email.Trim(), normalizedDisplayName, "owner"));
+            return new(AccountCreateOutcome.Created, ToCurrentUser(id, email.Trim(), normalizedDisplayName, "owner", null, null, null));
         }
         catch
         {
@@ -168,18 +178,145 @@ internal sealed class UserRepository
             : null;
         UpdateLoginState(connection, transaction, account.Id, 0, null, replacementHash);
         transaction.Commit();
-        return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role));
+        return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role, account.AvatarFileName, account.OrganizationId, account.OrganizationName));
     }
 
     public CurrentUserDto? Get(string id, int? sessionVersion = null)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, email, display_name, role FROM users WHERE id = $id AND is_active = 1 AND ($sessionVersion IS NULL OR session_version = $sessionVersion);";
+        command.CommandText = """
+            SELECT u.id, u.email, u.display_name, u.role, u.avatar_file_name, o.id, o.name
+            FROM users u
+            LEFT JOIN organizations o ON o.id = u.organization_id
+            WHERE u.id = $id AND u.is_active = 1 AND ($sessionVersion IS NULL OR u.session_version = $sessionVersion);
+            """;
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$sessionVersion", sessionVersion is null ? DBNull.Value : sessionVersion.Value);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)) : null;
+        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6)) : null;
+    }
+
+    public StoredAvatar? OpenAvatar(string id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT avatar_file_name FROM users WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        var fileName = command.ExecuteScalar() as string;
+        if (string.IsNullOrWhiteSpace(fileName) || Path.GetFileName(fileName) != fileName) return null;
+        var path = Path.Combine(avatarDirectory, fileName);
+        if (!File.Exists(path)) return null;
+        var contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".jpg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            _ => null
+        };
+        try
+        {
+            return contentType is null ? null : new(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete), contentType);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    public async Task<CurrentUserDto?> SaveAvatar(string id, Stream source, string extension, CancellationToken cancellationToken)
+    {
+        if (extension is not (".jpg" or ".png" or ".webp")) return null;
+        Directory.CreateDirectory(avatarDirectory);
+        var fileName = $"{id}-{Guid.NewGuid():N}{extension}";
+        var target = Path.Combine(avatarDirectory, fileName);
+        var temporary = target + ".uploading";
+        string? previousFileName;
+        try
+        {
+            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                await source.CopyToAsync(output, cancellationToken);
+                await output.FlushAsync(cancellationToken);
+            }
+            File.Move(temporary, target);
+            using var connection = Open();
+            using var transaction = connection.BeginTransaction(deferred: false);
+            using var find = connection.CreateCommand();
+            find.Transaction = transaction;
+            find.CommandText = "SELECT avatar_file_name FROM users WHERE id = $id AND is_active = 1;";
+            find.Parameters.AddWithValue("$id", id);
+            var previousValue = find.ExecuteScalar();
+            if (previousValue is null) throw new InvalidOperationException("The user is no longer available.");
+            previousFileName = previousValue is DBNull ? null : (string)previousValue;
+            using var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = "UPDATE users SET avatar_file_name = $fileName, updated_at = $now WHERE id = $id AND is_active = 1;";
+            update.Parameters.AddWithValue("$fileName", fileName);
+            update.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            update.Parameters.AddWithValue("$id", id);
+            if (update.ExecuteNonQuery() != 1) throw new InvalidOperationException("The user is no longer available.");
+            transaction.Commit();
+        }
+        catch
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+            if (File.Exists(target)) File.Delete(target);
+            throw;
+        }
+        TryDeleteAvatarFile(previousFileName);
+        return Get(id);
+    }
+
+    public CurrentUserDto? RemoveAvatar(string id)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var find = connection.CreateCommand();
+        find.Transaction = transaction;
+        find.CommandText = "SELECT avatar_file_name FROM users WHERE id = $id AND is_active = 1;";
+        find.Parameters.AddWithValue("$id", id);
+        var previousValue = find.ExecuteScalar();
+        if (previousValue is null) return null;
+        var previousFileName = previousValue is DBNull ? null : (string)previousValue;
+        using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = "UPDATE users SET avatar_file_name = NULL, updated_at = $now WHERE id = $id AND is_active = 1;";
+        update.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        update.Parameters.AddWithValue("$id", id);
+        update.ExecuteNonQuery();
+        transaction.Commit();
+        TryDeleteAvatarFile(previousFileName);
+        return Get(id);
+    }
+
+    private void TryDeleteAvatarFile(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || Path.GetFileName(fileName) != fileName) return;
+        var path = Path.Combine(avatarDirectory, fileName);
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private void CleanupAvatarDirectory(SqliteConnection connection)
+    {
+        if (!Directory.Exists(avatarDirectory)) return;
+        var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT avatar_file_name FROM users WHERE avatar_file_name IS NOT NULL;";
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) referenced.Add(reader.GetString(0));
+        }
+        foreach (var path in Directory.EnumerateFiles(avatarDirectory))
+        {
+            var fileName = Path.GetFileName(path);
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+            if (!fileName.EndsWith(".uploading", StringComparison.OrdinalIgnoreCase) &&
+                (extension is not (".jpg" or ".png" or ".webp") || referenced.Contains(fileName))) continue;
+            TryDeleteAvatarFile(fileName);
+        }
     }
 
     private static string[] LegacyOwners(SqliteConnection connection, SqliteTransaction transaction, string newOwnerId)
@@ -222,12 +359,18 @@ internal sealed class UserRepository
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT id, email, display_name, password_hash, role, failed_attempts, locked_until, is_active FROM users WHERE normalized_email = $email;";
+        command.CommandText = """
+            SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.failed_attempts, u.locked_until, u.is_active, u.avatar_file_name, o.id, o.name
+            FROM users u
+            LEFT JOIN organizations o ON o.id = u.organization_id
+            WHERE u.normalized_email = $email;
+            """;
         command.Parameters.AddWithValue("$email", normalizedEmail);
         using var reader = command.ExecuteReader();
         if (!reader.Read()) return null;
         return new StoredAccount(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5),
-            reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt32(7) == 1);
+            reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt32(7) == 1, reader.IsDBNull(8) ? null : reader.GetString(8),
+            reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10));
     }
 
     private static void UpdateLoginState(SqliteConnection connection, SqliteTransaction transaction, string id, int attempts, DateTimeOffset? lockedUntil, string? passwordHash)
@@ -260,7 +403,7 @@ internal sealed class UserRepository
 
     private static string NormalizeEmail(string value) => value.Trim().ToUpperInvariant();
     private static bool IsValidEmail(string value) => MailAddress.TryCreate(value.Trim(), out var address) && address.Address.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase);
-    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role)
+    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role, string? avatarFileName, string? organizationId, string? organizationName)
     {
         var permissions = role switch
         {
@@ -268,7 +411,9 @@ internal sealed class UserRepository
             "admin" => new[] { "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage" },
             _ => new[] { "tasks.read", "tasks.write", "tasks.submit" }
         };
-        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(id)}", email, null, [role], permissions, null, null);
+        var avatarVersion = avatarFileName ?? id;
+        var organization = organizationId is not null && organizationName is not null ? new OrganizationDto(organizationId, organizationName) : null;
+        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(avatarVersion)}", email, organization, [role], permissions, null, null, avatarFileName is not null);
     }
 
     private static bool ValidNewPassword(string password) => !string.IsNullOrEmpty(password) && password.Length is >= 12 and <= 128;
@@ -290,7 +435,7 @@ internal sealed class UserRepository
     private static void Execute(SqliteConnection connection, string sql)
     { using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
     private sealed record AccountPasswordTarget(string Id);
-    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active);
+    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active, string? AvatarFileName, string? OrganizationId, string? OrganizationName);
     public PasswordUpdateResult ChangePassword(string id, string currentPassword, string newPassword)
     {
         if (string.IsNullOrEmpty(currentPassword) || currentPassword.Length > 128) return new(PasswordUpdateOutcome.Invalid, "currentPassword");

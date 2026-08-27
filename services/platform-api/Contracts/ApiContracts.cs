@@ -14,7 +14,8 @@ public sealed record CurrentUserDto(
     string[] Roles,
     string[] Permissions,
     string? Locale,
-    string? TimeZone);
+    string? TimeZone,
+    bool HasCustomAvatar = false);
 
 public sealed record AuthStatusDto(bool RequiresBootstrap);
 public sealed record CsrfTokenDto(string Token);
@@ -23,10 +24,15 @@ public sealed record LoginRequest(string Email, string Password, bool RememberMe
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ResetPasswordRequest(string NewPassword);
 
-public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int PageSize, int Total);
-public sealed record CreateUserRequest(string DisplayName, string Email, string Password, string Role);
-public sealed record UpdateUserRequest(string DisplayName, string Role, bool Active);
+public sealed record CreateUserRequest(string DisplayName, string Email, string Password, string Role, string? OrganizationId);
+public sealed record UpdateUserRequest(string DisplayName, string Role, bool Active, string? OrganizationId);
+
+public sealed record AdminOrganizationDto(string Id, string Name, bool Active, int MemberCount, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record PagedAdminOrganizationsDto(AdminOrganizationDto[] Items, int Page, int PageSize, int Total);
+public sealed record CreateOrganizationRequest(string Name);
+public sealed record UpdateOrganizationRequest(string Name, bool Active);
 
 public sealed record ConfigOptionDto(
     string Id,
@@ -200,7 +206,8 @@ public sealed record CharacterInfoDto(
     string? Clothing,
     string? Emotion,
     string? VoiceHint,
-    string[] ReferenceImageUrls);
+    string[] ReferenceImageUrls,
+    ReferenceAssetDto[]? ReferenceImages = null);
 
 public sealed record CreativeInfoDto(
     CharacterInfoDto[] Characters,
@@ -208,7 +215,8 @@ public sealed record CreativeInfoDto(
     string[] MoodTagIds,
     string[] ImageStyleTagIds,
     string[] PaceTagIds,
-    string[] StyleReferenceImageUrls);
+    string[] StyleReferenceImageUrls,
+    ReferenceAssetDto[]? StyleReferenceImages = null);
 
 public sealed record ReferenceAssetDto(
     string Id,

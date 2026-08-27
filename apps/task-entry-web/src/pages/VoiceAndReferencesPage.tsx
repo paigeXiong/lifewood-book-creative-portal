@@ -168,7 +168,7 @@ export function VoiceAndReferencesPage() {
   const voiceAgeOptions = mergeLegacyOptions(options.voiceAges, [previousVoice.voiceAgeId], unavailable);
   const accentOptions = mergeLegacyOptions(options.accents, [previousVoice.accentId], unavailable);
   const emotionOptions = mergeLegacyOptions(options.voiceEmotions, [previousVoice.emotionStyleId], unavailable);
-  const referenceCategories = mergeLegacyCategories(options.referenceCategories, draftQuery.data.voiceAndReferences.assets, unavailable);
+  const referenceCategories = mergeLegacyCategories(options.referenceCategories.filter((category) => !["character-reference", "style-reference"].includes(category.id)), draftQuery.data.voiceAndReferences.assets, unavailable);
   const voices = voicesQuery.data.filter((voice) => voice.enabled);
   const conflict = save.error instanceof ApiError && save.error.details.code === "project.version_conflict";
   const statusText = saveState === "pending" ? t("common.savePending") : saveState === "saving" ? t("common.saving") : saveState === "saved" ? t("common.saved") : saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";

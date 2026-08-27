@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import "@lifewood/ui/tokens.css";
+import "@lifewood/ui/avatar-editor.css";
 import "@lifewood/i18n";
 import { App } from "./App";
 import "./styles.css";
@@ -24,4 +25,3 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
-

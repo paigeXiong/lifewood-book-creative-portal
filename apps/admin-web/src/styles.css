@@ -192,7 +192,22 @@ a:focus-visible {
 }
 .admin-account {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
 }
+.admin-avatar-trigger,
+.admin-account-avatar-preview {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+.admin-avatar-trigger { width: 2.25rem; height: 2.25rem; }
+.admin-avatar-trigger:hover,
+.admin-account-avatar-preview:hover { background: #e3efe8; box-shadow: 0 0 0 3px #e3efe8; }
 .admin-account-trigger {
   min-height: 2.25rem;
   display: flex;
@@ -212,6 +227,7 @@ a:focus-visible {
   border-radius: 50%;
   object-fit: cover;
 }
+.account-avatar-large { width: 2.875rem; height: 2.875rem; }
 .account-chevron {
   color: #64756d;
 }
@@ -233,12 +249,22 @@ a:focus-visible {
   color: #64756d;
   overflow-wrap: anywhere;
 }
+.admin-account-identity { display: flex; align-items: center; gap: 0.65rem; padding: 0.45rem; border-radius: 0.45rem; background: #f3f7f4; }
+.admin-account-identity > div { min-width: 0; }
+.admin-account-identity strong,
+.admin-account-identity span,
+.admin-account-identity small { display: block; }
 .admin-account-popover button {
   margin-top: 0.4rem;
 }
 .admin-account-error {
   margin: 0.2rem 0 0;
   color: #9b2c23;
+  font-size: 0.72rem;
+}
+.admin-account-feedback {
+  margin: 0.2rem 0 0;
+  color: #075b42;
   font-size: 0.72rem;
 }
 .content {
@@ -603,8 +629,9 @@ label > small {
 }
 .detail-section {
   margin-top: 0.75rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid #e7ede9;
+  padding: 0.7rem;
+  border-radius: 0.55rem;
+  background: #f6f8f7;
 }
 .detail-section h3 {
   margin: 0 0 0.55rem;
@@ -723,6 +750,40 @@ label > small {
   margin: 0.12rem 0 0;
   font-size: 0.8rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.submission-sections {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+.submission-sections .detail-section {
+  margin-top: 0;
+}
+.character-submissions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.character-submissions article {
+  min-width: 0;
+  padding: 0.6rem;
+  border-radius: 0.45rem;
+  background: #fff;
+}
+.character-submissions h4 {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+}
+.reference-links {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.reference-links a {
+  color: #006b4c;
   overflow-wrap: anywhere;
 }
 .file-list {
@@ -1074,7 +1135,8 @@ td {
     grid-template-columns: 1fr;
   }
   .fact-grid,
-  .file-list {
+  .file-list,
+  .character-submissions {
     grid-template-columns: 1fr;
   }
   table {

@@ -12,7 +12,8 @@ internal sealed record AdminWriteResult(AdminWriteOutcome Outcome, string? Field
 
 internal sealed class AdminRepository(string connectionString)
 {
-    private static readonly IReadOnlySet<string> Roles = new HashSet<string>(["customer", "admin"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> CreatableRoles = new HashSet<string>(["customer", "admin"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> UpdatableRoles = new HashSet<string>(["owner", "customer", "admin"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> WorkflowStatuses = new HashSet<string>(["new", "contacting", "confirmed", "in_production", "awaiting_customer", "completed", "closed"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> Priorities = new HashSet<string>(["low", "normal", "high", "urgent"], StringComparer.Ordinal);
     private readonly PasswordHasher<PasswordTarget> passwordHasher = new();
@@ -20,6 +21,7 @@ internal sealed class AdminRepository(string connectionString)
     public void Initialize()
     {
         using var connection = Open();
+        OrganizationSchema.Ensure(connection);
         if (!HasColumn(connection, "users", "is_active")) Execute(connection, "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;");
         if (!HasColumn(connection, "projects", "workflow_status")) Execute(connection, "ALTER TABLE projects ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'new';");
         if (!HasColumn(connection, "projects", "priority")) Execute(connection, "ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';");
@@ -50,7 +52,12 @@ internal sealed class AdminRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, email, display_name, role, is_active, created_at, updated_at FROM users WHERE is_active = 1 AND role IN ('owner', 'admin') ORDER BY display_name COLLATE NOCASE;";
+        command.CommandText = """
+            SELECT u.id, u.email, u.display_name, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at
+            FROM users u LEFT JOIN organizations o ON o.id = u.organization_id
+            WHERE u.is_active = 1 AND u.role IN ('owner', 'admin')
+            ORDER BY u.display_name COLLATE NOCASE;
+            """;
         using var reader = command.ExecuteReader();
         var items = new List<AdminUserDto>();
         while (reader.Read()) items.Add(ReadUser(reader));
@@ -75,13 +82,13 @@ internal sealed class AdminRepository(string connectionString)
     public PagedAdminUsersDto ListUsers(string? search, string? role, int page, int pageSize)
     {
         using var connection = Open();
-        const string where = "WHERE ($search = '' OR display_name LIKE '%' || $search || '%' COLLATE NOCASE OR email LIKE '%' || $search || '%' COLLATE NOCASE) AND ($role = '' OR role = $role)";
+        const string where = "WHERE ($search = '' OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR o.name LIKE '%' || $search || '%' COLLATE NOCASE) AND ($role = '' OR u.role = $role)";
         using var count = connection.CreateCommand();
-        count.CommandText = $"SELECT COUNT(*) FROM users {where};";
+        count.CommandText = $"SELECT COUNT(*) FROM users u LEFT JOIN organizations o ON o.id = u.organization_id {where};";
         AddUserFilters(count, search, role);
         var total = Convert.ToInt32(count.ExecuteScalar());
         using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT id, email, display_name, role, is_active, created_at, updated_at FROM users {where} ORDER BY created_at DESC LIMIT $pageSize OFFSET $offset;";
+        command.CommandText = $"SELECT u.id, u.email, u.display_name, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id {where} ORDER BY u.created_at DESC LIMIT $pageSize OFFSET $offset;";
         AddUserFilters(command, search, role);
         command.Parameters.AddWithValue("$pageSize", pageSize);
         command.Parameters.AddWithValue("$offset", (long)(page - 1) * pageSize);
@@ -95,7 +102,7 @@ internal sealed class AdminRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, email, display_name, role, is_active, created_at, updated_at FROM users WHERE id = $id;";
+        command.CommandText = "SELECT u.id, u.email, u.display_name, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id WHERE u.id = $id;";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadUser(reader) : null;
@@ -109,28 +116,34 @@ internal sealed class AdminRepository(string connectionString)
         if (candidateEmail.Length is 0 or > 254 || !MailAddress.TryCreate(candidateEmail, out var address) || address is null) return new(AdminWriteOutcome.Invalid, "email");
         if (!address.Address.Equals(candidateEmail, StringComparison.OrdinalIgnoreCase)) return new(AdminWriteOutcome.Invalid, "email");
         if (string.IsNullOrEmpty(request.Password) || request.Password.Length is < 12 or > 128) return new(AdminWriteOutcome.Invalid, "password");
-        if (!Roles.Contains(request.Role)) return new(AdminWriteOutcome.Invalid, "role");
+        if (!CreatableRoles.Contains(request.Role)) return new(AdminWriteOutcome.Invalid, "role");
         var id = Guid.NewGuid().ToString("N");
         var email = candidateEmail;
         var displayName = request.DisplayName.Trim();
         var now = DateTimeOffset.UtcNow;
+        var passwordHash = passwordHasher.HashPassword(new PasswordTarget(id), request.Password);
         try
         {
             using var connection = Open();
+            using var transaction = connection.BeginTransaction(deferred: false);
+            if (!CanAssignOrganization(connection, transaction, request.OrganizationId, null)) return new(AdminWriteOutcome.Invalid, "organizationId");
             using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
-                INSERT INTO users(id, email, normalized_email, display_name, password_hash, role, is_active, created_at, updated_at)
-                VALUES ($id, $email, $normalizedEmail, $displayName, $passwordHash, $role, 1, $now, $now);
+                INSERT INTO users(id, email, normalized_email, display_name, password_hash, role, is_active, organization_id, created_at, updated_at)
+                VALUES ($id, $email, $normalizedEmail, $displayName, $passwordHash, $role, 1, $organizationId, $now, $now);
                 """;
             command.Parameters.AddWithValue("$id", id);
             command.Parameters.AddWithValue("$email", email);
             command.Parameters.AddWithValue("$normalizedEmail", email.ToUpperInvariant());
             command.Parameters.AddWithValue("$displayName", displayName);
-            command.Parameters.AddWithValue("$passwordHash", passwordHasher.HashPassword(new PasswordTarget(id), request.Password));
+            command.Parameters.AddWithValue("$passwordHash", passwordHash);
             command.Parameters.AddWithValue("$role", request.Role);
+            command.Parameters.AddWithValue("$organizationId", DbValue(request.OrganizationId));
             command.Parameters.AddWithValue("$now", now.ToString("O"));
             command.ExecuteNonQuery();
-            user = new(id, email, displayName, request.Role, true, now, now);
+            transaction.Commit();
+            user = GetUser(id);
             return new(AdminWriteOutcome.Saved);
         }
         catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
@@ -143,22 +156,32 @@ internal sealed class AdminRepository(string connectionString)
     {
         user = null;
         if (request is null || string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Trim().Length is < 2 or > 100) return new(AdminWriteOutcome.Invalid, "displayName");
-        if (!Roles.Contains(request.Role)) return new(AdminWriteOutcome.Invalid, "role");
+        if (!UpdatableRoles.Contains(request.Role)) return new(AdminWriteOutcome.Invalid, "role");
         using var connection = Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
         using var existing = connection.CreateCommand();
-        existing.CommandText = "SELECT role FROM users WHERE id = $id;";
+        existing.Transaction = transaction;
+        existing.CommandText = "SELECT role, organization_id FROM users WHERE id = $id;";
         existing.Parameters.AddWithValue("$id", id);
-        var currentRole = existing.ExecuteScalar() as string;
-        if (currentRole is null) return new(AdminWriteOutcome.NotFound);
-        if (currentRole == "owner") return new(AdminWriteOutcome.Protected, "role");
+        using var existingReader = existing.ExecuteReader();
+        if (!existingReader.Read()) return new(AdminWriteOutcome.NotFound);
+        var currentRole = existingReader.GetString(0);
+        var currentOrganizationId = existingReader.IsDBNull(1) ? null : existingReader.GetString(1);
+        if (currentRole == "owner" && (request.Role != "owner" || !request.Active)) return new(AdminWriteOutcome.Protected, "role");
+        if (currentRole != "owner" && request.Role == "owner") return new(AdminWriteOutcome.Protected, "role");
+        existingReader.Close();
+        if (!CanAssignOrganization(connection, transaction, request.OrganizationId, currentOrganizationId)) return new(AdminWriteOutcome.Invalid, "organizationId");
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE users SET display_name = $displayName, role = $role, is_active = $active, updated_at = $now WHERE id = $id;";
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE users SET display_name = $displayName, role = $role, is_active = $active, organization_id = $organizationId, updated_at = $now WHERE id = $id;";
         command.Parameters.AddWithValue("$displayName", request.DisplayName.Trim());
         command.Parameters.AddWithValue("$role", request.Role);
         command.Parameters.AddWithValue("$active", request.Active ? 1 : 0);
+        command.Parameters.AddWithValue("$organizationId", DbValue(request.OrganizationId));
         command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
+        transaction.Commit();
         user = GetUser(id);
         return new(AdminWriteOutcome.Saved);
     }
@@ -303,6 +326,11 @@ internal sealed class AdminRepository(string connectionString)
         var project = JsonSerializer.Deserialize(reader.GetString(4), AppJsonContext.Default.ProjectInfoDto) ?? throw new InvalidDataException("Project JSON is invalid.");
         var book = JsonSerializer.Deserialize(reader.GetString(5), AppJsonContext.Default.BookInfoDto) ?? throw new InvalidDataException("Book JSON is invalid.");
         var creative = JsonSerializer.Deserialize(reader.GetString(6), AppJsonContext.Default.CreativeInfoDto) ?? throw new InvalidDataException("Creative JSON is invalid.");
+        creative = creative with
+        {
+            StyleReferenceImages = creative.StyleReferenceImages ?? [],
+            Characters = creative.Characters.Select(character => character with { ReferenceImages = character.ReferenceImages ?? [] }).ToArray()
+        };
         var voice = JsonSerializer.Deserialize(reader.GetString(7), AppJsonContext.Default.VoiceAndReferencesInfoDto) ?? throw new InvalidDataException("Voice JSON is invalid.");
         return new(reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetString(2), reader.GetInt32(3), project, book with { SourceAssets = book.SourceAssets ?? [] }, creative, voice, DateTimeOffset.Parse(reader.GetString(8)), DateTimeOffset.Parse(reader.GetString(9)));
     }
@@ -325,7 +353,88 @@ internal sealed class AdminRepository(string connectionString)
         while (reader.Read()) items.Add(new(reader.GetString(0), reader.GetInt32(1)));
         return [.. items];
     }
-    private static AdminUserDto ReadUser(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4) == 1, DateTimeOffset.Parse(reader.GetString(5)), DateTimeOffset.Parse(reader.GetString(6)));
+
+    public PagedAdminOrganizationsDto ListOrganizations(string? search, int page, int pageSize)
+    {
+        using var connection = Open();
+        const string where = "WHERE ($search = '' OR o.name LIKE '%' || $search || '%' COLLATE NOCASE)";
+        using var count = connection.CreateCommand();
+        count.CommandText = $"SELECT COUNT(*) FROM organizations o {where};";
+        count.Parameters.AddWithValue("$search", search?.Trim() ?? "");
+        var total = Convert.ToInt32(count.ExecuteScalar());
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT o.id, o.name, o.is_active, COUNT(u.id), o.created_at, o.updated_at
+            FROM organizations o LEFT JOIN users u ON u.organization_id = o.id
+            {where}
+            GROUP BY o.id, o.name, o.is_active, o.created_at, o.updated_at
+            ORDER BY o.name COLLATE NOCASE
+            LIMIT $pageSize OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$search", search?.Trim() ?? "");
+        command.Parameters.AddWithValue("$pageSize", pageSize);
+        command.Parameters.AddWithValue("$offset", (long)(page - 1) * pageSize);
+        using var reader = command.ExecuteReader();
+        var items = new List<AdminOrganizationDto>();
+        while (reader.Read()) items.Add(ReadOrganization(reader));
+        return new([.. items], page, pageSize, total);
+    }
+
+    public AdminWriteResult CreateOrganization(CreateOrganizationRequest? request, out AdminOrganizationDto? organization)
+    {
+        organization = null;
+        var name = request?.Name?.Trim() ?? "";
+        if (name.Length is < 2 or > 120) return new(AdminWriteOutcome.Invalid, "name");
+        var id = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+        try
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO organizations(id, name, normalized_name, is_active, created_at, updated_at) VALUES ($id, $name, $normalizedName, 1, $now, $now);";
+            command.Parameters.AddWithValue("$id", id);
+            command.Parameters.AddWithValue("$name", name);
+            command.Parameters.AddWithValue("$normalizedName", name.ToUpperInvariant());
+            command.Parameters.AddWithValue("$now", now.ToString("O"));
+            command.ExecuteNonQuery();
+            organization = new(id, name, true, 0, now, now);
+            return new(AdminWriteOutcome.Saved);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return new(AdminWriteOutcome.Conflict, "name");
+        }
+    }
+
+    public AdminWriteResult UpdateOrganization(string id, UpdateOrganizationRequest? request, out AdminOrganizationDto? organization)
+    {
+        organization = null;
+        var name = request?.Name?.Trim() ?? "";
+        if (name.Length is < 2 or > 120) return new(AdminWriteOutcome.Invalid, "name");
+        try
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE organizations SET name = $name, normalized_name = $normalizedName, is_active = $active, updated_at = $now WHERE id = $id;";
+            command.Parameters.AddWithValue("$name", name);
+            command.Parameters.AddWithValue("$normalizedName", name.ToUpperInvariant());
+            command.Parameters.AddWithValue("$active", request!.Active ? 1 : 0);
+            command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("$id", id);
+            if (command.ExecuteNonQuery() == 0) return new(AdminWriteOutcome.NotFound);
+            organization = GetOrganization(connection, id);
+            return new(AdminWriteOutcome.Saved);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            return new(AdminWriteOutcome.Conflict, "name");
+        }
+    }
+    private static AdminUserDto ReadUser(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4) == 1, reader.IsDBNull(5) ? null : new OrganizationDto(reader.GetString(5), reader.GetString(6)), DateTimeOffset.Parse(reader.GetString(7)), DateTimeOffset.Parse(reader.GetString(8)));
+    private static AdminOrganizationDto ReadOrganization(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2) == 1, reader.GetInt32(3), DateTimeOffset.Parse(reader.GetString(4)), DateTimeOffset.Parse(reader.GetString(5)));
+    private static AdminOrganizationDto? GetOrganization(SqliteConnection connection, string id) { using var command = connection.CreateCommand(); command.CommandText = "SELECT o.id, o.name, o.is_active, COUNT(u.id), o.created_at, o.updated_at FROM organizations o LEFT JOIN users u ON u.organization_id = o.id WHERE o.id = $id GROUP BY o.id, o.name, o.is_active, o.created_at, o.updated_at;"; command.Parameters.AddWithValue("$id", id); using var reader = command.ExecuteReader(); return reader.Read() ? ReadOrganization(reader) : null; }
+    private static bool CanAssignOrganization(SqliteConnection connection, SqliteTransaction transaction, string? requestedId, string? currentId) { if (string.IsNullOrWhiteSpace(requestedId)) return true; var id = requestedId.Trim(); using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "SELECT is_active FROM organizations WHERE id = $id;"; command.Parameters.AddWithValue("$id", id); var value = command.ExecuteScalar(); return value is not null && (Convert.ToInt32(value) == 1 || id == currentId); }
+    private static object DbValue(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     private static void AddUserFilters(SqliteCommand command, string? search, string? role) { command.Parameters.AddWithValue("$search", search?.Trim() ?? ""); command.Parameters.AddWithValue("$role", role?.Trim() ?? ""); }
     private static void AddProjectFilters(SqliteCommand command, string? workflow, string? priority, string? search) { command.Parameters.AddWithValue("$workflow", workflow?.Trim() ?? ""); command.Parameters.AddWithValue("$priority", priority?.Trim() ?? ""); command.Parameters.AddWithValue("$search", search?.Trim() ?? ""); }
     private static void Execute(SqliteConnection connection, string sql) { using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }

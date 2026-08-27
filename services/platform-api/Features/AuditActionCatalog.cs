@@ -14,6 +14,8 @@ internal static class AuditActionCatalog
         new("user.create", "创建用户", "Created user"),
         new("user.update", "更新用户", "Updated user"),
         new("user.password_reset", "重置用户密码", "Reset user password"),
+        new("organization.create", "创建组织", "Created organization"),
+        new("organization.update", "更新组织", "Updated organization"),
         new("project.workflow_update", "更新项目跟进", "Updated project workflow"),
         new("project.note_add", "添加内部备注", "Added internal note"),
         new("delivery.publish", "发布最终成品", "Published final delivery"),
@@ -40,6 +42,10 @@ internal static class AuditActionCatalog
             return new("user.update", "user", Value(3));
         if (method == "PUT" && segments.Length == 5 && segments[2] == "users" && segments[4] == "password")
             return new("user.password_reset", "user", Value(3));
+        if (method == "POST" && segments is ["api", "admin", "organizations"])
+            return new("organization.create", "organization", null);
+        if (method == "PUT" && segments.Length == 4 && segments[2] == "organizations")
+            return new("organization.update", "organization", Value(3));
         if (method == "PUT" && segments.Length == 5 && segments[2] == "projects" && segments[4] == "workflow")
             return new("project.workflow_update", "project", Value(3));
         if (method == "POST" && segments.Length == 5 && segments[2] == "projects" && segments[4] == "notes")

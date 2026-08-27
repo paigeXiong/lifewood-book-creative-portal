@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -200,6 +201,94 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task AvatarEndpointsPersistRealImagesAndRestoreGeneratedDefault()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+
+        using (var defaultAvatar = await ownerClient.GetAsync("/api/me/avatar"))
+        {
+            Assert.Equal(HttpStatusCode.OK, defaultAvatar.StatusCode);
+            Assert.Equal("image/svg+xml", defaultAvatar.Content.Headers.ContentType?.MediaType);
+        }
+
+        using (var invalid = AvatarRequest("not-an-image"u8.ToArray(), "fake.png", "image/png"))
+        using (var response = await Send(ownerClient, HttpMethod.Post, "/api/me/avatar", csrf, invalid))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation.failed", await ErrorCode(response));
+        }
+        var fakeJpeg = new byte[] { 0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x08, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0xFF, 0xD9 };
+        var fakePng = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+        var fakeWebp = new byte[] { 0x52, 0x49, 0x46, 0x46, 22, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        foreach (var fake in new[] { (fakeJpeg, "fake.jpg", "image/jpeg"), (fakePng, "header.png", "image/png"), (fakeWebp, "shell.webp", "image/webp") })
+        {
+            using var upload = AvatarRequest(fake.Item1, fake.Item2, fake.Item3);
+            using var response = await Send(ownerClient, HttpMethod.Post, "/api/me/avatar", csrf, upload);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        var duplicateHeader = png[..33].Concat(png[8..33]).Concat(png[33..]).ToArray();
+        var invalidPaletteIndex = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAAA1BMVEUAAACnej3aAAAACklEQVR4nGNgBAAAAwACS/Xd6gAAAABJRU5ErkJggg==");
+        foreach (var malformed in new[] { duplicateHeader, invalidPaletteIndex })
+        {
+            using var upload = AvatarRequest(malformed, "malformed.png", "image/png");
+            using var response = await Send(ownerClient, HttpMethod.Post, "/api/me/avatar", csrf, upload);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        var interlacedPng = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAFoEvQfAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==");
+        using (var upload = AvatarRequest(interlacedPng, "interlaced.png", "image/png"))
+        using (var response = await Send(ownerClient, HttpMethod.Post, "/api/me/avatar", csrf, upload))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+        var oversizedDimensions = png.ToArray();
+        oversizedDimensions[16] = 0x00;
+        oversizedDimensions[17] = 0x00;
+        oversizedDimensions[18] = 0x10;
+        oversizedDimensions[19] = 0x01;
+        using (var oversizedImage = AvatarRequest(oversizedDimensions, "oversized.png", "image/png"))
+        using (var response = await Send(ownerClient, HttpMethod.Post, "/api/me/avatar", csrf, oversizedImage))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        using (var upload = AvatarRequest(png, "avatar.png", "image/png"))
+        using (var response = await Send(ownerClient, HttpMethod.Post, "/api/me/avatar", csrf, upload))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var updated = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.True(updated.RootElement.GetProperty("hasCustomAvatar").GetBoolean());
+            Assert.Contains("/api/me/avatar?v=", updated.RootElement.GetProperty("avatarUrl").GetString());
+        }
+
+        using (var storedAvatar = await ownerClient.GetAsync("/api/me/avatar"))
+        {
+            Assert.Equal(HttpStatusCode.OK, storedAvatar.StatusCode);
+            Assert.Equal("image/png", storedAvatar.Content.Headers.ContentType?.MediaType);
+            Assert.Equal(png, await storedAvatar.Content.ReadAsByteArrayAsync());
+        }
+
+        using (var me = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/me")))
+        {
+            Assert.True(me.RootElement.GetProperty("hasCustomAvatar").GetBoolean());
+        }
+
+        using (var remove = await Send(ownerClient, HttpMethod.Delete, "/api/me/avatar", csrf))
+        {
+            Assert.Equal(HttpStatusCode.OK, remove.StatusCode);
+            using var updated = JsonDocument.Parse(await remove.Content.ReadAsStringAsync());
+            Assert.False(updated.RootElement.GetProperty("hasCustomAvatar").GetBoolean());
+            Assert.StartsWith("/api/me/avatar?v=", updated.RootElement.GetProperty("avatarUrl").GetString());
+        }
+        using (var restored = await ownerClient.GetAsync("/api/me/avatar"))
+        {
+            Assert.Equal("image/svg+xml", restored.Content.Headers.ContentType?.MediaType);
+        }
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(root, "avatars")));
+    }
+
+    [Fact]
     public async Task AdministratorWorkflowDoesNotExposeOrMutateCustomerDrafts()
     {
         await BootstrapOwner();
@@ -306,6 +395,67 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         using var missing = await ownerClient.GetAsync($"/api/projects/{id}");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
     }
+
+    [Fact]
+    public async Task CreativeReferenceImagesUploadDownloadAndDeleteAsStoredAssets()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var create = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        var draft = JsonNode.Parse(await create.Content.ReadAsStringAsync())!.AsObject();
+        var id = draft["id"]!.GetValue<string>();
+        var characterId = Guid.NewGuid().ToString("N");
+        var creative = draft["creative"]!.AsObject();
+        creative["characters"] = new JsonArray(new JsonObject
+        {
+            ["id"] = characterId, ["roleTypeId"] = "protagonist", ["name"] = "Mara", ["storyRole"] = "Lead",
+            ["personality"] = "Curious", ["appearance"] = "Traveler", ["ageRangeId"] = null, ["genderId"] = null,
+            ["clothing"] = null, ["emotion"] = null, ["voiceHint"] = null,
+            ["referenceImageUrls"] = new JsonArray()
+        });
+        creative.Remove("styleReferenceImages");
+        using var save = await Send(ownerClient, HttpMethod.Put, $"/api/projects/{id}/creative", csrf,
+            JsonContent.Create(new { version = draft["version"]!.GetValue<int>(), creative }));
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        using var savedDocument = JsonDocument.Parse(await save.Content.ReadAsStringAsync());
+        var version = savedDocument.RootElement.GetProperty("version").GetInt32();
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+
+        using var characterUpload = ReferenceRequest(png, "character.png", "image/png", version, "character-reference", characterId);
+        using var uploadResponse = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files", csrf, characterUpload);
+        Assert.Equal(HttpStatusCode.OK, uploadResponse.StatusCode);
+        var uploadedDraft = JsonNode.Parse(await uploadResponse.Content.ReadAsStringAsync())!["draft"]!.AsObject();
+        var characterAsset = uploadedDraft["creative"]!["characters"]![0]!["referenceImages"]![0]!;
+        var fileId = characterAsset["id"]!.GetValue<string>();
+        version = uploadedDraft["version"]!.GetValue<int>();
+
+        using var download = await ownerClient.GetAsync($"/api/projects/{id}/files/{fileId}");
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("image/png", download.Content.Headers.ContentType?.MediaType);
+
+        var webp = "RIFF"u8.ToArray().Concat(new byte[4]).Concat("WEBP"u8.ToArray()).ToArray();
+        using var styleUpload = ReferenceRequest(webp, "style.webp", "image/webp", version, "style-reference");
+        using var styleResponse = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files", csrf, styleUpload);
+        Assert.Equal(HttpStatusCode.OK, styleResponse.StatusCode);
+        var styleDraft = JsonNode.Parse(await styleResponse.Content.ReadAsStringAsync())!["draft"]!.AsObject();
+        var styleFileId = styleDraft["creative"]!["styleReferenceImages"]![0]!["id"]!.GetValue<string>();
+
+        var creativeWithoutCharacter = styleDraft["creative"]!.DeepClone().AsObject();
+        creativeWithoutCharacter["characters"] = new JsonArray();
+        using var removeCharacter = await Send(ownerClient, HttpMethod.Put, $"/api/projects/{id}/creative", csrf,
+            JsonContent.Create(new { version = styleDraft["version"]!.GetValue<int>(), creative = creativeWithoutCharacter }));
+        Assert.Equal(HttpStatusCode.OK, removeCharacter.StatusCode);
+        var removedDraft = JsonNode.Parse(await removeCharacter.Content.ReadAsStringAsync())!.AsObject();
+        Assert.Empty(removedDraft["creative"]!["characters"]!.AsArray());
+        using var removedDownload = await ownerClient.GetAsync($"/api/projects/{id}/files/{fileId}");
+        Assert.Equal(HttpStatusCode.NotFound, removedDownload.StatusCode);
+        Assert.DoesNotContain(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories), path => Path.GetFileName(path).Contains(fileId, StringComparison.Ordinal));
+
+        version = removedDraft["version"]!.GetValue<int>();
+        using var deleteStyle = await Send(ownerClient, HttpMethod.Delete, $"/api/projects/{id}/files/{styleFileId}?version={version}", csrf);
+        Assert.Equal(HttpStatusCode.OK, deleteStyle.StatusCode);
+    }
     private async Task BootstrapOwner()
     {
         var csrf = await GetCsrf(ownerClient);
@@ -350,6 +500,27 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     private static MultipartFormDataContent AudioRequest(byte[] bytes, string fileName, string contentType)
     {
         var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(bytes);
+        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        content.Add(file, "file", fileName);
+        return content;
+    }
+
+    private static MultipartFormDataContent AvatarRequest(byte[] bytes, string fileName, string contentType)
+    {
+        var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(bytes);
+        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        content.Add(file, "avatar", fileName);
+        return content;
+    }
+
+    private static MultipartFormDataContent ReferenceRequest(byte[] bytes, string fileName, string contentType, int version, string categoryId, string? characterId = null)
+    {
+        var content = new MultipartFormDataContent();
+        content.Add(new StringContent(version.ToString(System.Globalization.CultureInfo.InvariantCulture)), "version");
+        content.Add(new StringContent(categoryId), "categoryId");
+        if (characterId is not null) content.Add(new StringContent(characterId), "characterId");
         var file = new ByteArrayContent(bytes);
         file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         content.Add(file, "file", fileName);

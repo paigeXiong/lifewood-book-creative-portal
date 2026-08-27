@@ -172,6 +172,7 @@ export function AuditPage({ locale }: { locale: SupportedLocale }) {
                       alt=""
                       width="32"
                       height="32"
+                      loading="lazy"
                     />
                     <div>
                       <strong>{event.actorName}</strong>
@@ -206,6 +207,7 @@ export function AuditPage({ locale }: { locale: SupportedLocale }) {
         )}
         <nav className="pager">
           <button
+            type="button"
             disabled={page <= 1}
             onClick={() => {
               const next = page - 1;
@@ -217,6 +219,7 @@ export function AuditPage({ locale }: { locale: SupportedLocale }) {
           </button>
           <span>{t("common.pageOf", { page, pages })}</span>
           <button
+            type="button"
             disabled={page >= pages}
             onClick={() => {
               const next = page + 1;

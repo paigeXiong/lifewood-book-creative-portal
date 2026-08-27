@@ -158,10 +158,86 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Null(migrated.AssigneeUserId);
     }
 
+    [Fact]
+    public void OrganizationsPersistUserAssignmentsWithoutExpandingProjectVisibility()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+        var admin = new AdminRepository(ConnectionString);
+        admin.Initialize();
+        var owner = Assert.IsType<CurrentUserDto>(users.CreateOwner("Owner", "owner@example.test", "initial-password-123").User);
+
+        Assert.Equal(AdminWriteOutcome.Saved, admin.CreateOrganization(new("Lifewood Books"), out var organizationResult).Outcome);
+        var organization = Assert.IsType<AdminOrganizationDto>(organizationResult);
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateUser(owner.Id, new("Owner", "owner", true, organization.Id), out var updatedOwner).Outcome);
+        Assert.Equal(organization.Id, Assert.IsType<AdminUserDto>(updatedOwner).Organization?.Id);
+
+        Assert.Equal(AdminWriteOutcome.Saved, admin.CreateUser(new("Reader", "reader@example.test", "customer-password-123", "customer", organization.Id), out var createdUser).Outcome);
+        var customer = Assert.IsType<AdminUserDto>(createdUser);
+        Assert.Equal("Lifewood Books", customer.Organization?.Name);
+        Assert.Equal("Lifewood Books", users.Authenticate("reader@example.test", "customer-password-123").User?.Organization?.Name);
+        Assert.Equal(2, Assert.Single(admin.ListOrganizations("Lifewood", 1, 20).Items).MemberCount);
+        Assert.Equal(customer.Id, Assert.Single(admin.ListUsers("Lifewood Books", null, 1, 20).Items, item => item.Role == "customer").Id);
+
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateOrganization(organization.Id, new("Lifewood Publishing", false), out _).Outcome);
+        Assert.Equal("Lifewood Publishing", users.Get(customer.Id)?.Organization?.Name);
+        Assert.Equal(AdminWriteOutcome.Invalid, admin.CreateUser(new("Other", "other@example.test", "customer-password-123", "customer", organization.Id), out _).Outcome);
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateUser(customer.Id, new("Reader", "customer", true, organization.Id), out _).Outcome);
+
+        var customerProject = projects.Create(customer.Id);
+        Assert.Null(projects.Get(owner.Id, customerProject.Id));
+    }
+
+    [Fact]
+    public void OrganizationMigrationAddsIntegrityGuardsToLegacyUserTables()
+    {
+        using (var connection = new SqliteConnection(ConnectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
+                    normalized_email TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    failed_attempts INTEGER NOT NULL DEFAULT 0,
+                    locked_until TEXT NULL,
+                    session_version INTEGER NOT NULL DEFAULT 0,
+                    avatar_file_name TEXT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                INSERT INTO users(id, email, normalized_email, display_name, password_hash, role, created_at, updated_at)
+                VALUES ('legacy-user', 'legacy@example.test', 'LEGACY@EXAMPLE.TEST', 'Legacy', 'hash', 'customer', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        new UserRepository(ConnectionString, root).Initialize();
+
+        Assert.True(HasColumn("users", "organization_id"));
+        Assert.Equal(3L, ScalarLong("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'trg_%organization%';"));
+        Execute("INSERT INTO organizations(id, name, normalized_name, is_active, created_at, updated_at) VALUES ('org-legacy', 'Legacy Org', 'LEGACY ORG', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');");
+        Execute("UPDATE users SET organization_id = 'org-legacy' WHERE id = 'legacy-user';");
+        Assert.Throws<SqliteException>(() => Execute("UPDATE users SET organization_id = 'missing-org' WHERE id = 'legacy-user';"));
+        Assert.Equal("org-legacy", Scalar("SELECT organization_id FROM users WHERE id = 'legacy-user';"));
+
+        Execute("DELETE FROM organizations WHERE id = 'org-legacy';");
+        Assert.Null(Scalar("SELECT organization_id FROM users WHERE id = 'legacy-user';"));
+    }
+
     [Theory]
     [InlineData("POST", "/api/admin/users", "user.create", "user", null)]
     [InlineData("PUT", "/api/admin/users/user-1", "user.update", "user", "user-1")]
     [InlineData("PUT", "/api/admin/users/user-1/password", "user.password_reset", "user", "user-1")]
+    [InlineData("POST", "/api/admin/organizations", "organization.create", "organization", null)]
+    [InlineData("PUT", "/api/admin/organizations/org-1", "organization.update", "organization", "org-1")]
     [InlineData("PUT", "/api/admin/projects/project-1/workflow", "project.workflow_update", "project", "project-1")]
     [InlineData("POST", "/api/admin/projects/project-1/notes", "project.note_add", "project", "project-1")]
     [InlineData("POST", "/api/admin/projects/project-1/deliveries", "delivery.publish", "delivery", null)]
@@ -229,6 +305,35 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Equal(PasswordUpdateOutcome.Updated, reset.Outcome);
         Assert.Null(users.Get(user.Id, 1));
         Assert.NotNull(users.Get(user.Id, 2));
+    }
+
+    [Fact]
+    public void AvatarInitializationCleansOrphansAndRemovalWorksDuringAnActiveRead()
+    {
+        new ProjectRepository(ConnectionString).Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+        new AdminRepository(ConnectionString).Initialize();
+        var owner = Assert.IsType<CurrentUserDto>(users.CreateOwner("Owner", "owner@example.test", "initial-password-123").User);
+        var avatarDirectory = Path.Combine(root, "avatars");
+        Directory.CreateDirectory(avatarDirectory);
+        var currentFile = $"{owner.Id}-current.png";
+        File.WriteAllBytes(Path.Combine(avatarDirectory, currentFile), [1, 2, 3]);
+        File.WriteAllBytes(Path.Combine(avatarDirectory, "orphan.png"), [4]);
+        File.WriteAllBytes(Path.Combine(avatarDirectory, "interrupted.png.uploading"), [5]);
+        File.WriteAllBytes(Path.Combine(avatarDirectory, "unmanaged.txt"), [6]);
+        Execute("UPDATE users SET avatar_file_name = $fileName WHERE id = $id;", ("$fileName", currentFile), ("$id", owner.Id));
+
+        users.Initialize();
+
+        Assert.True(File.Exists(Path.Combine(avatarDirectory, currentFile)));
+        Assert.False(File.Exists(Path.Combine(avatarDirectory, "orphan.png")));
+        Assert.False(File.Exists(Path.Combine(avatarDirectory, "interrupted.png.uploading")));
+        Assert.True(File.Exists(Path.Combine(avatarDirectory, "unmanaged.txt")));
+        using var activeRead = Assert.IsType<StoredAvatar>(users.OpenAvatar(owner.Id)).Stream;
+        var restored = Assert.IsType<CurrentUserDto>(users.RemoveAvatar(owner.Id));
+        Assert.False(restored.HasCustomAvatar);
+        Assert.False(File.Exists(Path.Combine(avatarDirectory, currentFile)));
     }
 
     [Fact]
@@ -326,7 +431,9 @@ public sealed class PersistenceIntegrationTests : IDisposable
         var fileCategories = new FileCategoryRepository(ConnectionString);
         fileCategories.Initialize();
         Assert.Equal(6, fileCategories.ListAdmin(FileCategoryScopes.Source).Length);
-        Assert.Equal(6, fileCategories.ListAdmin(FileCategoryScopes.Reference).Length);
+        Assert.Equal(8, fileCategories.ListAdmin(FileCategoryScopes.Reference).Length);
+        Assert.Contains(fileCategories.ListAdmin(FileCategoryScopes.Reference), value => value.Id == "character-reference" && value.MaxFiles == 6);
+        Assert.Contains(fileCategories.ListAdmin(FileCategoryScopes.Reference), value => value.Id == "style-reference" && value.MaxFiles == 6);
         var coverCategory = fileCategories.ListAdmin(FileCategoryScopes.Source).Single(value => value.Id == "book-cover");
         var coverUpdate = new UpsertFileCategoryRequest(
             "封面文件", "Cover file", coverCategory.DescriptionZhCn, coverCategory.DescriptionEnUs,
@@ -444,6 +551,13 @@ public sealed class PersistenceIntegrationTests : IDisposable
             DraftValidator.Validate(new SaveDraftRequest(customDuration.Version, customDuration.Project, customDuration.Book), options, fileCategories, baseline),
             error => error.Field == "book.customVideoDuration" && error.Code == "unknown_option");
 
+        var dangerousCreativeUrl = baseline with
+        {
+            Creative = baseline.Creative with { StyleReferenceImageUrls = ["javascript:alert(1)"] }
+        };
+        Assert.Contains(
+            CreativeValidator.Validate(new SaveCreativeRequest(dangerousCreativeUrl.Version, dangerousCreativeUrl.Creative), options, baseline),
+            error => error.Field == "creative.styleReferenceImageUrls" && error.Code == "url");
 
         var visualStyle = options.ListAdmin(FormOptionGroups.VisualStyles).Single(value => value.Id == "cinematic");
         var disableVisualStyle = new UpsertFormOptionRequest(

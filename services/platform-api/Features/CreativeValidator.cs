@@ -34,6 +34,7 @@ internal static class CreativeValidator
                 Option(errors, $"{prefix}.ageRangeId", character.AgeRangeId, Allowed(options, FormOptionGroups.AgeRanges, previousCharacter?.AgeRangeId), true);
                 Option(errors, $"{prefix}.genderId", character.GenderId, Allowed(options, FormOptionGroups.Genders, previousCharacter?.GenderId), true);
                 Urls(errors, $"{prefix}.referenceImageUrls", character.ReferenceImageUrls, 6);
+                Assets(errors, $"{prefix}.referenceImages", character.ReferenceImages, previousCharacter?.ReferenceImages, 50);
             }
         }
 
@@ -42,6 +43,7 @@ internal static class CreativeValidator
         Options(errors, "creative.imageStyleTagIds", creative.ImageStyleTagIds, AllowedMany(options, FormOptionGroups.ImageStyleTags, previous?.ImageStyleTagIds), 6);
         Options(errors, "creative.paceTagIds", creative.PaceTagIds, AllowedMany(options, FormOptionGroups.PaceTags, previous?.PaceTagIds), 4);
         Urls(errors, "creative.styleReferenceImageUrls", creative.StyleReferenceImageUrls, 6);
+        Assets(errors, "creative.styleReferenceImages", creative.StyleReferenceImages, previous?.StyleReferenceImages, 50);
         return [.. errors];
     }
 
@@ -78,7 +80,27 @@ internal static class CreativeValidator
     {
         if (values is null) { errors.Add(Error(field, "required")); return; }
         if (values.Length > max) errors.Add(Error(field, "too_many"));
-        if (values.Any(value => value.Length > 2_000 || !Uri.TryCreate(value, UriKind.RelativeOrAbsolute, out _))) errors.Add(Error(field, "url"));
+        if (values.Any(value => value.Length > 2_000 ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))) errors.Add(Error(field, "url"));
+    }
+
+    private static void Assets(List<FieldErrorDto> errors, string field, ReferenceAssetDto[]? values, ReferenceAssetDto[]? stored, int max)
+    {
+        values ??= [];
+        if (values.Length > max) errors.Add(Error(field, "too_many"));
+        if (values.Cast<ReferenceAssetDto?>().Any(asset => asset is null))
+        {
+            errors.Add(Error(field, "invalid"));
+            return;
+        }
+        if (values.Select(asset => asset.Id).Distinct(StringComparer.Ordinal).Count() != values.Length)
+        {
+            errors.Add(Error(field, "invalid"));
+            return;
+        }
+        var existing = stored ?? [];
+        if (values.Length != existing.Length || values.Any(asset => !existing.Contains(asset))) errors.Add(Error(field, "invalid"));
     }
 
     private static FieldErrorDto Error(string field, string code) => new(field, code, $"errors.validation.{code}");

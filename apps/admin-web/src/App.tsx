@@ -1,9 +1,11 @@
 import {
   useEffect,
   useId,
+  lazy,
   useMemo,
   useRef,
   useState,
+  Suspense,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -28,10 +30,14 @@ import { isSupportedLocale, localizedPath, setLocale } from "@lifewood/i18n";
 import type {
   AdminProjectDetail,
   AdminProjectSummary,
+  AdminOrganization,
   AdminUser,
+  AdminVoiceReference,
   ConfigOption,
   CurrentUser,
+  FormOptions,
   ProjectPriority,
+  ReferenceAsset,
   SupportedLocale,
   WorkflowStatus,
 } from "@lifewood/domain";
@@ -41,14 +47,17 @@ import {
   ChangeOwnPasswordDialog,
   ResetUserPasswordDialog,
 } from "./PasswordDialogs";
-import { VoiceConfigPage } from "./VoiceConfigPage";
-import { OverviewPage } from "./OverviewPage";
-import { AuditPage } from "./AuditPage";
-
-import { FormOptionConfigPage } from "./FormOptionConfigPage";
-import { FileCategoryConfigPage } from "./FileCategoryConfigPage";
 import { showAdminToast, ToastHost } from "./Toast";
 import { useUnsavedClose } from "./useUnsavedClose";
+import { loadAllOrganizations } from "./organization-loader";
+
+const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((module) => ({ default: module.AvatarEditor })));
+const OverviewPage = lazy(() => import("./OverviewPage").then((module) => ({ default: module.OverviewPage })));
+const OrganizationsPage = lazy(() => import("./OrganizationsPage").then((module) => ({ default: module.OrganizationsPage })));
+const AuditPage = lazy(() => import("./AuditPage").then((module) => ({ default: module.AuditPage })));
+const FormOptionConfigPage = lazy(() => import("./FormOptionConfigPage").then((module) => ({ default: module.FormOptionConfigPage })));
+const FileCategoryConfigPage = lazy(() => import("./FileCategoryConfigPage").then((module) => ({ default: module.FileCategoryConfigPage })));
+const VoiceConfigPage = lazy(() => import("./VoiceConfigPage").then((module) => ({ default: module.VoiceConfigPage })));
 
 function formatDate(value: string, locale: SupportedLocale) {
   return new Intl.DateTimeFormat(locale, {
@@ -241,9 +250,21 @@ function AdminShell({
   const [logoutPending, setLogoutPending] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
+  const avatarTriggerRef = useRef<HTMLButtonElement>(null);
   const accountId = useId();
   const accountRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
+  const [avatarFeedback, setAvatarFeedback] = useState<string>();
+  const avatarUpdate = useMutation({
+    mutationFn: (action: { file?: File; remove?: boolean }) => action.remove ? authService.removeAvatar() : authService.uploadAvatar(action.file!),
+    onMutate: () => setAvatarFeedback(undefined),
+    onSuccess: (updated, action) => {
+      queryClient.setQueryData(["admin-me"], updated);
+      setAvatarFeedback(t(action.remove ? "admin.account.avatarRemoved" : "admin.account.avatarUpdated"));
+      setAvatarEditorOpen(false);
+    },
+  });
   useEffect(() => {
     if (!accountOpen) return;
     const closeOutside = (event: PointerEvent) => {
@@ -263,6 +284,11 @@ function AdminShell({
       document.removeEventListener("keydown", closeEscape);
     };
   }, [accountOpen]);
+  useEffect(() => {
+    if (!avatarFeedback) return;
+    const timer = window.setTimeout(() => setAvatarFeedback(undefined), 3200);
+    return () => window.clearTimeout(timer);
+  }, [avatarFeedback]);
   const logout = async () => {
     setLogoutPending(true);
     setLogoutFailed(false);
@@ -325,6 +351,12 @@ function AdminShell({
             </span>
             {t("admin.nav.users")}
           </NavLink>
+          <NavLink to={localizedPath(locale, "/organizations")}>
+            <span className="nav-icon" aria-hidden="true">
+              ◉
+            </span>
+            {t("admin.nav.organizations")}
+          </NavLink>
           <NavLink to={localizedPath(locale, "/audit")}>
             <span className="nav-icon" aria-hidden="true">
               ◷
@@ -354,6 +386,9 @@ function AdminShell({
               </select>
             </label>
             <div className="admin-account" ref={accountRef}>
+              <button ref={avatarTriggerRef} className="admin-avatar-trigger" type="button" aria-label={t("admin.account.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
+                <img className="account-avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" />
+              </button>
               <button
                 ref={accountTriggerRef}
                 className="admin-account-trigger"
@@ -363,13 +398,6 @@ function AdminShell({
                 aria-label={t("nav.accountMenu", { name: user.displayName })}
                 onClick={() => setAccountOpen((value) => !value)}
               >
-                <img
-                  className="account-avatar"
-                  src={user.avatarUrl || "/api/me/avatar"}
-                  alt=""
-                  width="30"
-                  height="30"
-                />
                 <span>{user.displayName}</span>
                 <span className="account-chevron" aria-hidden="true">
                   ⌄
@@ -382,14 +410,14 @@ function AdminShell({
                   role="region"
                   aria-label={t("nav.account")}
                 >
-                  <strong>{user.displayName}</strong>
-                  {user.email && <span>{user.email}</span>}
-                  <small>
-                    {user.roles
-                      .map((role) => t(`admin.roles.${role}`))
-                      .join(" · ")}
-                  </small>
+                  <div className="admin-account-identity">
+                    <button type="button" className="admin-account-avatar-preview" aria-label={t("admin.account.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
+                      <img className="account-avatar account-avatar-large" src={user.avatarUrl || "/api/me/avatar"} alt="" width="46" height="46" />
+                    </button>
+                    <div><strong>{user.displayName}</strong>{user.email && <span>{user.email}</span>}{user.organization?.name && <span>{user.organization.name}</span>}<small>{user.roles.map((role) => t(`admin.roles.${role}`)).join(" · ")}</small></div>
+                  </div>
                   <button
+                    type="button"
                     onClick={() => {
                       setAccountOpen(false);
                       setChangePasswordOpen(true);
@@ -398,6 +426,7 @@ function AdminShell({
                     {t("admin.account.changePassword")}
                   </button>
                   <button
+                    type="button"
                     disabled={logoutPending}
                     onClick={() => void logout()}
                   >
@@ -417,10 +446,27 @@ function AdminShell({
           {children}
         </div>
       </div>
+      {avatarFeedback && <p className="avatar-update-toast" role="status" aria-live="polite">{avatarFeedback}</p>}
       <ToastHost />
       {changePasswordOpen && (
         <ChangeOwnPasswordDialog onClose={() => setChangePasswordOpen(false)} />
       )}
+      {avatarEditorOpen && <Suspense fallback={null}><AvatarEditor
+        avatarUrl={user.avatarUrl || "/api/me/avatar"}
+        displayName={user.displayName}
+        hasCustomAvatar={Boolean(user.hasCustomAvatar)}
+        busy={avatarUpdate.isPending}
+        error={avatarUpdate.isError ? t("admin.account.avatarFailed") : undefined}
+        onClose={() => { if (!avatarUpdate.isPending) { setAvatarEditorOpen(false); avatarUpdate.reset(); } }}
+        onSave={(file) => avatarUpdate.mutate({ file })}
+        onRemove={() => { if (window.confirm(t("admin.account.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
+        returnFocus={avatarTriggerRef.current}
+        labels={{
+          title: t("admin.account.avatarEditorTitle"), close: t("common.close"), choose: t("admin.account.chooseAvatar"), chooseAnother: t("admin.account.chooseAnotherAvatar"),
+          instruction: t("admin.account.avatarCropInstruction"), zoom: t("admin.account.avatarZoom"), cancel: t("common.cancel"), save: t("admin.account.saveAvatar"),
+          saving: t("admin.account.avatarUploading"), remove: t("admin.account.removeAvatar"), invalidImage: t("admin.account.avatarSourceInvalid"),
+        }}
+      /></Suspense>}
     </div>
   );
 }
@@ -467,6 +513,10 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
   const options = useQuery({
     queryKey: ["form-options", locale],
     queryFn: () => optionService.getFormOptions(locale),
+  });
+  const voices = useQuery({
+    queryKey: ["admin-voices"],
+    queryFn: adminService.listVoiceReferences,
   });
   const workflowOptions = options.data?.workflowStatuses ?? [];
   const priorityOptions = options.data?.projectPriorities ?? [];
@@ -605,6 +655,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
           )}
           <nav className="pager">
             <button
+              type="button"
               disabled={page <= 1}
               onClick={() => {
                 const next = page - 1;
@@ -616,6 +667,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
             </button>
             <span>{t("common.pageOf", { page, pages })}</span>
             <button
+              type="button"
               disabled={page >= pages}
               onClick={() => {
                 const next = page + 1;
@@ -630,17 +682,20 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
         <ProjectDetail
           detail={detail.data}
           loading={
-            (detail.isPending && Boolean(selectedId)) || options.isPending
+            (detail.isPending && Boolean(selectedId)) || options.isPending || voices.isPending
           }
           locale={locale}
           assignees={assignees}
           workflowOptions={workflowOptions}
           priorityOptions={priorityOptions}
+          formOptions={options.data}
+          voiceReferences={voices.data ?? []}
           busy={
             updateWorkflow.isPending ||
             addNote.isPending ||
             options.isPending ||
             options.isError ||
+            voices.isError ||
             !workflowOptions.length ||
             !priorityOptions.length
           }
@@ -648,7 +703,8 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
             detail.error ??
             updateWorkflow.error ??
             addNote.error ??
-            options.error
+            options.error ??
+            voices.error
           }
           onWorkflow={(value) => updateWorkflow.mutate(value)}
           onNote={async (body) => {
@@ -675,6 +731,7 @@ function ProjectRow({
 }) {
   return (
     <button
+      type="button"
       className={selected ? "project-row selected" : "project-row"}
       onClick={onSelect}
     >
@@ -713,6 +770,8 @@ function ProjectDetail({
   assignees,
   workflowOptions,
   priorityOptions,
+  formOptions,
+  voiceReferences,
   busy,
   error,
   onWorkflow,
@@ -724,6 +783,8 @@ function ProjectDetail({
   assignees: AdminUser[];
   workflowOptions: ConfigOption[];
   priorityOptions: ConfigOption[];
+  formOptions?: FormOptions;
+  voiceReferences: AdminVoiceReference[];
   busy: boolean;
   error: unknown;
   onWorkflow: (value: {
@@ -741,7 +802,15 @@ function ProjectDetail({
       <aside className="detail-pane empty">{t("admin.projects.select")}</aside>
     );
   const task = detail.project;
-  const assets = [...task.book.sourceAssets, ...task.voiceAndReferences.assets];
+  const assets = [
+    ...task.book.sourceAssets,
+    ...(task.creative.styleReferenceImages ?? []),
+    ...task.creative.characters.flatMap((character) => character.referenceImages ?? []),
+    ...task.voiceAndReferences.assets,
+  ];
+  const assetCategoryLabel = (categoryId: string) =>
+    [...(formOptions?.sourceCategories ?? []), ...(formOptions?.referenceCategories ?? [])]
+      .find((category) => category.id === categoryId)?.label ?? categoryId;
   const saveWorkflow = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -825,43 +894,12 @@ function ProjectDetail({
         projectStatus={task.status}
         locale={locale}
       />
-      <section className="detail-section">
-        <h3>{t("admin.projects.clientBrief")}</h3>
-        <dl className="fact-grid">
-          <div>
-            <dt>{t("wizard.fields.clientName")}</dt>
-            <dd>{task.project.clientName || "—"}</dd>
-          </div>
-          <div>
-            <dt>{t("wizard.fields.contactName")}</dt>
-            <dd>{task.project.contactName || "—"}</dd>
-          </div>
-          <div>
-            <dt>{t("wizard.fields.email")}</dt>
-            <dd>{task.project.email || "—"}</dd>
-          </div>
-          <div>
-            <dt>{t("wizard.fields.deadline")}</dt>
-            <dd>{task.project.deadline || "—"}</dd>
-          </div>
-          <div>
-            <dt>{t("wizard.fields.bookTitle")}</dt>
-            <dd>{task.book.title || "—"}</dd>
-          </div>
-          <div>
-            <dt>{t("wizard.fields.authorName")}</dt>
-            <dd>{task.book.authorName || "—"}</dd>
-          </div>
-          <div className="wide">
-            <dt>{t("wizard.fields.sellingPoint")}</dt>
-            <dd>{task.book.sellingPoint || "—"}</dd>
-          </div>
-          <div className="wide">
-            <dt>{t("wizard.fields.synopsis")}</dt>
-            <dd>{task.book.synopsis || "—"}</dd>
-          </div>
-        </dl>
-      </section>
+      <ProjectSubmissionDetails
+        task={task}
+        locale={locale}
+        options={formOptions}
+        voiceReferences={voiceReferences}
+      />
       <section className="detail-section">
         <h3>{t("admin.projects.files", { count: assets.length })}</h3>
         {assets.length ? (
@@ -875,7 +913,7 @@ function ProjectDetail({
                 >
                   {asset.fileName}
                 </a>
-                <small>{asset.categoryId}</small>
+                <small>{assetCategoryLabel(asset.categoryId)}</small>
               </li>
             ))}
           </ul>
@@ -914,6 +952,191 @@ function ProjectDetail({
   );
 }
 
+type SubmissionFact = { label: string; value?: ReactNode; wide?: boolean };
+
+function FactGrid({ facts }: { facts: SubmissionFact[] }) {
+  return (
+    <dl className="fact-grid">
+      {facts.map((fact) => (
+        <div className={fact.wide ? "wide" : undefined} key={fact.label}>
+          <dt>{fact.label}</dt>
+          <dd>{fact.value || "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function ReferenceLinks({ urls }: { urls: string[] }) {
+  const safeUrls = urls.filter((url) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  });
+  return safeUrls.length ? (
+    <ul className="reference-links">
+      {safeUrls.map((url, index) => (
+        <li key={`${url}-${index}`}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>
+      ))}
+    </ul>
+  ) : <span>—</span>;
+}
+
+function ReferenceFiles({ projectId, assets, legacyUrls }: { projectId: string; assets: ReferenceAsset[]; legacyUrls: string[] }) {
+  const safeLegacyUrls = legacyUrls.filter((url) => {
+    try { return ["http:", "https:"].includes(new URL(url).protocol); }
+    catch { return false; }
+  });
+  if (!assets.length && !safeLegacyUrls.length) return <span>—</span>;
+  return <ul className="reference-links">
+    {assets.map((asset) => <li key={asset.id}><a href={adminAssetUrl(projectId, asset.url)} target="_blank" rel="noreferrer">{asset.fileName}</a></li>)}
+    {safeLegacyUrls.map((url, index) => <li key={`${url}-${index}`}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}
+  </ul>;
+}
+
+function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
+  task: AdminProjectDetail["project"];
+  locale: SupportedLocale;
+  options?: FormOptions;
+  voiceReferences: AdminVoiceReference[];
+}) {
+  const { t } = useTranslation();
+  const optionMaps = useMemo(() => {
+    const groups: Record<string, ConfigOption[] | undefined> = {
+      brands: options?.brands,
+      videoGoals: options?.videoGoals,
+      audiences: options?.audiences,
+      genres: options?.genres,
+      contentLanguages: options?.contentLanguages,
+      videoDurations: options?.videoDurations,
+      publishingPlatforms: options?.publishingPlatforms,
+      roleTypes: options?.roleTypes,
+      ageRanges: options?.ageRanges,
+      genders: options?.genders,
+      visualStyles: options?.visualStyles,
+      moodTags: options?.moodTags,
+      imageStyleTags: options?.imageStyleTags,
+      paceTags: options?.paceTags,
+      narrationTones: options?.narrationTones,
+      speechRates: options?.speechRates,
+      voiceGenders: options?.voiceGenders,
+      voiceAges: options?.voiceAges,
+      accents: options?.accents,
+      voiceEmotions: options?.voiceEmotions,
+    };
+    return new Map(Object.entries(groups).map(([group, items]) => [group, new Map((items ?? []).map((item) => [item.id, item.label]))]));
+  }, [options]);
+  const voiceNames = useMemo(
+    () => new Map(voiceReferences.map((voice) => [voice.id, locale === "en-US" ? voice.nameEnUs : voice.nameZhCn])),
+    [locale, voiceReferences],
+  );
+  const listFormat = useMemo(() => new Intl.ListFormat(locale, { style: "short", type: "conjunction" }), [locale]);
+  const label = (group: string, id?: string) => id ? optionMaps.get(group)?.get(id) ?? id : undefined;
+  const labels = (group: string, ids: string[]) => ids.length ? listFormat.format(ids.map((id) => label(group, id) ?? id)) : undefined;
+  const project = task.project;
+  const book = task.book;
+  const creative = task.creative;
+  const voice = task.voiceAndReferences.voiceover;
+  const direction = task.voiceAndReferences.creativeDirection;
+  const selectedVoices = voice.selectedVoiceIds.map((id) => voiceNames.get(id) ?? id);
+
+  return (
+    <div className="submission-sections">
+      <section className="detail-section">
+        <h3>{t("admin.projects.projectInfo")}</h3>
+        <FactGrid facts={[
+          { label: t("wizard.fields.clientName"), value: project.clientName },
+          { label: t("wizard.fields.contactName"), value: project.contactName },
+          { label: t("wizard.fields.email"), value: project.email },
+          { label: t("wizard.fields.phone"), value: project.phone },
+          { label: t("wizard.fields.brand"), value: label("brands", project.brandId) },
+          { label: t("wizard.fields.projectName"), value: project.projectName },
+          { label: t("wizard.fields.videoGoal"), value: label("videoGoals", project.videoGoalId) },
+          { label: t("wizard.fields.deadline"), value: project.deadline },
+          { label: t("wizard.fields.audiences"), value: labels("audiences", project.audienceIds), wide: true },
+        ]} />
+      </section>
+      <section className="detail-section">
+        <h3>{t("admin.projects.bookInfo")}</h3>
+        <FactGrid facts={[
+          { label: t("wizard.fields.bookTitle"), value: book.title },
+          { label: t("wizard.fields.subtitle"), value: book.subtitle },
+          { label: t("wizard.fields.authorName"), value: book.authorName },
+          { label: t("wizard.fields.genre"), value: label("genres", book.genreId) },
+          { label: t("wizard.fields.contentLanguage"), value: label("contentLanguages", book.contentLanguageId) },
+          { label: t("wizard.fields.duration"), value: book.customVideoDuration || label("videoDurations", book.videoDurationId) },
+          { label: t("wizard.fields.platforms"), value: labels("publishingPlatforms", book.publishingPlatformIds), wide: true },
+          { label: t("wizard.fields.sellingPoint"), value: book.sellingPoint, wide: true },
+          { label: t("wizard.fields.synopsis"), value: book.synopsis, wide: true },
+        ]} />
+      </section>
+      <section className="detail-section">
+        <h3>{t("admin.projects.characters", { count: creative.characters.length })}</h3>
+        {creative.characters.length ? <div className="character-submissions">
+          {creative.characters.map((character, index) => (
+            <article key={character.id}>
+              <h4>{character.name || t("admin.projects.characterNumber", { number: index + 1 })}</h4>
+              <FactGrid facts={[
+                { label: t("creative.fields.roleType"), value: label("roleTypes", character.roleTypeId) },
+                { label: t("creative.fields.storyRole"), value: character.storyRole },
+                { label: t("creative.fields.ageRange"), value: label("ageRanges", character.ageRangeId) },
+                { label: t("creative.fields.gender"), value: label("genders", character.genderId) },
+                { label: t("creative.fields.personality"), value: character.personality, wide: true },
+                { label: t("creative.fields.appearance"), value: character.appearance, wide: true },
+                { label: t("creative.fields.clothing"), value: character.clothing },
+                { label: t("creative.fields.emotion"), value: character.emotion },
+                { label: t("creative.fields.voiceHint"), value: character.voiceHint, wide: true },
+                { label: t("admin.projects.referenceImages"), value: <ReferenceFiles projectId={task.id} assets={character.referenceImages ?? []} legacyUrls={character.referenceImageUrls} />, wide: true },
+              ]} />
+            </article>
+          ))}
+        </div> : <p className="muted">{t("admin.projects.noCharacters")}</p>}
+      </section>
+      <section className="detail-section">
+        <h3>{t("admin.projects.visualInfo")}</h3>
+        <FactGrid facts={[
+          { label: t("creative.fields.visualStyle"), value: label("visualStyles", creative.visualStyleId) },
+          { label: t("creative.fields.moodTags"), value: labels("moodTags", creative.moodTagIds) },
+          { label: t("creative.fields.imageTags"), value: labels("imageStyleTags", creative.imageStyleTagIds) },
+          { label: t("creative.fields.paceTags"), value: labels("paceTags", creative.paceTagIds) },
+          { label: t("admin.projects.styleReferences"), value: <ReferenceFiles projectId={task.id} assets={creative.styleReferenceImages ?? []} legacyUrls={creative.styleReferenceImageUrls} />, wide: true },
+        ]} />
+      </section>
+      <section className="detail-section">
+        <h3>{t("admin.projects.voiceInfo")}</h3>
+        <FactGrid facts={[
+          { label: t("voice.fields.contentLanguage"), value: label("contentLanguages", voice.contentLanguageId) },
+          { label: t("voice.fields.narrationTone"), value: label("narrationTones", voice.narrationToneId) },
+          { label: t("voice.fields.speechRate"), value: label("speechRates", voice.speechRateId) },
+          { label: t("voice.fields.voiceGender"), value: label("voiceGenders", voice.voiceGenderId) },
+          { label: t("voice.fields.voiceAge"), value: label("voiceAges", voice.voiceAgeId) },
+          { label: t("voice.fields.accent"), value: label("accents", voice.accentId) },
+          { label: t("voice.fields.emotionStyle"), value: label("voiceEmotions", voice.emotionStyleId) },
+          { label: t("admin.projects.preferredVoice"), value: voice.preferredVoiceId ? voiceNames.get(voice.preferredVoiceId) ?? voice.preferredVoiceId : undefined },
+          { label: t("admin.projects.selectedVoices"), value: selectedVoices.length ? listFormat.format(selectedVoices) : undefined, wide: true },
+          { label: t("voice.fields.customVoice"), value: voice.customVoiceDescription, wide: true },
+          { label: t("voice.fields.pronunciationNotes"), value: voice.pronunciationNotes, wide: true },
+        ]} />
+      </section>
+      <section className="detail-section">
+        <h3>{t("admin.projects.creativeDirection")}</h3>
+        <FactGrid facts={[
+          { label: t("voice.fields.coreMessage"), value: direction.coreMessage, wide: true },
+          { label: t("voice.fields.requiredScenes"), value: direction.requiredScenes, wide: true },
+          { label: t("voice.fields.authorPreferences"), value: direction.authorPreferences, wide: true },
+          { label: t("voice.fields.closingMessage"), value: direction.closingMessage, wide: true },
+          { label: t("voice.fields.musicMood"), value: direction.musicMood },
+          { label: t("voice.fields.avoidContent"), value: direction.avoidContent },
+          { label: t("voice.fields.competitorLinks"), value: <ReferenceLinks urls={task.voiceAndReferences.competitorUrls} />, wide: true },
+        ]} />
+      </section>
+    </div>
+  );
+}
+
 function UsersPage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -926,6 +1149,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
     Math.max(1, Number(searchParams.get("page")) || 1),
   );
   const [showCreate, setShowCreate] = useState(false);
+  const [editUser, setEditUser] = useState<AdminUser>();
   const [resetUser, setResetUser] = useState<AdminUser>();
   const users = useQuery({
     queryKey: ["admin-users", search, role, page],
@@ -936,6 +1160,10 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
         page,
         pageSize: 20,
       }),
+  });
+  const organizations = useQuery({
+    queryKey: ["admin-organizations", "user-selector"],
+    queryFn: () => loadAllOrganizations(),
   });
   const pages = Math.max(1, Math.ceil((users.data?.total ?? 0) / 20));
   const create = useMutation({
@@ -952,15 +1180,22 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
       displayName,
       role,
       active,
+      organizationId,
     }: {
       id: string;
       displayName: string;
-      role: "customer" | "admin";
+      role: "owner" | "customer" | "admin";
       active: boolean;
-    }) => adminService.updateUser(id, { displayName, role, active }),
+      organizationId?: string;
+    }) => adminService.updateUser(id, { displayName, role, active, organizationId }),
     onSuccess: async () => {
+      setEditUser(undefined);
       showAdminToast(t("admin.feedback.userUpdated"));
-      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-organizations"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-me"] }),
+      ]);
     },
   });
   const submitSearch = (event: FormEvent) => {
@@ -1013,15 +1248,16 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
           {t("admin.users.count", { count: users.data?.total ?? 0 })}
         </span>
         <button
+          type="button"
           className="primary push-right"
           onClick={() => setShowCreate(true)}
         >
           {t("admin.users.create")}
         </button>
       </section>
-      {Boolean(users.error || update.error) && (
+      {Boolean(users.error || organizations.error) && (
         <div className="message error" role="alert">
-          {localizedApiError(users.error ?? update.error, t)}
+          {localizedApiError(users.error ?? organizations.error, t)}
         </div>
       )}
       <section className="table-card">
@@ -1030,6 +1266,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
             <tr>
               <th>{t("admin.users.account")}</th>
               <th>{t("admin.users.role")}</th>
+              <th>{t("admin.users.organization")}</th>
               <th>{t("admin.users.status")}</th>
               <th>{t("admin.users.created")}</th>
               <th>{t("admin.users.action")}</th>
@@ -1045,6 +1282,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                       alt=""
                       width="32"
                       height="32"
+                      loading="lazy"
                     />
                     <div>
                       <strong>{user.displayName}</strong>
@@ -1053,6 +1291,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                   </div>
                 </td>
                 <td>{t(`admin.roles.${user.role}`)}</td>
+                <td>{user.organization?.name ?? t("admin.users.noOrganization")}</td>
                 <td>
                   <span
                     className={
@@ -1068,14 +1307,17 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                 </td>
                 <td>{formatDate(user.createdAt, locale)}</td>
                 <td>
-                  {user.role === "owner" ? (
-                    <span className="muted">{t("admin.users.protected")}</span>
-                  ) : (
-                    <div className="row-actions">
-                      <button onClick={() => setResetUser(user)}>
+                  <div className="row-actions">
+                    <button type="button" onClick={() => setEditUser(user)}>{t("admin.users.edit")}</button>
+                    {user.role === "owner" ? (
+                      <span className="muted">{t("admin.users.protected")}</span>
+                    ) : (
+                      <>
+                      <button type="button" onClick={() => setResetUser(user)}>
                         {t("admin.users.resetPassword")}
                       </button>
                       <button
+                        type="button"
                         disabled={update.isPending}
                         onClick={() => {
                           if (
@@ -1090,8 +1332,9 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                           update.mutate({
                             id: user.id,
                             displayName: user.displayName,
-                            role: user.role as "customer" | "admin",
+                            role: user.role,
                             active: !user.active,
+                            organizationId: user.organization?.id,
                           });
                         }}
                       >
@@ -1101,8 +1344,9 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                             : "admin.users.activate",
                         )}
                       </button>
-                    </div>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1113,6 +1357,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
         )}
         <nav className="pager">
           <button
+            type="button"
             disabled={page <= 1}
             onClick={() => {
               const next = page - 1;
@@ -1124,6 +1369,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
           </button>
           <span>{t("common.pageOf", { page, pages })}</span>
           <button
+            type="button"
             disabled={page >= pages}
             onClick={() => {
               const next = page + 1;
@@ -1139,8 +1385,19 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
         <CreateUserDialog
           busy={create.isPending}
           error={create.error}
+          organizations={organizations.data ?? []}
           onClose={() => setShowCreate(false)}
           onCreate={(value) => create.mutate(value)}
+        />
+      )}
+      {editUser && (
+        <EditUserDialog
+          user={editUser}
+          organizations={organizations.data ?? []}
+          busy={update.isPending}
+          error={update.error}
+          onClose={() => setEditUser(undefined)}
+          onSave={(value) => update.mutate(value)}
         />
       )}
       {resetUser && (
@@ -1156,17 +1413,20 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
 function CreateUserDialog({
   busy,
   error,
+  organizations,
   onClose,
   onCreate,
 }: {
   busy: boolean;
   error: unknown;
+  organizations: AdminOrganization[];
   onClose: () => void;
   onCreate: (value: {
     displayName: string;
     email: string;
     password: string;
     role: "customer" | "admin";
+    organizationId?: string;
   }) => void;
 }) {
   const { t } = useTranslation();
@@ -1179,6 +1439,7 @@ function CreateUserDialog({
       email: String(data.get("email")),
       password: String(data.get("password")),
       role: String(data.get("role")) as "customer" | "admin",
+      organizationId: String(data.get("organizationId") ?? "") || undefined,
     });
   };
   return (
@@ -1231,6 +1492,14 @@ function CreateUserDialog({
             <option value="admin">{t("admin.roles.admin")}</option>
           </select>
         </label>
+        <label>
+          <span>{t("admin.users.organization")}</span>
+          <select name="organizationId" defaultValue="">
+            <option value="">{t("admin.users.noOrganization")}</option>
+            {organizations.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <small>{t("admin.users.organizationHint")}</small>
+        </label>
         {Boolean(error) && (
           <div className="message error" role="alert">
             {localizedApiError(error, t)}
@@ -1244,6 +1513,62 @@ function CreateUserDialog({
             {t(busy ? "common.loading" : "admin.users.createAction")}
           </button>
         </div>
+      </form>
+    </ModalFrame>
+  );
+}
+
+function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
+  user: AdminUser;
+  organizations: AdminOrganization[];
+  busy: boolean;
+  error: unknown;
+  onClose: () => void;
+  onSave: (value: { id: string; displayName: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) => void;
+}) {
+  const { t } = useTranslation();
+  const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    onSave({
+      id: user.id,
+      displayName: String(data.get("displayName") ?? ""),
+      role: user.role === "owner" ? "owner" : String(data.get("role")) as "customer" | "admin",
+      active: user.role === "owner" || data.get("active") === "on",
+      organizationId: String(data.get("organizationId") ?? "") || undefined,
+    });
+  };
+  const selectableOrganizations = organizations.filter((item) => item.active || item.id === user.organization?.id);
+  return (
+    <ModalFrame labelledBy="edit-user-title" busy={busy} onClose={requestClose}>
+      <div className="modal-title">
+        <h2 id="edit-user-title">{t("admin.users.edit")}</h2>
+        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button>
+      </div>
+      <form onSubmit={submit} onChange={markDirty}>
+        <label><span>{t("admin.users.name")}</span><input name="displayName" defaultValue={user.displayName} minLength={2} maxLength={100} required autoFocus /></label>
+        <label><span>{t("admin.users.email")}</span><input value={user.email} readOnly aria-readonly="true" /></label>
+        <label>
+          <span>{t("admin.users.role")}</span>
+          {user.role === "owner" ? <input value={t("admin.roles.owner")} readOnly aria-readonly="true" /> : (
+            <select name="role" defaultValue={user.role}>
+              <option value="customer">{t("admin.roles.customer")}</option>
+              <option value="admin">{t("admin.roles.admin")}</option>
+            </select>
+          )}
+        </label>
+        <label>
+          <span>{t("admin.users.organization")}</span>
+          <select name="organizationId" defaultValue={user.organization?.id ?? ""}>
+            <option value="">{t("admin.users.noOrganization")}</option>
+            {selectableOrganizations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? "" : ` · ${t("admin.organizations.inactive")}`}</option>)}
+          </select>
+          <small>{t("admin.users.organizationHint")}</small>
+        </label>
+        {user.role !== "owner" && <label className="check-row"><input name="active" type="checkbox" defaultChecked={user.active} /><span>{t("admin.users.accountEnabled")}</span></label>}
+        {Boolean(error) && <div className="message error" role="alert">{localizedApiError(error, t)}</div>}
+        <div className="modal-actions"><button type="button" disabled={busy} onClick={requestClose}>{t("common.cancel")}</button><button className="primary" disabled={busy}>{t(busy ? "common.loading" : "common.save")}</button></div>
       </form>
     </ModalFrame>
   );
@@ -1311,6 +1636,7 @@ function AdminRoot() {
           <h1>{t("admin.forbidden.title")}</h1>
           <p>{t("admin.forbidden.body")}</p>
           <button
+            type="button"
             onClick={() =>
               void authService.logout().then(() => window.location.reload())
             }
@@ -1322,11 +1648,13 @@ function AdminRoot() {
     );
   return (
     <AdminShell user={me.data} locale={locale}>
-      <Routes>
+      <Suspense fallback={<main className="center-state" role="status" aria-busy="true">{t("common.loading")}</main>}>
+        <Routes>
         <Route index element={<Navigate replace to="overview" />} />
         <Route path="overview" element={<OverviewPage locale={locale} />} />
         <Route path="projects" element={<ProjectsPage locale={locale} />} />
         <Route path="users" element={<UsersPage locale={locale} />} />
+        <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
         <Route path="audit" element={<AuditPage locale={locale} />} />
         <Route path="settings" element={<Navigate replace to="options" />} />
         <Route
@@ -1348,7 +1676,8 @@ function AdminRoot() {
           }
         />
         <Route path="*" element={<Navigate replace to="overview" />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </AdminShell>
   );
 }

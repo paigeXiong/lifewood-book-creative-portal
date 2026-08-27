@@ -135,6 +135,8 @@ internal static class FormOptionCatalog
             ],
             ReferenceCategories:
             [
+                Category("character-reference", en ? "Character reference images" : "角色参考图", en ? "JPG, PNG, or WebP; up to 6 per character" : "JPG、PNG 或 WebP；每个角色最多 6 张", ["image/jpeg", "image/png", "image/webp"], 20_000_000, 6),
+                Category("style-reference", en ? "Visual style reference images" : "风格参考图", en ? "JPG, PNG, or WebP; up to 6 images" : "JPG、PNG 或 WebP；最多 6 张", ["image/jpeg", "image/png", "image/webp"], 20_000_000, 6),
                 Category("sample-video", en ? "Example video" : "示例视频", en ? "MP4 or MOV" : "MP4 或 MOV", ["video/mp4", "video/quicktime"], 500_000_000, 3),
                 Category("sample-image", en ? "Example images" : "示例图片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),
                 Category("moodboard", en ? "Moodboard" : "情绪板", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),

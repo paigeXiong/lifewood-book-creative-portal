@@ -67,7 +67,7 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale }: { proje
   };
 
   return <section className="detail-section delivery-admin">
-    <div className="section-title-row"><div><h3>{t("admin.delivery.title")}</h3><p>{t(canPublish ? "admin.delivery.shortcutHint" : "admin.delivery.draftHint")}</p></div><button className="primary" disabled={!canPublish || publish.isPending} onClick={() => { publish.reset(); setFileInvalid(false); setOpen(true); }}>{t("admin.delivery.upload")}</button></div>
+    <div className="section-title-row"><div><h3>{t("admin.delivery.title")}</h3><p>{t(canPublish ? "admin.delivery.shortcutHint" : "admin.delivery.draftHint")}</p></div><button type="button" className="primary" disabled={!canPublish || publish.isPending} onClick={() => { publish.reset(); setFileInvalid(false); setOpen(true); }}>{t("admin.delivery.upload")}</button></div>
     {deliveries.isError && <div className="message error" role="alert">{localizedApiError(deliveries.error, t)}</div>}
     {deliveries.data?.length ? <ol className="delivery-list">{deliveries.data.map((item) => <li className={item.revokedAt ? "revoked" : undefined} key={item.id}><div><strong>{item.fileName}</strong><small>{formatSize(item.sizeBytes, locale)} · {formatDate(item.publishedAt, locale)}</small>{item.note && <p>{item.note}</p>}</div><div className="delivery-actions">
       {item.revokedAt

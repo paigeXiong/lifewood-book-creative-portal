@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -6,6 +6,8 @@ import { authService } from "@lifewood/api-client";
 import { isSupportedLocale } from "@lifewood/i18n";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import type { CurrentUser, SupportedLocale } from "@lifewood/domain";
+
+const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((module) => ({ default: module.AvatarEditor })));
 
 function switchLocale(pathname: string, locale: SupportedLocale): string {
   const parts = pathname.split("/");
@@ -37,7 +39,19 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   const accountPopoverId = useId();
   const accountRef = useRef<HTMLDivElement>(null);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
+  const avatarTriggerRef = useRef<HTMLButtonElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
+  const [avatarFeedback, setAvatarFeedback] = useState<string>();
+  const avatarUpdate = useMutation({
+    mutationFn: (action: { file?: File; remove?: boolean }) => action.remove ? authService.removeAvatar() : authService.uploadAvatar(action.file!),
+    onMutate: () => setAvatarFeedback(undefined),
+    onSuccess: (updated, action) => {
+      queryClient.setQueryData(["current-user"], updated);
+      setAvatarFeedback(t(action.remove ? "nav.avatarRemoved" : "nav.avatarUpdated"));
+      setAvatarEditorOpen(false);
+    },
+  });
   const logout = useMutation({
     mutationFn: authService.logout,
     onSuccess: async () => {
@@ -64,6 +78,12 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [accountOpen]);
+
+  useEffect(() => {
+    if (!avatarFeedback) return;
+    const timer = window.setTimeout(() => setAvatarFeedback(undefined), 3200);
+    return () => window.clearTimeout(timer);
+  }, [avatarFeedback]);
 
   if (!isSupportedLocale(locale)) return null;
   const confirmLeave = () => document.body.dataset.unsavedChanges !== "true" || window.confirm(t("wizard.unsavedChanges"));
@@ -112,6 +132,9 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </label>
 
           <div className="account-menu" ref={accountRef}>
+            <button ref={avatarTriggerRef} className="avatar-trigger" type="button" aria-label={t("nav.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
+              <img className="avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" />
+            </button>
             <button
               ref={accountTriggerRef}
               className="profile-chip"
@@ -121,16 +144,16 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
               aria-label={t("nav.accountMenu", { name: user.displayName })}
               onClick={() => setAccountOpen((open) => !open)}
             >
-              <img className="avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="28" height="28" />
               <span className="user-name">{user.displayName}</span>
               <span className="account-chevron" aria-hidden="true">⌄</span>
             </button>
             {accountOpen ? (
               <div id={accountPopoverId} className="account-popover" role="region" aria-label={t("nav.account")}>
                 <div className="account-identity">
-                  <strong>{user.displayName}</strong>
-                  {user.email ? <span>{user.email}</span> : null}
-                  {user.organization?.name ? <small>{user.organization.name}</small> : null}
+                  <button type="button" className="account-avatar-preview" aria-label={t("nav.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
+                    <img className="avatar avatar-large" src={user.avatarUrl || "/api/me/avatar"} alt="" width="46" height="46" />
+                  </button>
+                  <div><strong>{user.displayName}</strong>{user.email ? <span>{user.email}</span> : null}{user.organization?.name ? <small>{user.organization.name}</small> : null}</div>
                 </div>
                 <button className="account-action" type="button" onClick={() => { setAccountOpen(false); setChangePasswordOpen(true); }}>
                   {t("nav.changePassword")}
@@ -144,8 +167,25 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </div>
         </div>
       </header>
+      {avatarFeedback ? <p className="avatar-update-toast" role="status" aria-live="polite">{avatarFeedback}</p> : null}
       <main id="main-content" tabIndex={-1}>{children}</main>
       {changePasswordOpen ? <ChangePasswordDialog onClose={() => setChangePasswordOpen(false)} /> : null}
+      {avatarEditorOpen ? <Suspense fallback={null}><AvatarEditor
+        avatarUrl={user.avatarUrl || "/api/me/avatar"}
+        displayName={user.displayName}
+        hasCustomAvatar={Boolean(user.hasCustomAvatar)}
+        busy={avatarUpdate.isPending}
+        error={avatarUpdate.isError ? t("nav.avatarFailed") : undefined}
+        onClose={() => { if (!avatarUpdate.isPending) { setAvatarEditorOpen(false); avatarUpdate.reset(); } }}
+        onSave={(file) => avatarUpdate.mutate({ file })}
+        onRemove={() => { if (window.confirm(t("nav.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
+        returnFocus={avatarTriggerRef.current}
+        labels={{
+          title: t("nav.avatarEditorTitle"), close: t("common.close"), choose: t("nav.chooseAvatar"), chooseAnother: t("nav.chooseAnotherAvatar"),
+          instruction: t("nav.avatarCropInstruction"), zoom: t("nav.avatarZoom"), cancel: t("common.cancel"), save: t("nav.saveAvatar"),
+          saving: t("nav.avatarUploading"), remove: t("nav.removeAvatar"), invalidImage: t("nav.avatarSourceInvalid"),
+        }}
+      /></Suspense> : null}
     </div>
   );
 }

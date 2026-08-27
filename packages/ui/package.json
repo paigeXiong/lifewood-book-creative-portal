@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./avatar-editor": "./src/AvatarEditor.tsx",
+    "./avatar-editor.css": "./src/avatar-editor.css"
   }
 }

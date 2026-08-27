@@ -304,15 +304,32 @@ internal sealed class ProjectRepository(string connectionString)
             : new SaveResult(SaveOutcome.VersionConflict, current, current.Version);
     }
 
-    public SaveResult AddAsset(string ownerId, string id, int version, ReferenceAssetDto asset, bool isSource)
+    public SaveResult AddAsset(string ownerId, string id, int version, ReferenceAssetDto asset, string target, string? characterId = null)
     {
         var current = Get(ownerId, id);
         if (current is null) return new SaveResult(SaveOutcome.NotFound, null, null);
         if (current.Status != "draft") return new SaveResult(SaveOutcome.NotEditable, current, current.Version);
-        if (isSource)
+        if (target == "source")
         {
             var updatedBook = current.Book with { SourceAssets = [.. current.Book.SourceAssets ?? [], asset] };
             return Save(ownerId, id, new SaveDraftRequest(version, current.Project, updatedBook));
+        }
+        if (target == "creative-style")
+        {
+            var updatedCreative = current.Creative with { StyleReferenceImages = [.. current.Creative.StyleReferenceImages ?? [], asset] };
+            return SaveCreative(ownerId, id, new SaveCreativeRequest(version, updatedCreative));
+        }
+        if (target == "creative-character" && !string.IsNullOrWhiteSpace(characterId))
+        {
+            var found = false;
+            var updatedCharacters = current.Creative.Characters.Select(character =>
+            {
+                if (character.Id != characterId) return character;
+                found = true;
+                return character with { ReferenceImages = [.. character.ReferenceImages ?? [], asset] };
+            }).ToArray();
+            if (!found) return new SaveResult(SaveOutcome.NotFound, current, current.Version);
+            return SaveCreative(ownerId, id, new SaveCreativeRequest(version, current.Creative with { Characters = updatedCharacters }));
         }
         var updated = current.VoiceAndReferences with { Assets = [.. current.VoiceAndReferences.Assets, asset] };
         return SaveVoiceAndReferences(ownerId, id, new SaveVoiceAndReferencesRequest(version, updated));
@@ -327,6 +344,19 @@ internal sealed class ProjectRepository(string connectionString)
         {
             var updatedBook = current.Book with { SourceAssets = (current.Book.SourceAssets ?? []).Where(asset => asset.Id != fileId).ToArray() };
             return Save(ownerId, id, new SaveDraftRequest(version, current.Project, updatedBook));
+        }
+        if ((current.Creative.StyleReferenceImages ?? []).Any(asset => asset.Id == fileId))
+        {
+            var updatedCreative = current.Creative with { StyleReferenceImages = current.Creative.StyleReferenceImages!.Where(asset => asset.Id != fileId).ToArray() };
+            return SaveCreative(ownerId, id, new SaveCreativeRequest(version, updatedCreative));
+        }
+        if (current.Creative.Characters.Any(character => (character.ReferenceImages ?? []).Any(asset => asset.Id == fileId)))
+        {
+            var updatedCharacters = current.Creative.Characters.Select(character => character with
+            {
+                ReferenceImages = (character.ReferenceImages ?? []).Where(asset => asset.Id != fileId).ToArray()
+            }).ToArray();
+            return SaveCreative(ownerId, id, new SaveCreativeRequest(version, current.Creative with { Characters = updatedCharacters }));
         }
         var updated = current.VoiceAndReferences with { Assets = current.VoiceAndReferences.Assets.Where(asset => asset.Id != fileId).ToArray() };
         return SaveVoiceAndReferences(ownerId, id, new SaveVoiceAndReferencesRequest(version, updated));
@@ -438,8 +468,15 @@ internal sealed class ProjectRepository(string connectionString)
             reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : null);
     }
 
-    private static CreativeInfoDto DeserializeCreative(string json) =>
-        JsonSerializer.Deserialize(json, AppJsonContext.Default.CreativeInfoDto) ?? throw new InvalidDataException("Creative JSON is invalid.");
+    private static CreativeInfoDto DeserializeCreative(string json)
+    {
+        var creative = JsonSerializer.Deserialize(json, AppJsonContext.Default.CreativeInfoDto) ?? throw new InvalidDataException("Creative JSON is invalid.");
+        return creative with
+        {
+            StyleReferenceImages = creative.StyleReferenceImages ?? [],
+            Characters = creative.Characters.Select(character => character with { ReferenceImages = character.ReferenceImages ?? [] }).ToArray()
+        };
+    }
 
     private static BookInfoDto DeserializeBook(string json)
     {
@@ -450,7 +487,7 @@ internal sealed class ProjectRepository(string connectionString)
     private static VoiceAndReferencesInfoDto DeserializeVoiceAndReferences(string json) =>
         JsonSerializer.Deserialize(json, AppJsonContext.Default.VoiceAndReferencesInfoDto) ?? throw new InvalidDataException("Voice JSON is invalid.");
 
-    private static CreativeInfoDto EmptyCreative() => new([], null, [], [], [], []);
+    private static CreativeInfoDto EmptyCreative() => new([], null, [], [], [], [], []);
     private static VoiceAndReferencesInfoDto EmptyVoiceAndReferences() => new(new(null, null, null, null, null, null, null, null, [], null, null), [], [], new("", null, null, null, null, null));
 
     private static bool HasTable(SqliteConnection connection, SqliteTransaction transaction, string table)

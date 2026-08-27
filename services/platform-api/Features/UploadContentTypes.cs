@@ -6,6 +6,7 @@ internal static class UploadContentTypes
     [
         "image/jpeg",
         "image/png",
+        "image/webp",
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "video/mp4",

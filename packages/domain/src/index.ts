@@ -11,6 +11,7 @@ export interface CurrentUser {
   permissions: string[];
   locale?: SupportedLocale;
   timeZone?: string;
+  hasCustomAvatar?: boolean;
 }
 
 export interface ConfigOption {
@@ -161,6 +162,7 @@ export interface CharacterInfo {
   emotion?: string;
   voiceHint?: string;
   referenceImageUrls: string[];
+  referenceImages: ReferenceAsset[];
 }
 
 export interface CreativeInfo {
@@ -170,6 +172,7 @@ export interface CreativeInfo {
   imageStyleTagIds: string[];
   paceTagIds: string[];
   styleReferenceImageUrls: string[];
+  styleReferenceImages: ReferenceAsset[];
 }
 
 export interface ReferenceAsset {
@@ -222,6 +225,16 @@ export interface AdminUser {
   displayName: string;
   role: AdminRole;
   active: boolean;
+  organization?: { id: string; name: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminOrganization {
+  id: string;
+  name: string;
+  active: boolean;
+  memberCount: number;
   createdAt: string;
   updatedAt: string;
 }

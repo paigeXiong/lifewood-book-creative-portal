@@ -3,6 +3,7 @@ import type {
   AuditEvent,
   ConfigOption,
   AdminOverview,
+  AdminOrganization,
   AdminProjectDetail,
   AdminProjectSummary,
   AdminUser,
@@ -127,6 +128,12 @@ export const authService = {
     await request<void>("/me/password", { method: "POST", body: JSON.stringify(credentials) });
     clearCsrfToken();
   },
+  uploadAvatar: (file: File) => {
+    const body = new FormData();
+    body.append("avatar", file);
+    return request<CurrentUser>("/me/avatar", { method: "POST", body });
+  },
+  removeAvatar: () => request<CurrentUser>("/me/avatar", { method: "DELETE" }),
   logout: async () => {
     await request<void>("/auth/logout", { method: "POST" });
     clearCsrfToken();
@@ -184,10 +191,11 @@ export const projectService = {
       locale,
       body: JSON.stringify({ version, idempotencyKey }),
     }),
-  uploadAsset: (projectId: string, version: number, categoryId: string, file: File, locale: SupportedLocale, signal?: AbortSignal) => {
+  uploadAsset: (projectId: string, version: number, categoryId: string, file: File, locale: SupportedLocale, signal?: AbortSignal, characterId?: string) => {
     const body = new FormData();
     body.append("version", String(version));
     body.append("categoryId", categoryId);
+    if (characterId) body.append("characterId", characterId);
     body.append("file", file);
     return request<UploadReferenceResult>(`/projects/${encodeURIComponent(projectId)}/files`, { method: "POST", locale, body, signal });
   },
@@ -213,6 +221,12 @@ export interface AdminProjectListQuery {
 export interface AdminUserListQuery {
   search?: string;
   role?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AdminOrganizationListQuery {
+  search?: string;
   page?: number;
   pageSize?: number;
 }
@@ -336,12 +350,21 @@ export const adminService = {
     if (role) query.set("role", role);
     return request<PagedResult<AdminUser>>(`/admin/users?${query}`);
   },
-  createUser: (account: { displayName: string; email: string; password: string; role: "customer" | "admin" }) =>
+  createUser: (account: { displayName: string; email: string; password: string; role: "customer" | "admin"; organizationId?: string }) =>
     request<AdminUser>("/admin/users", { method: "POST", body: JSON.stringify(account) }),
-  updateUser: (id: string, account: { displayName: string; role: "customer" | "admin"; active: boolean }) =>
+  updateUser: (id: string, account: { displayName: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) =>
     request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(account) }),
   resetUserPassword: (id: string, newPassword: string) =>
     request<void>(`/admin/users/${encodeURIComponent(id)}/password`, { method: "PUT", body: JSON.stringify({ newPassword }) }),
+  listOrganizations: ({ search, page = 1, pageSize = 20 }: AdminOrganizationListQuery = {}) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) query.set("search", search);
+    return request<PagedResult<AdminOrganization>>(`/admin/organizations?${query}`);
+  },
+  createOrganization: (name: string) =>
+    request<AdminOrganization>("/admin/organizations", { method: "POST", body: JSON.stringify({ name }) }),
+  updateOrganization: (id: string, value: { name: string; active: boolean }) =>
+    request<AdminOrganization>(`/admin/organizations/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(value) }),
   listVoiceReferences: () => request<AdminVoiceReference[]>("/admin/voices"),
   listSupportedFileContentTypes: () => request<string[]>("/admin/file-content-types"),
   listFileCategories: (scope: "source" | "reference") => request<AdminFileCategory[]>(`/admin/file-categories/${scope}`),

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import "@lifewood/ui/tokens.css";
+import "@lifewood/ui/avatar-editor.css";
 import "@lifewood/i18n";
 import "./i18n";
 import { App } from "./App";

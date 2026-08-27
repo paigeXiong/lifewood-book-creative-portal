@@ -83,6 +83,28 @@ describe("administrator API client", () => {
     expect(JSON.parse(String(options.body))).toEqual({ newPassword: "temporary-password" });
   });
 
+  it("uses real organization routes and sends user organization assignments", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-admin" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify({ id: "org-1", name: "Lifewood Books", active: true }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminService.listOrganizations({ search: "books", page: 2, pageSize: 20 });
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain("/api/admin/organizations?page=2&pageSize=20&search=books");
+
+    await adminService.createOrganization("Lifewood Books");
+    let [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/admin/organizations");
+    expect(options.method).toBe("POST");
+    expect(JSON.parse(String(options.body))).toEqual({ name: "Lifewood Books" });
+
+    await adminService.updateUser("customer-1", { displayName: "Reader", role: "customer", active: true, organizationId: "org-1" });
+    [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/admin/users/customer-1");
+    expect(JSON.parse(String(options.body))).toMatchObject({ organizationId: "org-1" });
+  });
+
   it("saves bilingual form options with CSRF protection", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: string) =>
       input.endsWith("/auth/csrf")

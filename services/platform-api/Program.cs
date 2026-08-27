@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.IO.Compression;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -323,12 +324,45 @@ api.MapGet("/me", (HttpContext context) =>
         ? Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false)
         : Results.Ok(user);
 });
-api.MapGet("/me/avatar", (HttpContext context) =>
+api.MapGet("/me/avatar", (HttpContext context, UserRepository accounts) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     context.Response.Headers.CacheControl = "private, no-store";
+    var avatar = accounts.OpenAvatar(user.Id);
+    if (avatar is not null) return Results.Stream(avatar.Stream, avatar.ContentType);
     return Results.Text(AvatarImage.Create(user.Id, user.DisplayName), "image/svg+xml", Encoding.UTF8);
+});
+api.MapPost("/me/avatar", async (HttpContext context, UserRepository accounts) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    var sizeFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = 6_000_000;
+    if (!context.Request.HasFormContentType) return Error(context, 400, "validation.failed", "errors.validation.failed", "A multipart form is required.", false);
+    var form = await context.Request.ReadFormAsync(context.RequestAborted);
+    var file = form.Files.GetFile("avatar");
+    if (file is null || file.Length is <= 0 or > 5_000_000)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "Choose an avatar smaller than 5 MB.", false, [new FieldErrorDto("avatar", "file", "errors.validation.file")]);
+    await using var content = new MemoryStream((int)file.Length);
+    await file.CopyToAsync(content, context.RequestAborted);
+    var extension = DetectAvatarExtension(content.GetBuffer().AsSpan(0, checked((int)content.Length)));
+    if (extension is null)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "The avatar must be a valid PNG image.", false, [new FieldErrorDto("avatar", "file", "errors.validation.file")]);
+    content.Position = 0;
+    var updated = await accounts.SaveAvatar(user.Id, content, extension, context.RequestAborted);
+    return updated is null
+        ? Error(context, 404, "auth.unauthorized", "errors.auth.unauthorized", "The user was not found.", false)
+        : Results.Ok(updated);
+});
+api.MapDelete("/me/avatar", (HttpContext context, UserRepository accounts) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    var updated = accounts.RemoveAvatar(user.Id);
+    return updated is null
+        ? Error(context, 404, "auth.unauthorized", "errors.auth.unauthorized", "The user was not found.", false)
+        : Results.Ok(updated);
 });
 
 api.MapPost("/me/password", async (ChangePasswordRequest? request, HttpContext context, UserRepository accounts) =>
@@ -379,12 +413,14 @@ api.MapGet("/admin/audit-events", (HttpContext context, AuditRepository audit, s
     return Results.Ok(audit.List(search, actionId, from, to, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
 });
 
-api.MapGet("/admin/audit-avatar/{actorId}", (string actorId, string? name, HttpContext context) =>
+api.MapGet("/admin/audit-avatar/{actorId}", (string actorId, string? name, HttpContext context, UserRepository accounts) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.access")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     context.Response.Headers.CacheControl = "private, no-store";
+    var avatar = accounts.OpenAvatar(actorId);
+    if (avatar is not null) return Results.Stream(avatar.Stream, avatar.ContentType);
     return Results.Text(AvatarImage.Create(actorId, string.IsNullOrWhiteSpace(name) ? "?" : name), "image/svg+xml", Encoding.UTF8);
 });
 
@@ -396,7 +432,7 @@ api.MapGet("/admin/users", (HttpContext context, AdminRepository admin, string? 
     return Results.Ok(admin.ListUsers(search, role, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
 });
 
-api.MapGet("/admin/users/{id}/avatar", (string id, HttpContext context, AdminRepository admin) =>
+api.MapGet("/admin/users/{id}/avatar", (string id, HttpContext context, AdminRepository admin, UserRepository accounts) =>
 {
     var current = CurrentUser(context);
     if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -404,6 +440,8 @@ api.MapGet("/admin/users/{id}/avatar", (string id, HttpContext context, AdminRep
     var user = admin.GetUser(id);
     if (user is null) return Error(context, 404, "admin.user_not_found", "errors.admin.userNotFound", "The user was not found.", false);
     context.Response.Headers.CacheControl = "private, no-store";
+    var avatar = accounts.OpenAvatar(id);
+    if (avatar is not null) return Results.Stream(avatar.Stream, avatar.ContentType);
     return Results.Text(AvatarImage.Create(user.Id, user.DisplayName), "image/svg+xml", Encoding.UTF8);
 });
 
@@ -514,7 +552,7 @@ api.MapGet("/admin/projects/{id}/files/{fileId}", (string id, string fileId, Htt
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     var detail = admin.GetProject(id);
-    var asset = detail is null ? null : (detail.Project.Book.SourceAssets ?? []).Concat(detail.Project.VoiceAndReferences.Assets).FirstOrDefault(item => item.Id == fileId);
+    var asset = detail is null ? null : AllProjectAssets(detail.Project).FirstOrDefault(item => item.Id == fileId);
     if (detail is null || asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     var folder = Path.Combine(dataDirectory, "uploads", detail.OwnerId, id);
     var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
@@ -797,6 +835,44 @@ api.MapPost("/projects", async (HttpContext context, ProjectRepository projects,
     finally { gate.Release(); }
 });
 
+api.MapGet("/admin/organizations", (HttpContext context, AdminRepository admin, string? search, int page = 1, int pageSize = 20) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(admin.ListOrganizations(search, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+});
+
+api.MapPost("/admin/organizations", (CreateOrganizationRequest? request, HttpContext context, AdminRepository admin) =>
+{
+    var current = CurrentUser(context);
+    if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.CreateOrganization(request, out var created);
+    if (result.Outcome == AdminWriteOutcome.Saved && created is not null) context.Items[AuditActionCatalog.TargetIdItemKey] = created.Id;
+    return result.Outcome switch
+    {
+        AdminWriteOutcome.Saved => Results.Ok(created),
+        AdminWriteOutcome.Conflict => Error(context, 409, "organization.name_exists", "errors.admin.organizationExists", "An organization already uses this name.", false),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The organization details are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+    };
+});
+
+api.MapPut("/admin/organizations/{id}", (string id, UpdateOrganizationRequest? request, HttpContext context, AdminRepository admin) =>
+{
+    var current = CurrentUser(context);
+    if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.UpdateOrganization(id, request, out var updated);
+    return result.Outcome switch
+    {
+        AdminWriteOutcome.Saved => Results.Ok(updated),
+        AdminWriteOutcome.NotFound => Error(context, 404, "organization.not_found", "errors.admin.organizationNotFound", "The organization was not found.", false),
+        AdminWriteOutcome.Conflict => Error(context, 409, "organization.name_exists", "errors.admin.organizationExists", "An organization already uses this name.", false),
+        _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The organization details are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+    };
+});
+
 api.MapGet("/projects/{id}", (string id, HttpContext context, ProjectRepository projects) =>
 {
     var user = CurrentUser(context);
@@ -879,27 +955,72 @@ api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpCo
     };
 });
 
-api.MapPut("/projects/{id}/creative", (string id, SaveCreativeRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options) =>
+api.MapPut("/projects/{id}/creative", async (string id, SaveCreativeRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var current = projects.Get(user.Id, id);
-    if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
-    if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
-    if (request is not null && current.Version != request.Version)
-        return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
-    var fieldErrors = CreativeValidator.Validate(request, options, current);
-    if (fieldErrors.Length > 0)
-        return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
-    var result = projects.SaveCreative(user.Id, id, request!);
-    return result.Outcome switch
+    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
+    await projectWriteLock.WaitAsync(context.RequestAborted);
+    try
     {
-        SaveOutcome.Saved => Results.Ok(result.Draft),
-        SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
-        SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: result.CurrentVersion),
-        _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: result.CurrentVersion)
-    };
+        var current = projects.Get(user.Id, id);
+        if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
+        if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
+        if (request is not null && current.Version != request.Version)
+            return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
+        var fieldErrors = CreativeValidator.Validate(request, options, current);
+        if (fieldErrors.Length > 0)
+            return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
+
+        var retainedCharacterIds = request!.Creative.Characters.Select(character => character.Id).ToHashSet(StringComparer.Ordinal);
+        var removedAssets = current.Creative.Characters
+            .Where(character => !retainedCharacterIds.Contains(character.Id))
+            .SelectMany(character => character.ReferenceImages ?? [])
+            .ToArray();
+        var stagedFiles = new List<(string Original, string Staged)>();
+        try
+        {
+            foreach (var asset in removedAssets)
+            {
+                var staged = StageReferenceFileDeletion(dataDirectory, user.Id, id, asset.Id);
+                if (staged is { } pending) stagedFiles.Add(pending);
+            }
+        }
+        catch (Exception exception)
+        {
+            foreach (var pending in stagedFiles) RestoreReferenceFileDeletion(pending, app.Logger);
+            app.Logger.LogError(exception, "Could not stage character reference files before deleting a character");
+            return Error(context, 500, "system.unexpected", "errors.system.unexpected", "The character could not be safely deleted. Try again.", true);
+        }
+
+        SaveResult result;
+        try
+        {
+            result = projects.SaveCreative(user.Id, id, request);
+        }
+        catch (Exception exception)
+        {
+            foreach (var pending in stagedFiles) RestoreReferenceFileDeletion(pending, app.Logger);
+            app.Logger.LogError(exception, "Could not save creative data after staging character reference files");
+            return Error(context, 500, "system.unexpected", "errors.system.unexpected", "The character could not be safely deleted. Try again.", true);
+        }
+        if (result.Outcome != SaveOutcome.Saved)
+            foreach (var pending in stagedFiles) RestoreReferenceFileDeletion(pending, app.Logger);
+        else
+            foreach (var removed in stagedFiles)
+                try { File.Delete(removed.Staged); }
+                catch (Exception exception) { app.Logger.LogWarning(exception, "Staged character reference file will be cleaned on restart"); }
+
+        return result.Outcome switch
+        {
+            SaveOutcome.Saved => Results.Ok(result.Draft),
+            SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
+            SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: result.CurrentVersion),
+            _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: result.CurrentVersion)
+        };
+    }
+    finally { projectWriteLock.Release(); }
 });
 
 api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndReferencesRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices, FormOptionRepository options, FileCategoryRepository fileCategories) =>
@@ -987,6 +1108,7 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     if (!context.Request.HasFormContentType) return Error(context, 400, "validation.failed", "errors.validation.failed", "A multipart form is required.", false);
     var form = await context.Request.ReadFormAsync(context.RequestAborted);
     var categoryId = form["categoryId"].ToString();
+    var characterId = form["characterId"].ToString();
     if (!int.TryParse(form["version"].ToString(), out var version)) return Error(context, 400, "validation.failed", "errors.validation.failed", "The draft version is required.", false);
     var definition = categories.FindEnabled(categoryId);
     var category = definition?.Category;
@@ -995,9 +1117,28 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The file or category is invalid.", false);
     var contentType = NormalizeContentType(file.ContentType, file.FileName);
     if (project.Version != version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before uploading.", false, currentVersion: project.Version);
-    var isSource = definition.Scope == FileCategoryScopes.Source;
-    var storedAssets = isSource ? project.Book.SourceAssets ?? [] : project.VoiceAndReferences.Assets;
-    var assetField = isSource ? "book.sourceAssets" : "voiceAndReferences.assets";
+    var target = definition.Scope == FileCategoryScopes.Source ? "source" : categoryId switch
+    {
+        "style-reference" => "creative-style",
+        "character-reference" => "creative-character",
+        _ => "reference"
+    };
+    if (target == "creative-character" && (string.IsNullOrWhiteSpace(characterId) || !project.Creative.Characters.Any(character => character.Id == characterId)))
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "Choose an existing character before uploading a reference image.", false, [new FieldErrorDto("creative.characters", "invalid", "errors.validation.invalid")]);
+    var storedAssets = target switch
+    {
+        "source" => project.Book.SourceAssets ?? [],
+        "creative-style" => project.Creative.StyleReferenceImages ?? [],
+        "creative-character" => project.Creative.Characters.First(character => character.Id == characterId).ReferenceImages ?? [],
+        _ => project.VoiceAndReferences.Assets
+    };
+    var assetField = target switch
+    {
+        "source" => "book.sourceAssets",
+        "creative-style" => "creative.styleReferenceImages",
+        "creative-character" => "creative.characters.referenceImages",
+        _ => "voiceAndReferences.assets"
+    };
     if (storedAssets.Count(asset => asset.CategoryId == categoryId) >= category.MaxFiles)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The category file limit was reached.", false, [new FieldErrorDto(assetField, "too_many", "errors.validation.too_many")]);
     if (file.Length > category.MaxBytes || !category.Accept.Contains(contentType, StringComparer.OrdinalIgnoreCase) || !await HasExpectedSignature(file, contentType, context.RequestAborted))
@@ -1024,7 +1165,7 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     }
     context.RequestAborted.ThrowIfCancellationRequested();
     var asset = new ReferenceAssetDto(fileId, categoryId, safeName, contentType, file.Length, $"/api/projects/{id}/files/{fileId}");
-    var result = projects.AddAsset(user.Id, id, version, asset, isSource);
+    var result = projects.AddAsset(user.Id, id, version, asset, target, string.IsNullOrWhiteSpace(characterId) ? null : characterId);
     if (result.Outcome == SaveOutcome.Saved) return Results.Ok(new UploadReferenceResultDto(result.Draft!, asset));
     File.Delete(path);
     return result.Outcome switch
@@ -1043,7 +1184,7 @@ api.MapGet("/projects/{id}/files/{fileId}", (string id, string fileId, HttpConte
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Read permission is required.", false);
     var project = projects.Get(user.Id, id);
-    var asset = project is null ? null : (project.Book.SourceAssets ?? []).Concat(project.VoiceAndReferences.Assets).FirstOrDefault(item => item.Id == fileId);
+    var asset = project is null ? null : AllProjectAssets(project).FirstOrDefault(item => item.Id == fileId);
     if (asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     var folder = Path.Combine(dataDirectory, "uploads", user.Id, id);
     var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
@@ -1066,7 +1207,7 @@ api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, 
         if (project is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
         if (project.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false);
         if (!Guid.TryParseExact(fileId, "N", out _)) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
-        var asset = (project.Book.SourceAssets ?? []).Concat(project.VoiceAndReferences.Assets).FirstOrDefault(item => item.Id == fileId);
+        var asset = AllProjectAssets(project).FirstOrDefault(item => item.Id == fileId);
         if (asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
 
         (string Original, string Staged)? stagedFile;
@@ -1108,6 +1249,12 @@ if (File.Exists(customerIndex))
 
 app.Run();
 
+static IEnumerable<ReferenceAssetDto> AllProjectAssets(TaskDraftDto project) =>
+    (project.Book.SourceAssets ?? [])
+        .Concat(project.Creative.StyleReferenceImages ?? [])
+        .Concat(project.Creative.Characters.SelectMany(character => character.ReferenceImages ?? []))
+        .Concat(project.VoiceAndReferences.Assets);
+
 static CurrentUserDto? CurrentUser(HttpContext context)
 {
     var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -1148,11 +1295,202 @@ static string NormalizeContentType(string contentType, string fileName)
     var expected = Path.GetExtension(fileName).ToLowerInvariant() switch
     {
         ".txt" => "text/plain", ".pdf" => "application/pdf", ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".mp4" => "video/mp4", ".mov" => "video/quicktime",
+        ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".webp" => "image/webp", ".mp4" => "video/mp4", ".mov" => "video/quicktime",
         _ => "application/octet-stream"
     };
     return string.IsNullOrWhiteSpace(contentType) || contentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase) || contentType.Equals(expected, StringComparison.OrdinalIgnoreCase)
         ? expected : "application/octet-stream";
+}
+
+static string? DetectAvatarExtension(ReadOnlySpan<byte> bytes)
+{
+    if (TryValidatePng(bytes, out var width, out var height) && AvatarDimensionsValid(width, height)) return ".png";
+    return null;
+}
+
+static bool AvatarDimensionsValid(int width, int height) =>
+    width is > 0 and <= 2048 && height is > 0 and <= 2048 && (long)width * height <= 4_000_000;
+
+static bool TryValidatePng(ReadOnlySpan<byte> bytes, out int width, out int height)
+{
+    width = height = 0;
+    ReadOnlySpan<byte> signature = [137, 80, 78, 71, 13, 10, 26, 10];
+    if (bytes.Length < 57 || !bytes[..8].SequenceEqual(signature)) return false;
+    var offset = 8;
+    var sawHeader = false;
+    var sawPalette = false;
+    var sawData = false;
+    var endedData = false;
+    var paletteEntries = 0;
+    var bitDepth = 0;
+    var colorType = 0;
+    var interlaceMethod = 0;
+    using var compressed = new MemoryStream();
+    while (offset + 12 <= bytes.Length)
+    {
+        var lengthValue = BinaryPrimitives.ReadUInt32BigEndian(bytes[offset..(offset + 4)]);
+        if (lengthValue > int.MaxValue) return false;
+        var length = (int)lengthValue;
+        var dataOffset = offset + 8;
+        var next = dataOffset + length + 4;
+        if (next < dataOffset || next > bytes.Length) return false;
+        var type = bytes[(offset + 4)..(offset + 8)];
+        var data = bytes[dataOffset..(dataOffset + length)];
+        if (!IsValidPngChunkType(type)) return false;
+        if (PngCrc(type, data) != BinaryPrimitives.ReadUInt32BigEndian(bytes[(dataOffset + length)..next])) return false;
+        if (!sawHeader)
+        {
+            if (!type.SequenceEqual("IHDR"u8) || length != 13) return false;
+            width = BinaryPrimitives.ReadInt32BigEndian(data[..4]);
+            height = BinaryPrimitives.ReadInt32BigEndian(data[4..8]);
+            bitDepth = data[8];
+            colorType = data[9];
+            interlaceMethod = data[12];
+            if (data[10] != 0 || data[11] != 0 || interlaceMethod is not (0 or 1)) return false;
+            sawHeader = true;
+        }
+        else if (type.SequenceEqual("PLTE"u8))
+        {
+            if (sawPalette || sawData || colorType is 0 or 4 || length is <= 0 or > 768 || length % 3 != 0) return false;
+            paletteEntries = length / 3;
+            if (colorType == 3 && paletteEntries > 1 << bitDepth) return false;
+            sawPalette = true;
+        }
+        else if (type.SequenceEqual("IDAT"u8))
+        {
+            if (endedData || length == 0) return false;
+            sawData = true;
+            compressed.Write(data);
+        }
+        else if (type.SequenceEqual("IEND"u8))
+        {
+            if (length != 0 || !sawData || next != bytes.Length) return false;
+            return (colorType != 3 || sawPalette) && ValidatePngPixels(compressed, width, height, bitDepth, colorType, interlaceMethod, paletteEntries);
+        }
+        else
+        {
+            if ((type[0] & 0x20) == 0) return false;
+            if (sawData) endedData = true;
+        }
+        offset = next;
+    }
+    return false;
+}
+
+static bool ValidatePngPixels(MemoryStream compressed, int width, int height, int bitDepth, int colorType, int interlaceMethod, int paletteEntries)
+{
+    var channels = colorType switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 0 };
+    var validDepth = colorType switch
+    {
+        0 => bitDepth is 1 or 2 or 4 or 8 or 16,
+        2 or 4 or 6 => bitDepth is 8 or 16,
+        3 => bitDepth is 1 or 2 or 4 or 8,
+        _ => false
+    };
+    if (!validDepth || !AvatarDimensionsValid(width, height)) return false;
+    try
+    {
+        compressed.Position = 0;
+        using var inflater = new ZLibStream(compressed, CompressionMode.Decompress, leaveOpen: true);
+        if (interlaceMethod == 0)
+        {
+            ReadPngPass(inflater, width, height, channels, bitDepth, colorType, paletteEntries);
+        }
+        else
+        {
+            int[] xStarts = [0, 4, 0, 2, 0, 1, 0];
+            int[] yStarts = [0, 0, 4, 0, 2, 0, 1];
+            int[] xSteps = [8, 8, 4, 4, 2, 2, 1];
+            int[] ySteps = [8, 8, 8, 4, 4, 2, 2];
+            for (var pass = 0; pass < 7; pass++)
+            {
+                var passWidth = width <= xStarts[pass] ? 0 : (width - xStarts[pass] + xSteps[pass] - 1) / xSteps[pass];
+                var passHeight = height <= yStarts[pass] ? 0 : (height - yStarts[pass] + ySteps[pass] - 1) / ySteps[pass];
+                if (passWidth > 0 && passHeight > 0) ReadPngPass(inflater, passWidth, passHeight, channels, bitDepth, colorType, paletteEntries);
+            }
+        }
+        return inflater.ReadByte() == -1;
+    }
+    catch (InvalidDataException) { return false; }
+    catch (EndOfStreamException) { return false; }
+    catch (OverflowException) { return false; }
+}
+
+static void ReadPngPass(Stream inflater, int width, int height, int channels, int bitDepth, int colorType, int paletteEntries)
+{
+    var rowBytes = checked((int)(((long)width * channels * bitDepth + 7) / 8));
+    var bytesPerPixel = Math.Max(1, (channels * bitDepth + 7) / 8);
+    var encoded = new byte[rowBytes + 1];
+    var previous = new byte[rowBytes];
+    var current = new byte[rowBytes];
+    for (var y = 0; y < height; y++)
+    {
+        inflater.ReadExactly(encoded);
+        var filter = encoded[0];
+        if (filter > 4) throw new InvalidDataException("Invalid PNG row filter.");
+        for (var index = 0; index < rowBytes; index++)
+        {
+            var left = index >= bytesPerPixel ? current[index - bytesPerPixel] : (byte)0;
+            var up = previous[index];
+            var upperLeft = index >= bytesPerPixel ? previous[index - bytesPerPixel] : (byte)0;
+            var predictor = filter switch
+            {
+                0 => 0,
+                1 => left,
+                2 => up,
+                3 => (left + up) / 2,
+                4 => PaethPredictor(left, up, upperLeft),
+                _ => 0
+            };
+            current[index] = unchecked((byte)(encoded[index + 1] + predictor));
+        }
+        if (colorType == 3 && !PaletteIndexesValid(current, width, bitDepth, paletteEntries)) throw new InvalidDataException("PNG palette index is out of range.");
+        (previous, current) = (current, previous);
+        Array.Clear(current);
+    }
+}
+
+static bool PaletteIndexesValid(ReadOnlySpan<byte> row, int width, int bitDepth, int paletteEntries)
+{
+    var mask = (1 << bitDepth) - 1;
+    for (var pixel = 0; pixel < width; pixel++)
+    {
+        var bitOffset = pixel * bitDepth;
+        var shift = 8 - bitDepth - bitOffset % 8;
+        if (((row[bitOffset / 8] >> shift) & mask) >= paletteEntries) return false;
+    }
+    return true;
+}
+
+static int PaethPredictor(int left, int up, int upperLeft)
+{
+    var estimate = left + up - upperLeft;
+    var leftDistance = Math.Abs(estimate - left);
+    var upDistance = Math.Abs(estimate - up);
+    var upperLeftDistance = Math.Abs(estimate - upperLeft);
+    return leftDistance <= upDistance && leftDistance <= upperLeftDistance ? left : upDistance <= upperLeftDistance ? up : upperLeft;
+}
+
+static bool IsValidPngChunkType(ReadOnlySpan<byte> type)
+{
+    if (type.Length != 4 || (type[2] & 0x20) != 0) return false;
+    foreach (var value in type)
+        if (!((value >= (byte)'A' && value <= (byte)'Z') || (value >= (byte)'a' && value <= (byte)'z'))) return false;
+    return true;
+}
+
+static uint PngCrc(ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
+{
+    var crc = 0xFFFFFFFFu;
+    foreach (var value in type) crc = UpdateCrc(crc, value);
+    foreach (var value in data) crc = UpdateCrc(crc, value);
+    return ~crc;
+    static uint UpdateCrc(uint current, byte value)
+    {
+        current ^= value;
+        for (var bit = 0; bit < 8; bit++) current = (current & 1) != 0 ? 0xEDB88320u ^ (current >> 1) : current >> 1;
+        return current;
+    }
 }
 
 static (string Original, string Staged)? StageReferenceFileDeletion(string dataDirectory, string ownerId, string projectId, string fileId)
@@ -1210,7 +1548,7 @@ static void RecoverDeletedReferenceFiles(string dataDirectory, ProjectRepository
             var fileId = name[..32];
             var originalName = name[66..];
             var project = projects.Get(ownerId, projectId);
-            var referenced = project is not null && (project.Book.SourceAssets ?? []).Concat(project.VoiceAndReferences.Assets).Any(asset => asset.Id == fileId);
+            var referenced = project is not null && AllProjectAssets(project).Any(asset => asset.Id == fileId);
             if (!referenced) File.Delete(staged);
             else RestoreReferenceFileDeletion((Path.Combine(dataDirectory, "uploads", ownerId, projectId, originalName), staged), logger);
         }
@@ -1481,6 +1819,7 @@ static async Task<bool> HasExpectedSignature(IFormFile file, string contentType,
     {
         "image/jpeg" => length >= 3 && span[0] == 0xff && span[1] == 0xd8 && span[2] == 0xff,
         "image/png" => length >= 8 && span[..8].SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
+        "image/webp" => length >= 12 && span[..4].SequenceEqual("RIFF"u8) && span[8..12].SequenceEqual("WEBP"u8),
         "application/pdf" => length >= 4 && span[..4].SequenceEqual("%PDF"u8),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => length >= 4 && span[0] == 0x50 && span[1] == 0x4b && span[2] == 0x03 && span[3] == 0x04,
         "video/mp4" or "video/quicktime" => length >= 8 && span[4..8].SequenceEqual("ftyp"u8),
