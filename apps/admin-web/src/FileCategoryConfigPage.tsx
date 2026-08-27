@@ -5,6 +5,8 @@ import type { AdminFileCategory, SupportedLocale } from "@lifewood/domain";
 import { useTranslation } from "react-i18next";
 import { ModalFrame } from "./ModalFrame";
 import { SettingsTabs } from "./SettingsTabs";
+import { showAdminToast } from "./Toast";
+import { useUnsavedClose } from "./useUnsavedClose";
 import "./voice-config.css";
 
 type Scope = "source" | "reference";
@@ -24,6 +26,7 @@ export function FileCategoryConfigPage({ locale }: { locale: SupportedLocale }) 
     mutationFn: adminService.saveFileCategory,
     onSuccess: async () => {
       setEditing(undefined);
+      showAdminToast(t("admin.feedback.categorySaved"));
       await queryClient.invalidateQueries({ queryKey: ["admin-file-categories", scope] });
       await queryClient.invalidateQueries({ queryKey: ["form-options"] });
     },
@@ -55,21 +58,24 @@ export function FileCategoryConfigPage({ locale }: { locale: SupportedLocale }) 
 function FileCategoryDialog({ category, supportedTypes, busy, error, onClose, onSave }: { category: AdminFileCategory; supportedTypes: string[]; busy: boolean; error: unknown; onClose: () => void; onSave: (value: AdminFileCategory) => void }) {
   const { t } = useTranslation();
   const existing = Boolean(category.id);
+  const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const accept = data.getAll("accept").map(String);
-    onSave({ ...category,
+    const value = { ...category,
       id: String(data.get("id")).trim(), labelZhCn: String(data.get("labelZhCn")).trim(), labelEnUs: String(data.get("labelEnUs")).trim(),
       descriptionZhCn: String(data.get("descriptionZhCn")).trim() || undefined, descriptionEnUs: String(data.get("descriptionEnUs")).trim() || undefined,
       accept, maxBytes: Math.round(Number(data.get("maxMegabytes")) * 1_000_000), maxFiles: Number(data.get("maxFiles")),
       allowsUrl: data.get("allowsUrl") === "on", required: category.scope === "source" && data.get("required") === "on",
       enabled: data.get("enabled") === "on", sortOrder: Number(data.get("sortOrder")),
-    });
+    };
+    if (category.enabled && !value.enabled && !window.confirm(t("admin.fileCategories.disableConfirm"))) return;
+    onSave(value);
   };
-  return <ModalFrame labelledBy="file-category-title" busy={busy} onClose={onClose}>
-    <div className="modal-title"><h2 id="file-category-title">{t(existing ? "admin.fileCategories.editTitle" : "admin.fileCategories.createTitle")}</h2><button type="button" aria-label={t("common.close")} onClick={onClose}>×</button></div>
-    <form onSubmit={submit}><div className="voice-form-grid">
+  return <ModalFrame labelledBy="file-category-title" busy={busy} onClose={requestClose}>
+    <div className="modal-title"><h2 id="file-category-title">{t(existing ? "admin.fileCategories.editTitle" : "admin.fileCategories.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button></div>
+    <form onSubmit={submit} onChange={markDirty}><div className="voice-form-grid">
       <label><span>{t("admin.formOptions.id")}</span><input name="id" defaultValue={category.id} pattern="[A-Za-z0-9-]{2,64}" maxLength={64} readOnly={existing} required autoComplete="off" spellCheck={false} /></label>
       <label><span>{t("admin.fileCategories.order")}</span><input name="sortOrder" type="number" defaultValue={category.sortOrder} min={0} max={10000} required /></label>
       <label><span>{t("admin.formOptions.labelZh")}</span><input name="labelZhCn" defaultValue={category.labelZhCn} maxLength={100} required /></label>
@@ -85,6 +91,6 @@ function FileCategoryDialog({ category, supportedTypes, busy, error, onClose, on
       {category.scope === "reference" && <label><input type="checkbox" name="allowsUrl" defaultChecked={category.allowsUrl} /><span>{t("admin.fileCategories.allowsUrl")}</span></label>}
     </div>
     {Boolean(error) && <div className="message error" role="alert">{localizedApiError(error, t)}</div>}
-    <div className="modal-actions"><button type="button" onClick={onClose}>{t("common.cancel")}</button><button className="primary" disabled={busy}>{t(busy ? "admin.formOptions.saving" : "common.save")}</button></div></form>
+    <div className="modal-actions"><button type="button" disabled={busy} onClick={requestClose}>{t("common.cancel")}</button><button className="primary" disabled={busy}>{t(busy ? "admin.formOptions.saving" : "common.save")}</button></div></form>
   </ModalFrame>;
 }

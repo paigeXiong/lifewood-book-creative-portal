@@ -53,6 +53,7 @@ internal sealed class FormOptionRepository(string connectionString)
                 description_en_us TEXT NULL,
                 tone TEXT NULL,
                 preview_color TEXT NULL,
+                allows_custom_value INTEGER NOT NULL DEFAULT 0,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL,
@@ -61,9 +62,27 @@ internal sealed class FormOptionRepository(string connectionString)
             CREATE INDEX IF NOT EXISTS ix_form_options_group_order
                 ON form_options(group_id, enabled DESC, sort_order, id);
             """);
-
         var zh = FormOptionCatalog.ForLocale("zh-CN");
         var en = FormOptionCatalog.ForLocale("en-US");
+        if (!HasColumn(connection, "form_options", "allows_custom_value"))
+        {
+            using var migration = connection.BeginTransaction();
+            using var addColumn = connection.CreateCommand();
+            addColumn.Transaction = migration;
+            addColumn.CommandText = "ALTER TABLE form_options ADD COLUMN allows_custom_value INTEGER NOT NULL DEFAULT 0;";
+            addColumn.ExecuteNonQuery();
+            foreach (var customOption in en.VideoDurations.Where(option => option.AllowsCustomValue))
+            {
+                using var migrateCustom = connection.CreateCommand();
+                migrateCustom.Transaction = migration;
+                migrateCustom.CommandText = "UPDATE form_options SET allows_custom_value = 1 WHERE group_id = $group AND id = $id;";
+                migrateCustom.Parameters.AddWithValue("$group", FormOptionGroups.VideoDurations);
+                migrateCustom.Parameters.AddWithValue("$id", customOption.Id);
+                migrateCustom.ExecuteNonQuery();
+            }
+            migration.Commit();
+        }
+
         using var transaction = connection.BeginTransaction();
         foreach (var (groupId, zhItems, enItems) in DefaultGroups(zh, en))
         {
@@ -83,7 +102,7 @@ internal sealed class FormOptionRepository(string connectionString)
                     zhItem.Label, enItem.Label,
                     zhItem.Description, enItem.Description,
                     enItem.Tone, enItem.PreviewColor,
-                    true, index * 10), transaction);
+                    true, index * 10, AllowsCustomValue: enItem.AllowsCustomValue), transaction);
             }
         }
         transaction.Commit();
@@ -125,7 +144,7 @@ internal sealed class FormOptionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT group_id, id, label_zh_cn, label_en_us, description_zh_cn, description_en_us,
-                   tone, preview_color, enabled, sort_order, updated_at
+                   tone, preview_color, allows_custom_value, enabled, sort_order, updated_at
             FROM form_options WHERE group_id = $group ORDER BY sort_order, id;
             """;
         command.Parameters.AddWithValue("$group", groupId);
@@ -146,6 +165,17 @@ internal sealed class FormOptionRepository(string connectionString)
         var ids = new HashSet<string>(StringComparer.Ordinal);
         while (reader.Read()) ids.Add(reader.GetString(0));
         return ids;
+    }
+
+    public bool AllowsCustomValue(string groupId, string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || !FormOptionGroups.Configurable.Contains(groupId)) return false;
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT allows_custom_value FROM form_options WHERE group_id = $group AND id = $id;";
+        command.Parameters.AddWithValue("$group", groupId);
+        command.Parameters.AddWithValue("$id", id);
+        return Convert.ToInt32(command.ExecuteScalar() ?? 0) == 1;
     }
 
     public FormOptionWriteResult Upsert(string groupId, string id, UpsertFormOptionRequest? request, out AdminFormOptionDto? item)
@@ -188,7 +218,7 @@ internal sealed class FormOptionRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, label_zh_cn, label_en_us, description_zh_cn, description_en_us, tone, preview_color
+            SELECT id, label_zh_cn, label_en_us, description_zh_cn, description_en_us, tone, preview_color, allows_custom_value
             FROM form_options WHERE group_id = $group AND enabled = 1 ORDER BY sort_order, id;
             """;
         command.Parameters.AddWithValue("$group", groupId);
@@ -198,7 +228,8 @@ internal sealed class FormOptionRepository(string connectionString)
             reader.GetString(0), reader.GetString(english ? 2 : 1),
             reader.IsDBNull(english ? 4 : 3) ? null : reader.GetString(english ? 4 : 3),
             reader.IsDBNull(5) ? null : reader.GetString(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6)));
+            reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.GetInt32(7) == 1));
         return [.. items];
     }
 
@@ -233,13 +264,14 @@ internal sealed class FormOptionRepository(string connectionString)
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO form_options(group_id, id, label_zh_cn, label_en_us, description_zh_cn, description_en_us,
-                                     tone, preview_color, enabled, sort_order, updated_at)
+                                     tone, preview_color, allows_custom_value, enabled, sort_order, updated_at)
             VALUES($group, $id, $labelZh, $labelEn, $descriptionZh, $descriptionEn,
-                   $tone, $previewColor, $enabled, $sortOrder, $updatedAt)
+                   $tone, $previewColor, $allowsCustomValue, $enabled, $sortOrder, $updatedAt)
             ON CONFLICT(group_id, id) DO UPDATE SET
                 label_zh_cn = excluded.label_zh_cn, label_en_us = excluded.label_en_us,
                 description_zh_cn = excluded.description_zh_cn, description_en_us = excluded.description_en_us,
                 tone = excluded.tone, preview_color = excluded.preview_color,
+                allows_custom_value = excluded.allows_custom_value,
                 enabled = excluded.enabled, sort_order = excluded.sort_order, updated_at = excluded.updated_at;
             """;
         command.Parameters.AddWithValue("$group", groupId);
@@ -250,6 +282,7 @@ internal sealed class FormOptionRepository(string connectionString)
         command.Parameters.AddWithValue("$descriptionEn", (object?)request.DescriptionEnUs ?? DBNull.Value);
         command.Parameters.AddWithValue("$tone", (object?)request.Tone ?? DBNull.Value);
         command.Parameters.AddWithValue("$previewColor", (object?)request.PreviewColor ?? DBNull.Value);
+        command.Parameters.AddWithValue("$allowsCustomValue", request.AllowsCustomValue ? 1 : 0);
         command.Parameters.AddWithValue("$enabled", request.Enabled ? 1 : 0);
         command.Parameters.AddWithValue("$sortOrder", request.SortOrder);
         command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
@@ -262,7 +295,7 @@ internal sealed class FormOptionRepository(string connectionString)
         command.Transaction = transaction;
         command.CommandText = """
             SELECT group_id, id, label_zh_cn, label_en_us, description_zh_cn, description_en_us,
-                   tone, preview_color, enabled, sort_order, updated_at
+                   tone, preview_color, allows_custom_value, enabled, sort_order, updated_at
             FROM form_options WHERE group_id = $group AND id = $id;
             """;
         command.Parameters.AddWithValue("$group", groupId);
@@ -275,14 +308,16 @@ internal sealed class FormOptionRepository(string connectionString)
         reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
         reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
         reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7),
-        reader.GetInt32(8) == 1, reader.GetInt32(9),
-        DateTimeOffset.Parse(reader.GetString(10), System.Globalization.CultureInfo.InvariantCulture));
+        reader.GetInt32(8) == 1, reader.GetInt32(9) == 1, reader.GetInt32(10),
+        DateTimeOffset.Parse(reader.GetString(11), System.Globalization.CultureInfo.InvariantCulture));
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static bool ValidText(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;
     private static bool OptionalText(string? value, int max) => value is null || value.Trim().Length <= max;
     private static bool ValidColor(string value) => value.Length == 7 && value[0] == '#' && value[1..].All(Uri.IsHexDigit);
     private static bool ValidId(string value) => value.Length is >= 2 and <= 64 && value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
+    private static bool HasColumn(SqliteConnection connection, string table, string column)
+    { using var command = connection.CreateCommand(); command.CommandText = $"PRAGMA table_info({table});"; using var reader = command.ExecuteReader(); while (reader.Read()) if (reader.GetString(1).Equals(column, StringComparison.Ordinal)) return true; return false; }
     private static void Execute(SqliteConnection connection, string sql) { using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
     private SqliteConnection Open() { var connection = new SqliteConnection(connectionString); connection.Open(); Execute(connection, "PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;"); return connection; }
 }

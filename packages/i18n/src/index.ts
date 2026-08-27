@@ -286,7 +286,10 @@ const resources = {
           chooseOne: "请至少选择一项",
           max: "最多 {{max}} 个字符",
           futureDate: "截止时间不能早于今天",
+          customDuration: "请输入具体的期望时长",
         },
+        durationEditableHint: "可从列表选择，也可直接输入具体时长。",
+        durationPlaceholder: "例如：45 秒…",
         saveFailed: "草稿保存失败，请检查连接后重试。",
         versionConflict: "此草稿已在别处更新，请重新载入后继续。",
         unsavedChanges: "有尚未保存的修改，确定离开当前页面吗？",
@@ -720,7 +723,10 @@ const resources = {
           chooseOne: "Choose at least one option",
           max: "Use no more than {{max}} characters",
           futureDate: "The deadline cannot be before today",
+          customDuration: "Enter the desired video length",
         },
+        durationEditableHint: "Choose a listed value or type a specific duration.",
+        durationPlaceholder: "For example, 45 seconds…",
         saveFailed:
           "The draft could not be saved. Check your connection and try again.",
         versionConflict:

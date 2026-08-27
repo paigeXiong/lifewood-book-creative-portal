@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="zh-CN">
+  <String Id="ProductLanguage" Value="2052" />
+  <String Id="ProductName" Value="Lifewood 书籍创意项目平台" />
+  <String Id="ProductDescription" Value="面向客户的书籍项目登记平台与管理中心" />
+  <String Id="DowngradeError" Value="计算机上已经安装了更高版本。" />
+  <String Id="ServiceDisplayName" Value="Lifewood 书籍创意项目平台" />
+  <String Id="ServiceDescription" Value="托管 Lifewood 客户门户、管理中心和平台 API。" />
+  <String Id="CustomerShortcut" Value="客户门户" />
+  <String Id="AdminShortcut" Value="管理中心" />
+  <String Id="DefaultLocale" Value="zh-CN" />
+  <String Id="ConfigWindowTitle" Value="服务器配置" />
+  <String Id="ConfigTitle" Value="配置本地平台服务" />
+  <String Id="ConfigDescription" Value="选择本机监听端口和持久化生产数据目录。" />
+  <String Id="PortLabel" Value="本机端口" />
+  <String Id="PortHint" Value="请输入 1024 到 65535 之间未被占用的端口。" />
+  <String Id="DataLabel" Value="生产数据目录" />
+  <String Id="DataHint" Value="账号、数据库、上传附件、最终成品、审计队列和 Cookie 密钥均保存在这里。升级或卸载不会删除此目录。" />
+  <String Id="UpgradeHint" Value="已检测到现有生产数据目录。覆盖安装时目录已锁定，避免意外丢失数据。" />
+  <String Id="InvalidPortTitle" Value="端口无效" />
+  <String Id="InvalidPortMessage" Value="请输入 1024 到 65535 之间的可用端口。" />
+  <String Id="MissingUpgradeDataPathMessage" Value="已检测到旧版本，但无法确认其生产数据目录。安装程序已停止，不会修改现有程序或数据。请恢复 Lifewood 注册表配置或联系管理员后再升级。" />
+  <String Id="BackButton" Value="上一步(&amp;B)" />
+  <String Id="NextButton" Value="下一步(&amp;N)" />
+  <String Id="CancelButton" Value="取消" />
+  <String Id="OkButton" Value="确定" />
+  <String Id="msierrSecureObjectsFailedCreateSD" Value="无法创建生产数据目录所需的权限。" />
+  <String Id="msierrSecureObjectsFailedSet" Value="无法为生产数据目录应用权限。" />
+  <String Id="msierrSecureObjectsUnknownType" Value="安装器遇到了不支持的权限目标。" />
+</WixLocalization>

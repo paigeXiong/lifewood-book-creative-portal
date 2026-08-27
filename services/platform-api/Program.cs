@@ -15,8 +15,16 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting.WindowsServices;
 
-var builder = WebApplication.CreateSlimBuilder(args);
+var serviceMode = OperatingSystem.IsWindows() && WindowsServiceHelpers.IsWindowsService();
+var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = serviceMode ? AppContext.BaseDirectory : null
+});
+builder.Services.AddWindowsService(options => options.ServiceName = "Lifewood Book Creative Portal");
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 510_000_000);
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options => options.MultipartBodyLengthLimit = 510_000_000);
 
@@ -34,6 +42,10 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     foreach (var value in trustedProxyAddresses)
         if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
 });
+
+var allowInsecureHttp = builder.Configuration.GetValue<bool>("Lifewood:AllowInsecureHttp");
+if (allowInsecureHttp && !UsesLoopbackOnly(builder.Configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+    throw new InvalidOperationException("Lifewood:AllowInsecureHttp can only be used with a loopback-only listener.");
 
 var configuredDataDirectory = builder.Configuration["Lifewood:DataDirectory"];
 var platformLimits = PlatformLimits.FromConfiguration(builder.Configuration);
@@ -76,7 +88,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.HttpOnly = true;
         options.Cookie.IsEssential = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() || allowInsecureHttp ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
         options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
@@ -90,7 +102,7 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
     options.Cookie.SameSite = SameSiteMode.Strict;
-    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() || allowInsecureHttp ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
 });
 builder.Services.AddRateLimiter(options =>
 {
@@ -160,6 +172,18 @@ builder.Services.AddSingleton(platformLimits);
 builder.Services.AddSingleton(new StorageQuota(dataDirectory, platformLimits));
 
 var app = builder.Build();
+var configuredWebRoot = builder.Configuration["Lifewood:WebRoot"];
+var webRoot = string.IsNullOrWhiteSpace(configuredWebRoot)
+    ? Path.Combine(app.Environment.ContentRootPath, "web")
+    : Path.GetFullPath(Path.IsPathRooted(configuredWebRoot) ? configuredWebRoot : Path.Combine(app.Environment.ContentRootPath, configuredWebRoot));
+var customerWebRoot = Path.Combine(webRoot, "customer");
+var adminWebRoot = Path.Combine(webRoot, "admin");
+var customerIndex = Path.Combine(customerWebRoot, "index.html");
+var adminIndex = Path.Combine(adminWebRoot, "index.html");
+if (Directory.Exists(adminWebRoot))
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(adminWebRoot), RequestPath = "/admin" });
+if (Directory.Exists(customerWebRoot))
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(customerWebRoot) });
 RecoverDraftUploadTombstones(dataDirectory, repository, app.Logger);
 RecoverDeletedReferenceFiles(dataDirectory, repository, app.Logger);
 app.UseForwardedHeaders();
@@ -1073,6 +1097,15 @@ api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, 
     }
     finally { projectWriteLock.Release(); }
 });
+if (File.Exists(adminIndex))
+{
+    app.MapGet("/admin", () => Results.Redirect("/admin/"));
+    app.MapGet("/admin/{**path}", () => Results.File(adminIndex, "text/html; charset=utf-8"));
+}
+app.MapGet("/api/{**path}", () => Results.NotFound());
+if (File.Exists(customerIndex))
+    app.MapGet("/{**path}", () => Results.File(customerIndex, "text/html; charset=utf-8"));
+
 app.Run();
 
 static CurrentUserDto? CurrentUser(HttpContext context)
@@ -1132,6 +1165,18 @@ static (string Original, string Staged)? StageReferenceFileDeletion(string dataD
     var staged = Path.Combine(stagingFolder, $"{fileId}_{Guid.NewGuid():N}_{Path.GetFileName(original)}");
     File.Move(original, staged);
     return (original, staged);
+}
+
+static bool UsesLoopbackOnly(string? urls)
+{
+    if (string.IsNullOrWhiteSpace(urls)) return true;
+    foreach (var value in urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)) return false;
+        if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) continue;
+        if (!IPAddress.TryParse(uri.Host, out var address) || !IPAddress.IsLoopback(address)) return false;
+    }
+    return true;
 }
 
 static void RestoreReferenceFileDeletion((string Original, string Staged) pending, ILogger logger)

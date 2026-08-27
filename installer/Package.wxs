@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="!(loc.ProductName)"
+           Manufacturer="Lifewood"
+           Version="$(ProductVersion)"
+           Language="!(loc.ProductLanguage)"
+           UpgradeCode="7E717C0D-C4D0-49A6-A5AF-5F30A9D13FC0"
+           Scope="perMachine"
+           InstallerVersion="500">
+    <SummaryInformation Description="!(loc.ProductDescription)" Manufacturer="Lifewood" />
+    <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="!(loc.DowngradeError)" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Property Id="PORT" Value="5077" Secure="yes">
+      <RegistrySearch Id="PreviousPort" Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Port" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="EXISTINGINSTALL">
+      <RegistrySearch Id="PreviousInstall" Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Installed" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="PREVIOUSDATAFOLDER" Secure="yes">
+      <RegistrySearch Id="PreviousDataDirectory" Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="DataDirectory" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="DATAFOLDER" Secure="yes" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Launch Condition="PORT &gt;= 1024 AND PORT &lt;= 65535" Message="!(loc.InvalidPortMessage)" />
+    <Launch Condition="REMOVE OR NOT (Installed OR WIX_UPGRADE_DETECTED) OR (EXISTINGINSTALL AND PREVIOUSDATAFOLDER)" Message="!(loc.MissingUpgradeDataPathMessage)" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Lifewood Book Creative Portal">
+        <Directory Id="APIFOLDER" Name="api" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="COMPANYDATAFOLDER" Name="Lifewood">
+        <Directory Id="PRODUCTDATAFOLDER" Name="BookCreativePortal">
+          <Directory Id="DATAFOLDER" Name="data" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="PROGRAMMENUDIR" Name="Lifewood Book Creative Portal" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="PayloadFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(PayloadDir)\**">
+        <Exclude Files="$(PayloadDir)\api\Lifewood.PlatformApi.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <Component Id="PlatformService" Directory="APIFOLDER" Guid="4CCDC91E-66EA-4A07-B85C-01C3FB287304" Bitness="always64">
+      <File Id="PlatformServiceExe" Source="$(PayloadDir)\api\Lifewood.PlatformApi.exe" KeyPath="yes" />
+      <ServiceInstall Id="PlatformServiceInstall"
+                      Name="LifewoodBookCreativePortal"
+                      DisplayName="!(loc.ServiceDisplayName)"
+                      Description="!(loc.ServiceDescription)"
+                      Type="ownProcess"
+                      Start="auto"
+                      ErrorControl="normal"
+                      Account="NT AUTHORITY\LocalService"
+                      Arguments='--urls http://127.0.0.1:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot; --Lifewood:WebRoot &quot;[INSTALLFOLDER]web&quot; --Lifewood:AllowInsecureHttp true'>
+        <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="none" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
+      </ServiceInstall>
+      <ServiceControl Id="PlatformServiceControl" Name="LifewoodBookCreativePortal" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Port" Type="integer" Value="[PORT]" />
+    </Component>
+
+    <Component Id="PersistentDataDirectory" Directory="DATAFOLDER" Guid="F7EEB036-DA44-4201-9F1D-D4321F46B37D" Bitness="always64" Permanent="yes" NeverOverwrite="yes">
+      <CreateFolder>
+        <util:PermissionEx User="NT AUTHORITY\LOCAL SERVICE" GenericAll="yes" />
+      </CreateFolder>
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="DataDirectory" Type="string" Value="[DATAFOLDER]" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Installed" Type="integer" Value="1" />
+    </Component>
+
+    <Component Id="StartMenuShortcuts" Directory="PROGRAMMENUDIR" Guid="C3F9DA89-9AB4-4DBA-B3B3-F9FC3848FF62">
+      <Shortcut Id="CustomerPortalShortcut" Name="!(loc.CustomerShortcut)" Target="[SystemFolder]rundll32.exe" Arguments="url.dll,FileProtocolHandler http://localhost:[PORT]/!(loc.DefaultLocale)/tasks" WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="AdminPortalShortcut" Name="!(loc.AdminShortcut)" Target="[SystemFolder]rundll32.exe" Arguments="url.dll,FileProtocolHandler http://localhost:[PORT]/admin/!(loc.DefaultLocale)/overview" WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveProgramMenuDir" On="uninstall" />
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Shortcuts" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="MainFeature" Title="!(loc.ProductName)" Level="1">
+      <ComponentGroupRef Id="PayloadFiles" />
+      <ComponentRef Id="PlatformService" />
+      <ComponentRef Id="PersistentDataDirectory" />
+      <ComponentRef Id="StartMenuShortcuts" />
+    </Feature>
+
+    <!-- A command-line DATAFOLDER must never redirect an upgrade away from its existing production data. -->
+    <SetProperty Id="DATAFOLDER" Value="[PREVIOUSDATAFOLDER]" After="AppSearch" Condition="EXISTINGINSTALL AND PREVIOUSDATAFOLDER" />
+
+    <UIRef Id="LifewoodInstallerUI" />
+  </Package>
+</Wix>

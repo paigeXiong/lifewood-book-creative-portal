@@ -19,6 +19,7 @@ export interface ConfigOption {
   description?: string;
   tone?: "neutral" | "info" | "warning" | "success" | "danger";
   previewColor?: string;
+  allowsCustomValue?: boolean;
 }
 
 export interface ReferenceCategory extends ConfigOption {
@@ -79,6 +80,7 @@ export interface AdminFormOption {
   descriptionEnUs?: string;
   tone?: "neutral" | "info" | "warning" | "success" | "danger";
   previewColor?: string;
+  allowsCustomValue?: boolean;
   enabled: boolean;
   sortOrder: number;
   updatedAt?: string;
@@ -141,6 +143,7 @@ export interface BookInfo {
   synopsis: string;
   contentLanguageId?: string;
   videoDurationId?: string;
+  customVideoDuration?: string;
   publishingPlatformIds: string[];
   sourceAssets: ReferenceAsset[];
 }

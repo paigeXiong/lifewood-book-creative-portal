@@ -6,6 +6,8 @@ import { useTranslation } from "react-i18next";
 import { ModalFrame } from "./ModalFrame";
 import "./voice-config.css";
 import { SettingsTabs } from "./SettingsTabs";
+import { showAdminToast } from "./Toast";
+import { useUnsavedClose } from "./useUnsavedClose";
 
 const emptyVoice: AdminVoiceReference = {
   id: "",
@@ -36,16 +38,17 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
     mutationFn: adminService.saveVoiceReference,
     onSuccess: async () => {
       setEditing(undefined);
+      showAdminToast(t("admin.feedback.voiceSaved"));
       await refreshVoices();
     },
   });
   const uploadSample = useMutation({
     mutationFn: ({ id, file }: { id: string; file: File }) => adminService.uploadVoiceSample(id, file),
-    onSuccess: refreshVoices,
+    onSuccess: async () => { showAdminToast(t("admin.feedback.audioUploaded")); await refreshVoices(); },
   });
   const removeSample = useMutation({
     mutationFn: adminService.removeVoiceSample,
-    onSuccess: refreshVoices,
+    onSuccess: async () => { showAdminToast(t("admin.feedback.audioRemoved")); await refreshVoices(); },
   });
   const audioBusy = uploadSample.isPending || removeSample.isPending;
   const audioMutationError = uploadSample.error || removeSample.error;
@@ -87,7 +90,7 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
                 <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" disabled={audioBusy} onChange={(event) => handleAudio(voice, event)} />
                 <span>{t(voice.audioUrl ? "admin.voices.replaceAudio" : "admin.voices.uploadAudio")}</span>
               </label>
-              {voice.audioUrl && <button type="button" disabled={audioBusy} onClick={() => { setAudioError(undefined); uploadSample.reset(); removeSample.reset(); removeSample.mutate(voice.id); }}>{t("admin.voices.removeAudio")}</button>}
+              {voice.audioUrl && <button type="button" disabled={audioBusy} onClick={() => { if (!window.confirm(t("admin.voices.removeAudioConfirm"))) return; setAudioError(undefined); uploadSample.reset(); removeSample.reset(); removeSample.mutate(voice.id); }}>{t("admin.voices.removeAudio")}</button>}
             </div>
           </div></td>
           <td className="numeric">{voice.sortOrder}</td>
@@ -116,11 +119,12 @@ function VoiceDialog({ voice, tagOptions, busy, error, onClose, onSave }: {
   const { t } = useTranslation();
   const existing = Boolean(voice.id);
   const [selectedTags, setSelectedTags] = useState(voice.tagIds);
+  const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const id = String(data.get("id")).trim();
-    onSave({
+    const value = {
       ...voice,
       id,
       nameZhCn: String(data.get("nameZhCn")).trim(),
@@ -131,11 +135,13 @@ function VoiceDialog({ voice, tagOptions, busy, error, onClose, onSave }: {
       recommended: data.get("recommended") === "on",
       enabled: data.get("enabled") === "on",
       sortOrder: Number(data.get("sortOrder")),
-    });
+    };
+    if (voice.enabled && !value.enabled && !window.confirm(t("admin.voices.disableConfirm"))) return;
+    onSave(value);
   };
-  return <ModalFrame labelledBy="voice-dialog-title" busy={busy} onClose={onClose}>
-    <div className="modal-title"><h2 id="voice-dialog-title">{t(existing ? "admin.voices.editTitle" : "admin.voices.createTitle")}</h2><button type="button" aria-label={t("common.close")} onClick={onClose}>×</button></div>
-    <form onSubmit={submit}>
+  return <ModalFrame labelledBy="voice-dialog-title" busy={busy} onClose={requestClose}>
+    <div className="modal-title"><h2 id="voice-dialog-title">{t(existing ? "admin.voices.editTitle" : "admin.voices.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button></div>
+    <form onSubmit={submit} onChange={markDirty}>
       <div className="voice-form-grid">
         <label><span>{t("admin.voices.id")}</span><input name="id" defaultValue={voice.id} pattern="[A-Za-z0-9-]{2,64}" maxLength={64} readOnly={existing} required autoComplete="off" spellCheck={false} /></label>
         <label><span>{t("admin.voices.order")}</span><input name="sortOrder" type="number" inputMode="numeric" defaultValue={voice.sortOrder} min={0} max={10000} required autoComplete="off" /></label>
@@ -147,7 +153,7 @@ function VoiceDialog({ voice, tagOptions, busy, error, onClose, onSave }: {
       <fieldset><legend>{t("admin.voices.tags")}</legend><div className="tag-checks">{tagOptions.map((tag) => <label key={tag.id}><input type="checkbox" name="tagIds" value={tag.id} checked={selectedTags.includes(tag.id)} disabled={tag.unavailable && !selectedTags.includes(tag.id)} onChange={(event) => setSelectedTags((current) => event.target.checked ? [...current, tag.id] : current.filter((id) => id !== tag.id))} /><span>{tag.label}</span></label>)}</div></fieldset>
       <div className="toggle-row"><label><input type="checkbox" name="enabled" defaultChecked={voice.enabled} /><span>{t("admin.voices.enabled")}</span></label><label><input type="checkbox" name="recommended" defaultChecked={voice.recommended} /><span>{t("admin.voices.recommended")}</span></label></div>
       {Boolean(error) && <div className="message error" role="alert" aria-live="polite">{localizedApiError(error, t)}</div>}
-      <div className="modal-actions"><button type="button" onClick={onClose}>{t("common.cancel")}</button><button className="primary" disabled={busy}>{t(busy ? "admin.voices.saving" : "common.save")}</button></div>
+      <div className="modal-actions"><button type="button" disabled={busy} onClick={requestClose}>{t("common.cancel")}</button><button className="primary" disabled={busy}>{t(busy ? "admin.voices.saving" : "common.save")}</button></div>
     </form>
   </ModalFrame>;
 }

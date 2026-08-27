@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-US">
+  <String Id="ProductLanguage" Value="1033" />
+  <String Id="ProductName" Value="Lifewood Book Creative Portal" />
+  <String Id="ProductDescription" Value="Customer book-project intake portal and administrator center" />
+  <String Id="DowngradeError" Value="A newer version is already installed." />
+  <String Id="ServiceDisplayName" Value="Lifewood Book Creative Portal" />
+  <String Id="ServiceDescription" Value="Hosts the Lifewood customer portal, administrator center, and platform API." />
+  <String Id="CustomerShortcut" Value="Customer Portal" />
+  <String Id="AdminShortcut" Value="Administrator Center" />
+  <String Id="DefaultLocale" Value="en-US" />
+  <String Id="ConfigWindowTitle" Value="Server configuration" />
+  <String Id="ConfigTitle" Value="Configure the local platform service" />
+  <String Id="ConfigDescription" Value="Choose the local listening port and the persistent production-data directory." />
+  <String Id="PortLabel" Value="Local port" />
+  <String Id="PortHint" Value="Use an available port from 1024 to 65535." />
+  <String Id="DataLabel" Value="Production-data directory" />
+  <String Id="DataHint" Value="Accounts, database, uploads, final deliveries, audit queue, and cookie keys are stored here. Uninstalling or upgrading never deletes this directory." />
+  <String Id="UpgradeHint" Value="Existing production-data location detected. It is locked during upgrade to prevent accidental data loss." />
+  <String Id="InvalidPortTitle" Value="Invalid port" />
+  <String Id="InvalidPortMessage" Value="Enter an available port from 1024 to 65535." />
+  <String Id="MissingUpgradeDataPathMessage" Value="The existing installation was detected, but its production-data location could not be verified. Setup stopped without changing the installation or its data. Restore the Lifewood registry configuration or contact an administrator before upgrading." />
+  <String Id="BackButton" Value="&amp;Back" />
+  <String Id="NextButton" Value="&amp;Next" />
+  <String Id="CancelButton" Value="Cancel" />
+  <String Id="OkButton" Value="OK" />
+  <String Id="msierrSecureObjectsFailedCreateSD" Value="Could not create the permissions required for the production-data directory." />
+  <String Id="msierrSecureObjectsFailedSet" Value="Could not apply permissions to the production-data directory." />
+  <String Id="msierrSecureObjectsUnknownType" Value="The installer encountered an unsupported permission target." />
+</WixLocalization>

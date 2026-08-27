@@ -33,7 +33,8 @@ public sealed record ConfigOptionDto(
     string Label,
     string? Description = null,
     string? Tone = null,
-    string? PreviewColor = null);
+    string? PreviewColor = null,
+    bool AllowsCustomValue = false);
 
 public sealed record ReferenceCategoryDto(
     string Id,
@@ -87,6 +88,7 @@ public sealed record AdminFormOptionDto(
     string? DescriptionEnUs,
     string? Tone,
     string? PreviewColor,
+    bool AllowsCustomValue,
     bool Enabled,
     int SortOrder,
     DateTimeOffset UpdatedAt);
@@ -130,7 +132,8 @@ public sealed record UpsertFormOptionRequest(
     string? PreviewColor,
     bool Enabled,
     int SortOrder,
-    DateTimeOffset? ExpectedUpdatedAt = null);
+    DateTimeOffset? ExpectedUpdatedAt = null,
+    bool AllowsCustomValue = false);
 
 public sealed record FormOptionsDto(
     ConfigOptionDto[] Brands,
@@ -182,7 +185,8 @@ public sealed record BookInfoDto(
     string? ContentLanguageId,
     string? VideoDurationId,
     string[] PublishingPlatformIds,
-    ReferenceAssetDto[]? SourceAssets);
+    ReferenceAssetDto[]? SourceAssets,
+    string? CustomVideoDuration = null);
 
 public sealed record CharacterInfoDto(
     string Id,

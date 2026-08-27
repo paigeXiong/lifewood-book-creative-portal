@@ -9,6 +9,7 @@ import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
 import { Field } from "../components/Field";
 import { ChoiceField } from "../components/ChoiceField";
+import { EditableSelect, preserveEditableSelection } from "../components/EditableSelect";
 import { StepProgress } from "../components/StepProgress";
 import { createDraftSchema, createStepSchema, type ProjectFormValues } from "./projectFormSchema";
 import { mergeLegacyOptions, type DisplayConfigOption } from "../legacy-options";
@@ -104,7 +105,6 @@ export function ProjectFormPage() {
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
 
   const schema = useMemo(() => createDraftSchema(t), [t]);
-  const stepSchema = useMemo(() => createStepSchema(t), [t]);
 
   const draftQuery = useQuery({
     queryKey: ["project", taskId],
@@ -117,13 +117,15 @@ export function ProjectFormPage() {
     defaultValues: {
       clientName: "", contactName: "", email: "", phone: "", brandId: "", projectName: "", videoGoalId: "", deadline: "",
       audienceIds: [], title: "", subtitle: "", authorName: "", genreId: "", sellingPoint: "", synopsis: "",
-      contentLanguageId: "", videoDurationId: "", publishingPlatformIds: [],
+      contentLanguageId: "", videoDurationId: "", customVideoDuration: "", publishingPlatformIds: [],
     },
   });
 
   const selectedAudienceIds = useWatch({ control: form.control, name: "audienceIds" }) ?? [];
   const autosaveValues = useWatch({ control: form.control });
   const selectedPlatformIds = useWatch({ control: form.control, name: "publishingPlatformIds" }) ?? [];
+  const selectedVideoDurationId = useWatch({ control: form.control, name: "videoDurationId" }) ?? "";
+  const customVideoDuration = useWatch({ control: form.control, name: "customVideoDuration" }) ?? "";
   useEffect(() => {
     const draft = draftQuery.data;
     if (!draft || form.formState.isDirty) return;
@@ -133,7 +135,7 @@ export function ProjectFormPage() {
       videoGoalId: draft.project.videoGoalId ?? "", deadline: draft.project.deadline ?? "", audienceIds: draft.project.audienceIds,
       title: draft.book.title, subtitle: draft.book.subtitle ?? "", authorName: draft.book.authorName, genreId: draft.book.genreId ?? "",
       sellingPoint: draft.book.sellingPoint, synopsis: draft.book.synopsis, contentLanguageId: draft.book.contentLanguageId ?? "",
-      videoDurationId: draft.book.videoDurationId ?? "", publishingPlatformIds: draft.book.publishingPlatformIds,
+      videoDurationId: draft.book.videoDurationId ?? "", customVideoDuration: draft.book.customVideoDuration ?? "", publishingPlatformIds: draft.book.publishingPlatformIds,
     });
   }, [draftQuery.data, form, form.formState.isDirty]);
 
@@ -165,7 +167,7 @@ export function ProjectFormPage() {
         book: {
           title: values.title, subtitle: values.subtitle || undefined, authorName: values.authorName, genreId: values.genreId || undefined,
           sellingPoint: values.sellingPoint, synopsis: values.synopsis, contentLanguageId: values.contentLanguageId || undefined,
-          videoDurationId: values.videoDurationId || undefined, publishingPlatformIds: values.publishingPlatformIds,
+          videoDurationId: values.videoDurationId || undefined, customVideoDuration: values.customVideoDuration.trim() || undefined, publishingPlatformIds: values.publishingPlatformIds,
           sourceAssets: current.book.sourceAssets,
         },
       };
@@ -221,6 +223,9 @@ export function ProjectFormPage() {
   const genreOptions = mergeLegacyOptions(options.genres, [draftQuery.data.book.genreId], unavailable);
   const languageOptions = mergeLegacyOptions(options.contentLanguages, [draftQuery.data.book.contentLanguageId], unavailable);
   const durationOptions = mergeLegacyOptions(options.videoDurations, [draftQuery.data.book.videoDurationId], unavailable);
+  const editableDurationOptions = preserveEditableSelection(durationOptions, selectedVideoDurationId, customVideoDuration);
+  const customDurationOptionIds = editableDurationOptions.filter((option) => option.allowsCustomValue).map((option) => option.id);
+  const stepSchema = createStepSchema(t, customDurationOptionIds);
   const platformOptions = mergeLegacyOptions(options.publishingPlatforms, draftQuery.data.book.publishingPlatformIds, unavailable);
   const sourceAssets = draftQuery.data.book.sourceAssets;
   const sourceCategories = mergeLegacyCategories(options.sourceCategories, sourceAssets, unavailable);
@@ -237,7 +242,8 @@ export function ProjectFormPage() {
     if (!checked.success) {
       checked.error.issues.forEach((issue) => form.setError(issue.path[0] as keyof ProjectFormValues, { message: issue.message }));
       const first = checked.error.issues[0]?.path.join(".");
-      if (first) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[name="${first}"]`)?.focus());
+      const focusName = first === "videoDurationId" || first === "customVideoDuration" ? "videoDurationInput" : first;
+      if (focusName) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[name="${focusName}"]`)?.focus());
       return;
     }
     runSave(checked.data, true, true);
@@ -370,7 +376,12 @@ export function ProjectFormPage() {
                 <Field label={t("wizard.fields.sellingPoint")} htmlFor="sellingPoint" required className="field-wide" error={form.formState.errors.sellingPoint?.message}><textarea id="sellingPoint" rows={2} maxLength={150} {...form.register("sellingPoint")} /></Field>
                 <Field label={t("wizard.fields.synopsis")} htmlFor="synopsis" required className="field-wide" error={form.formState.errors.synopsis?.message}><textarea id="synopsis" rows={4} maxLength={600} {...form.register("synopsis")} /></Field>
                 <Field label={t("wizard.fields.contentLanguage")} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message}><select id="contentLanguageId" className="input-medium" {...form.register("contentLanguageId")}><option value="" /><SelectOptions items={languageOptions} /></select></Field>
-                <Field label={t("wizard.fields.duration")} htmlFor="videoDurationId" required error={form.formState.errors.videoDurationId?.message}><select id="videoDurationId" className="input-short" {...form.register("videoDurationId")}><option value="" /><SelectOptions items={durationOptions} /></select></Field>
+                <Field label={t("wizard.fields.duration")} htmlFor="videoDurationInput" required error={form.formState.errors.videoDurationId?.message ?? form.formState.errors.customVideoDuration?.message} hint={customDurationOptionIds.length ? t("wizard.durationEditableHint") : undefined}>
+                  {customDurationOptionIds.length ? <EditableSelect id="videoDurationInput" name="videoDurationInput" className="input-short" autoComplete="off" maxLength={80} placeholder={t("wizard.durationPlaceholder")} options={editableDurationOptions} optionId={selectedVideoDurationId} customValue={customVideoDuration} onValueChange={(optionId, customValue) => {
+                    form.setValue("videoDurationId", optionId, { shouldDirty: true, shouldValidate: true });
+                    form.setValue("customVideoDuration", customValue, { shouldDirty: true, shouldValidate: true });
+                  }} /> : <select id="videoDurationInput" className="input-short" {...form.register("videoDurationId", { onChange: () => form.setValue("customVideoDuration", "", { shouldDirty: true, shouldValidate: true }) })}><option value="" /><SelectOptions items={durationOptions} /></select>}
+                </Field>
                 <ChoiceField label={t("wizard.fields.platforms")} id="platform-group"><div className="choice-row" id="platform-group">{platformOptions.map((item) => <label className="choice-chip" key={item.id} aria-disabled={item.unavailable}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedPlatformIds.includes(item.id)} {...form.register("publishingPlatformIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
               </div>
             </section>

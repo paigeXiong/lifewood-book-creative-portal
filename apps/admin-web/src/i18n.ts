@@ -4,8 +4,9 @@ i18n.addResourceBundle(
   "zh-CN",
   "translation",
   {
-    common: { search: "搜索", save: "保存", close: "关闭", cancel: "取消" },
+    common: { search: "搜索", save: "保存", close: "关闭", cancel: "取消", unsavedConfirm: "尚有未保存的修改，确定关闭吗？" },
     errors: {
+      network: { upload: "上传未能完成，请检查网络后重试。", invalidResponse: "服务器返回了无效响应，请重试。" },
       admin: {
         emailExists: "该邮箱已被其他账号使用。",
         selfDeactivate: "不能停用当前登录账号。",
@@ -19,6 +20,20 @@ i18n.addResourceBundle(
       project: { notSubmitted: "只有客户已提交的项目才能交付最终成品。" },
     },
     admin: {
+      feedback: {
+        workflowSaved: "项目跟进信息已更新",
+        noteAdded: "内部备注已添加",
+        userCreated: "用户账号已创建",
+        userUpdated: "用户信息已更新",
+        optionSaved: "表单选项已保存",
+        categorySaved: "文件类别已保存",
+        voiceSaved: "参考音色已保存",
+        audioUploaded: "试听音频已上传",
+        audioRemoved: "试听音频已移除",
+        deliveryPublished: "最终成品已交付给客户",
+        deliveryRevoked: "最终成品已撤回",
+        passwordReset: "用户密码已重置",
+      },
       documentTitle: "Lifewood 管理中心",
       productName: "项目管理中心",
       internalWorkspace: "内部项目跟进",
@@ -139,6 +154,8 @@ i18n.addResourceBundle(
         notePlaceholder: "例如：最终成片已完成，请下载查收。",
         publish: "上传并立即交付",
         publishing: "正在上传并交付…",
+        progress: "上传进度 {{percent}}%",
+        cancelUpload: "取消上传",
       },
       voices: {
         title: "参考音色",
@@ -154,6 +171,8 @@ i18n.addResourceBundle(
         removeAudio: "移除",
         audioHint: "WAV 或 MP3，最大 20 MB",
         audioInvalid: "请选择有效的 WAV 或 MP3 文件（最大 20 MB）。",
+        removeAudioConfirm: "移除后将无法继续试听这个音色样本，确定继续吗？",
+        disableConfirm: "停用后，客户的新申请中将不再显示这个音色，确定保存吗？",
         conflict: "该音色已被其他管理员修改，请重新打开后再保存。",
         unavailableTag: "已停用标签",
         order: "排序",
@@ -180,6 +199,7 @@ i18n.addResourceBundle(
         voices: "参考音色",
       },
       fileCategories: {
+        disableConfirm: "停用后，客户的新申请中将不再显示这个文件类别，确定保存吗？",
         scope: "文件用途",
         scopes: { source: "书籍源文件", reference: "创意参考素材" },
         count: "共 {{count}} 个类别",
@@ -200,6 +220,7 @@ i18n.addResourceBundle(
         limitSummary: "{{size}} MB · 最多 {{count}} 个",
       },
       formOptions: {
+        disableConfirm: "停用后，客户的新申请中将不再显示这个选项，确定保存吗？",
         group: "配置分组",
         count: "共 {{count}} 个选项",
         create: "新增选项",
@@ -220,6 +241,8 @@ i18n.addResourceBundle(
         descriptionZh: "中文说明（可选）",
         descriptionEn: "英文说明（可选）",
         previewColor: "预览颜色",
+        allowsCustomValue: "允许客户直接输入具体值",
+        allowsCustomValueHint: "启用后，该选项会把对应字段变成可选择、也可输入的下拉框。",
         saving: "正在保存…",
         conflict: "该选项已被其他管理员修改，请关闭弹窗并重新打开后再保存。",
         groups: {
@@ -293,8 +316,10 @@ i18n.addResourceBundle(
       save: "Save",
       close: "Close",
       cancel: "Cancel",
+      unsavedConfirm: "You have unsaved changes. Close anyway?",
     },
     errors: {
+      network: { upload: "The upload could not be completed. Check your connection and try again.", invalidResponse: "The server returned an invalid response. Try again." },
       admin: {
         emailExists: "An account already uses this email.",
         selfDeactivate: "You cannot deactivate your own account.",
@@ -311,6 +336,20 @@ i18n.addResourceBundle(
       },
     },
     admin: {
+      feedback: {
+        workflowSaved: "Project follow-up updated",
+        noteAdded: "Internal note added",
+        userCreated: "User account created",
+        userUpdated: "User details updated",
+        optionSaved: "Form option saved",
+        categorySaved: "File category saved",
+        voiceSaved: "Voice reference saved",
+        audioUploaded: "Audio sample uploaded",
+        audioRemoved: "Audio sample removed",
+        deliveryPublished: "Final delivery published to the customer",
+        deliveryRevoked: "Final delivery revoked",
+        passwordReset: "User password reset",
+      },
       documentTitle: "Lifewood Admin Center",
       productName: "Project management",
       internalWorkspace: "Internal project follow-up",
@@ -443,6 +482,8 @@ i18n.addResourceBundle(
           "For example: The final video is ready. Please download it here.",
         publish: "Upload & deliver now",
         publishing: "Uploading & delivering…",
+        progress: "Upload progress {{percent}}%",
+        cancelUpload: "Cancel upload",
       },
       voices: {
         title: "Voice references",
@@ -458,6 +499,8 @@ i18n.addResourceBundle(
         removeAudio: "Remove",
         audioHint: "WAV or MP3, up to 20 MB",
         audioInvalid: "Choose a valid WAV or MP3 file up to 20 MB.",
+        removeAudioConfirm: "This sample will no longer be available for playback. Continue?",
+        disableConfirm: "This voice will no longer appear in new customer requests. Save anyway?",
         conflict:
           "This voice was changed by another administrator. Reopen it before saving again.",
         unavailableTag: "Disabled tag",
@@ -485,6 +528,7 @@ i18n.addResourceBundle(
         voices: "Voice references",
       },
       fileCategories: {
+        disableConfirm: "This file category will no longer appear in new customer requests. Save anyway?",
         scope: "File purpose",
         scopes: {
           source: "Book source files",
@@ -508,6 +552,7 @@ i18n.addResourceBundle(
         limitSummary: "{{size}} MB · up to {{count}}",
       },
       formOptions: {
+        disableConfirm: "This option will no longer appear in new customer requests. Save anyway?",
         group: "Configuration group",
         count: "{{count}} options",
         create: "Add option",
@@ -528,6 +573,8 @@ i18n.addResourceBundle(
         descriptionZh: "Chinese description (optional)",
         descriptionEn: "English description (optional)",
         previewColor: "Preview color",
+        allowsCustomValue: "Allow customers to enter a specific value",
+        allowsCustomValueHint: "When enabled, the field accepts either a configured option or typed text.",
         saving: "Saving…",
         conflict:
           "This option was changed by another administrator. Close and reopen the dialog before saving again.",

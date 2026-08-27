@@ -217,6 +217,77 @@ export interface AdminUserListQuery {
   pageSize?: number;
 }
 
+interface UploadOptions {
+  signal?: AbortSignal;
+  onProgress?: (percent: number) => void;
+}
+
+function getCsrfTokenForUpload(signal?: AbortSignal): Promise<string> {
+  if (!signal) return getCsrfToken();
+  if (signal.aborted) return Promise.reject(new DOMException("Upload cancelled", "AbortError"));
+  return new Promise<string>((resolve, reject) => {
+    const abort = () => reject(new DOMException("Upload cancelled", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    void getCsrfToken().then(
+      (token) => { signal.removeEventListener("abort", abort); resolve(token); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+  });
+}
+
+async function upload<T>(path: string, body: FormData, options: UploadOptions = {}, retryCsrf = true): Promise<T> {
+  if (options.signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
+  const token = await getCsrfTokenForUpload(options.signal);
+  if (options.signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${apiBaseUrl}${path}`);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.setRequestHeader("X-CSRF-TOKEN", token);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) options.onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    };
+    const abort = () => xhr.abort();
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) {
+      options.signal.removeEventListener("abort", abort);
+      reject(new DOMException("Upload cancelled", "AbortError"));
+      return;
+    }
+    xhr.onload = () => {
+      options.signal?.removeEventListener("abort", abort);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        options.onProgress?.(100);
+        if (xhr.status === 204) {
+          resolve(undefined as T);
+          return;
+        }
+        try { resolve(JSON.parse(xhr.responseText) as T); }
+        catch { reject(new ApiError({ code: "network.invalidResponse", messageKey: "errors.network.invalidResponse", fallbackMessage: "The server returned an invalid response.", retryable: true })); }
+        return;
+      }
+      let details: AppErrorShape = { code: `http.${xhr.status}`, fallbackMessage: xhr.statusText, retryable: xhr.status >= 500 };
+      try { details = JSON.parse(xhr.responseText) as AppErrorShape; } catch { /* Keep the safe HTTP fallback. */ }
+      if (details.code === "auth.csrf" && retryCsrf) {
+        clearCsrfToken();
+        void upload<T>(path, body, options, false).then(resolve, reject);
+        return;
+      }
+      reject(new ApiError(details));
+    };
+    xhr.onerror = () => {
+      options.signal?.removeEventListener("abort", abort);
+      reject(new ApiError({ code: "network.upload", messageKey: "errors.network.upload", fallbackMessage: "The upload could not be completed.", retryable: true }));
+    };
+    xhr.onabort = () => {
+      options.signal?.removeEventListener("abort", abort);
+      reject(new DOMException("Upload cancelled", "AbortError"));
+    };
+    xhr.send(body);
+  });
+}
+
 export interface AuditEventListQuery {
   search?: string;
   actionId?: string;
@@ -250,11 +321,11 @@ export const adminService = {
   addNote: (id: string, body: string) =>
     request(`/admin/projects/${encodeURIComponent(id)}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
   listDeliveries: (id: string) => request<FinalDelivery[]>(`/admin/projects/${encodeURIComponent(id)}/deliveries`),
-  publishFinalDelivery: (id: string, file: File, note: string) => {
+  publishFinalDelivery: (id: string, file: File, note: string, options?: UploadOptions) => {
     const body = new FormData();
     body.append("file", file);
     body.append("note", note);
-    return request<FinalDelivery>(`/admin/projects/${encodeURIComponent(id)}/deliveries`, { method: "POST", body });
+    return upload<FinalDelivery>(`/admin/projects/${encodeURIComponent(id)}/deliveries`, body, options);
   },
   revokeFinalDelivery: (projectId: string, deliveryId: string) =>
     request<void>(`/admin/projects/${encodeURIComponent(projectId)}/deliveries/${encodeURIComponent(deliveryId)}`, { method: "DELETE" }),

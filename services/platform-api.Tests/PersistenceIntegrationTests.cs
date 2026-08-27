@@ -417,6 +417,33 @@ public sealed class PersistenceIntegrationTests : IDisposable
         var introducedErrors = DraftValidator.Validate(new SaveDraftRequest(legacy.Version, legacy.Project, legacy.Book), options, fileCategories, baseline);
         Assert.Contains(introducedErrors, error => error.Field == "project.brandId" && error.Code == "unknown_option");
 
+        var customDurationOption = options.ListAdmin(FormOptionGroups.VideoDurations).Single(value => value.Id == "custom");
+        Assert.True(customDurationOption.AllowsCustomValue);
+        Assert.True(options.ForLocale("zh-CN").VideoDurations.Single(value => value.Id == "custom").AllowsCustomValue);
+        var customDuration = baseline with { Book = baseline.Book with { VideoDurationId = "custom", CustomVideoDuration = "45 秒" } };
+        Assert.DoesNotContain(
+            DraftValidator.Validate(new SaveDraftRequest(customDuration.Version, customDuration.Project, customDuration.Book), options, fileCategories, baseline),
+            error => error.Field == "book.customVideoDuration");
+        var missingCustomDuration = customDuration with { Book = customDuration.Book with { CustomVideoDuration = "" } };
+        Assert.Contains(
+            DraftValidator.Validate(new SaveDraftRequest(missingCustomDuration.Version, missingCustomDuration.Project, missingCustomDuration.Book), options, fileCategories, baseline),
+            error => error.Field == "book.customVideoDuration" && error.Code == "required");
+        var unexpectedCustomDuration = baseline with { Book = baseline.Book with { VideoDurationId = "30s", CustomVideoDuration = "45 秒" } };
+        Assert.Contains(
+            DraftValidator.Validate(new SaveDraftRequest(unexpectedCustomDuration.Version, unexpectedCustomDuration.Project, unexpectedCustomDuration.Book), options, fileCategories, baseline),
+            error => error.Field == "book.customVideoDuration" && error.Code == "unknown_option");
+        var disableCustomDuration = new UpsertFormOptionRequest(
+            customDurationOption.LabelZhCn, customDurationOption.LabelEnUs, customDurationOption.DescriptionZhCn, customDurationOption.DescriptionEnUs,
+            customDurationOption.Tone, customDurationOption.PreviewColor, customDurationOption.Enabled, customDurationOption.SortOrder, customDurationOption.UpdatedAt, AllowsCustomValue: false);
+        Assert.Equal(FormOptionWriteOutcome.Saved, options.Upsert(FormOptionGroups.VideoDurations, customDurationOption.Id, disableCustomDuration, out _).Outcome);
+        var editedLegacyCustomDuration = customDuration with { Book = customDuration.Book with { CustomVideoDuration = "50 秒" } };
+        Assert.DoesNotContain(
+            DraftValidator.Validate(new SaveDraftRequest(editedLegacyCustomDuration.Version, editedLegacyCustomDuration.Project, editedLegacyCustomDuration.Book), options, fileCategories, customDuration),
+            error => error.Field == "book.customVideoDuration");
+        Assert.Contains(
+            DraftValidator.Validate(new SaveDraftRequest(customDuration.Version, customDuration.Project, customDuration.Book), options, fileCategories, baseline),
+            error => error.Field == "book.customVideoDuration" && error.Code == "unknown_option");
+
 
         var visualStyle = options.ListAdmin(FormOptionGroups.VisualStyles).Single(value => value.Id == "cinematic");
         var disableVisualStyle = new UpsertFormOptionRequest(

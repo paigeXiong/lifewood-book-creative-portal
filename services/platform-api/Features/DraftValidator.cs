@@ -30,6 +30,7 @@ internal static class DraftValidator
         Max(errors, "book.authorName", request.Book.AuthorName, 100);
         Max(errors, "book.sellingPoint", request.Book.SellingPoint, 150);
         Max(errors, "book.synopsis", request.Book.Synopsis, 600);
+        Max(errors, "book.customVideoDuration", request.Book.CustomVideoDuration, 80, optional: true);
 
         if (!string.IsNullOrWhiteSpace(request.Project.Email) &&
             !System.Net.Mail.MailAddress.TryCreate(request.Project.Email, out _))
@@ -59,6 +60,15 @@ internal static class DraftValidator
         Option(errors, "book.genreId", request.Book.GenreId, Allowed(options, FormOptionGroups.Genres, previousBook?.GenreId), optional: true);
         Option(errors, "book.contentLanguageId", request.Book.ContentLanguageId, Allowed(options, FormOptionGroups.ContentLanguages, previousBook?.ContentLanguageId), optional: true);
         Option(errors, "book.videoDurationId", request.Book.VideoDurationId, Allowed(options, FormOptionGroups.VideoDurations, previousBook?.VideoDurationId), optional: true);
+        var preservesLegacyCustomDuration = previousBook is not null &&
+                                            previousBook.VideoDurationId == request.Book.VideoDurationId &&
+                                            !string.IsNullOrWhiteSpace(previousBook.CustomVideoDuration);
+        var allowsCustomDuration = options.AllowsCustomValue(FormOptionGroups.VideoDurations, request.Book.VideoDurationId) ||
+                                   preservesLegacyCustomDuration;
+        if (allowsCustomDuration && string.IsNullOrWhiteSpace(request.Book.CustomVideoDuration))
+            errors.Add(Error("book.customVideoDuration", "required"));
+        else if (!allowsCustomDuration && !string.IsNullOrWhiteSpace(request.Book.CustomVideoDuration))
+            errors.Add(Error("book.customVideoDuration", "unknown_option"));
         Options(errors, "book.publishingPlatformIds", request.Book.PublishingPlatformIds, Allowed(options, FormOptionGroups.PublishingPlatforms, previousBook?.PublishingPlatformIds ?? []));
 
         var assets = request.Book.SourceAssets;

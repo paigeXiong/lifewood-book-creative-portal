@@ -1,0 +1,14 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <Cultures>en-US;zh-CN</Cultures>
+    <DefineConstants>PayloadDir=$(PayloadDir);ProductVersion=$(ProductVersion)</DefineConstants>
+    <!-- ProgramMenuFolder resolves to the all-users menu because Scope is perMachine. ICE38/43/57/90 cannot infer that mapping. ICE60 flags an unversioned published asset, which is hash-managed by MSI. -->
+    <SuppressIces>ICE38;ICE43;ICE57;ICE60;ICE90</SuppressIces>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

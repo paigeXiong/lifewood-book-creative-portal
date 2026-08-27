@@ -69,7 +69,7 @@ internal static class FormOptionCatalog
                 Option("30s", en ? "30 seconds" : "30 秒"),
                 Option("60s", en ? "60 seconds" : "60 秒"),
                 Option("90s", en ? "90 seconds" : "90 秒"),
-                Option("custom", en ? "Custom" : "自定义")
+                Option("custom", en ? "Custom" : "自定义", allowsCustomValue: true)
             ],
             PublishingPlatforms:
             [
@@ -174,7 +174,7 @@ internal static class FormOptionCatalog
         ];
     }
 
-    private static ConfigOptionDto Option(string id, string label, string? tone = null, string? previewColor = null) => new(id, label, null, tone, previewColor);
+    private static ConfigOptionDto Option(string id, string label, string? tone = null, string? previewColor = null, bool allowsCustomValue = false) => new(id, label, null, tone, previewColor, allowsCustomValue);
     private static ReferenceCategoryDto Category(string id, string label, string description, string[] accept, long maxBytes, int maxFiles, bool allowsUrl = false, bool required = false) => new(id, label, description, accept, maxBytes, maxFiles, allowsUrl, required);
     private static IReadOnlySet<string> Set(params string[] values) => new HashSet<string>(values, StringComparer.Ordinal);
 }

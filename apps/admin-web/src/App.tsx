@@ -47,6 +47,8 @@ import { AuditPage } from "./AuditPage";
 
 import { FormOptionConfigPage } from "./FormOptionConfigPage";
 import { FileCategoryConfigPage } from "./FileCategoryConfigPage";
+import { showAdminToast, ToastHost } from "./Toast";
+import { useUnsavedClose } from "./useUnsavedClose";
 
 function formatDate(value: string, locale: SupportedLocale) {
   return new Intl.DateTimeFormat(locale, {
@@ -415,6 +417,7 @@ function AdminShell({
           {children}
         </div>
       </div>
+      <ToastHost />
       {changePasswordOpen && (
         <ChangeOwnPasswordDialog onClose={() => setChangePasswordOpen(false)} />
       )}
@@ -510,6 +513,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
         value.assigneeUserId,
       ),
     onSuccess: async () => {
+      showAdminToast(t("admin.feedback.workflowSaved"));
       await queryClient.invalidateQueries({ queryKey: ["admin-project"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-projects"] });
     },
@@ -517,6 +521,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
   const addNote = useMutation({
     mutationFn: (body: string) => adminService.addNote(selectedId!, body),
     onSuccess: async () => {
+      showAdminToast(t("admin.feedback.noteAdded"));
       await queryClient.invalidateQueries({ queryKey: ["admin-project"] });
     },
   });
@@ -937,6 +942,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
     mutationFn: adminService.createUser,
     onSuccess: async () => {
       setShowCreate(false);
+      showAdminToast(t("admin.feedback.userCreated"));
       await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
   });
@@ -953,6 +959,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
       active: boolean;
     }) => adminService.updateUser(id, { displayName, role, active }),
     onSuccess: async () => {
+      showAdminToast(t("admin.feedback.userUpdated"));
       await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
   });
@@ -1163,6 +1170,7 @@ function CreateUserDialog({
   }) => void;
 }) {
   const { t } = useTranslation();
+  const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -1174,14 +1182,14 @@ function CreateUserDialog({
     });
   };
   return (
-    <ModalFrame labelledBy="create-user-title" busy={busy} onClose={onClose}>
+    <ModalFrame labelledBy="create-user-title" busy={busy} onClose={requestClose}>
       <div className="modal-title">
         <h2 id="create-user-title">{t("admin.users.create")}</h2>
-        <button type="button" aria-label={t("common.close")} onClick={onClose}>
+        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>
           ×
         </button>
       </div>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} onChange={markDirty}>
         <label>
           <span>{t("admin.users.name")}</span>
           <input
@@ -1229,7 +1237,7 @@ function CreateUserDialog({
           </div>
         )}
         <div className="modal-actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" disabled={busy} onClick={requestClose}>
             {t("common.cancel")}
           </button>
           <button className="primary" disabled={busy}>

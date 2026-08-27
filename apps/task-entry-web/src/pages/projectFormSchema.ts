@@ -10,12 +10,12 @@ export function createDraftSchema(t: Translate) {
     email: text(254).refine((value) => !value.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), t("wizard.validation.email")),
     phone: text(50), brandId: z.string(), projectName: text(200), videoGoalId: z.string(), deadline: z.string(),
     audienceIds: z.array(z.string()).max(30), title: text(200), subtitle: text(200), authorName: text(100), genreId: z.string(),
-    sellingPoint: text(150), synopsis: text(600), contentLanguageId: z.string(), videoDurationId: z.string(),
+    sellingPoint: text(150), synopsis: text(600), contentLanguageId: z.string(), videoDurationId: z.string(), customVideoDuration: text(80),
     publishingPlatformIds: z.array(z.string()).max(30),
   });
 }
 
-export function createStepSchema(t: Translate) {
+export function createStepSchema(t: Translate, customDurationOptionIds: string[] = []) {
   return createDraftSchema(t).superRefine((values, context) => {
     const required: Array<[keyof typeof values, string]> = [
       ["clientName", "clientName"], ["contactName", "contactName"], ["email", "email"],
@@ -27,6 +27,8 @@ export function createStepSchema(t: Translate) {
       if (!String(values[field]).trim()) context.addIssue({ code: "custom", path: [field], message: t("wizard.validation.required", { field: t(`wizard.fields.${label}`) }) });
     });
     if (!values.audienceIds.length) context.addIssue({ code: "custom", path: ["audienceIds"], message: t("wizard.validation.chooseOne") });
+    if (customDurationOptionIds.includes(values.videoDurationId) && !values.customVideoDuration.trim())
+      context.addIssue({ code: "custom", path: ["customVideoDuration"], message: t("wizard.validation.customDuration") });
     if (values.deadline) {
       const today = new Date();
       const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
