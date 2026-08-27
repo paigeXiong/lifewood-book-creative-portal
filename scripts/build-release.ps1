@@ -9,6 +9,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Get-Sha256([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $hasher.Dispose()
+        $stream.Dispose()
+    }
+}
+
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $artifactsRoot = Join-Path $repositoryRoot "artifacts"
 $releaseRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { Join-Path $artifactsRoot "release" } else { [IO.Path]::GetFullPath($OutputDirectory) }
@@ -140,7 +152,7 @@ try {
 
     $payloadLines = foreach ($relativePath in Get-StableRelativeFiles $stagingRoot) {
         $payloadPath = Join-Path $stagingRoot $relativePath.Replace('/', [IO.Path]::DirectorySeparatorChar)
-        "$relativePath`t$((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant())"
+        "$relativePath`t$(Get-Sha256 $payloadPath)"
     }
     $contentHasher = [Security.Cryptography.SHA256]::Create()
     try {
@@ -186,7 +198,7 @@ try {
     }
     finally { $archiveStream.Dispose() }
 
-    $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+    $hash = Get-Sha256 $archive
     Set-Content -LiteralPath ($archive + ".sha256") -Value "$hash  $([IO.Path]::GetFileName($archive))" -Encoding ascii
 }
 finally {
