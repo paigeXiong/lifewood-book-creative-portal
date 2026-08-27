@@ -1275,7 +1275,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
           <tbody>
             {users.data?.items.map((user) => (
               <tr key={user.id}>
-                <td>
+                <td data-label={t("admin.users.account")}>
                   <div className="user-cell">
                     <img
                       src={adminUserAvatarUrl(user.id)}
@@ -1290,9 +1290,9 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                     </div>
                   </div>
                 </td>
-                <td>{t(`admin.roles.${user.role}`)}</td>
-                <td>{user.organization?.name ?? t("admin.users.noOrganization")}</td>
-                <td>
+                <td data-label={t("admin.users.role")}>{t(`admin.roles.${user.role}`)}</td>
+                <td data-label={t("admin.users.organization")}>{user.organization?.name ?? t("admin.users.noOrganization")}</td>
+                <td data-label={t("admin.users.status")}>
                   <span
                     className={
                       user.active ? "status active" : "status inactive"
@@ -1305,8 +1305,8 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                     )}
                   </span>
                 </td>
-                <td>{formatDate(user.createdAt, locale)}</td>
-                <td>
+                <td data-label={t("admin.users.created")}>{formatDate(user.createdAt, locale)}</td>
+                <td data-label={t("admin.users.action")}>
                   <div className="row-actions">
                     <button type="button" onClick={() => setEditUser(user)}>{t("admin.users.edit")}</button>
                     {user.role === "owner" ? (
@@ -1459,7 +1459,6 @@ function CreateUserDialog({
             minLength={2}
             maxLength={100}
             required
-            autoFocus
           />
         </label>
         <label>
@@ -1547,7 +1546,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
         <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button>
       </div>
       <form onSubmit={submit} onChange={markDirty}>
-        <label><span>{t("admin.users.name")}</span><input name="displayName" defaultValue={user.displayName} minLength={2} maxLength={100} required autoFocus /></label>
+        <label><span>{t("admin.users.name")}</span><input name="displayName" defaultValue={user.displayName} minLength={2} maxLength={100} required /></label>
         <label><span>{t("admin.users.email")}</span><input value={user.email} readOnly aria-readonly="true" /></label>
         <label>
           <span>{t("admin.users.role")}</span>

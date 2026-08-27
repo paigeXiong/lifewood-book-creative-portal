@@ -29,6 +29,7 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const frame = frameRef.current;
+    frame?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busyRef.current) onCloseRef.current();
       if (event.key !== "Tab" || !frame) return;
@@ -61,7 +62,7 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     <div ref={frameRef} className="password-dialog" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
       <div className="password-dialog-title"><h2 id="change-password-title">{t("nav.changePassword")}</h2><button type="button" aria-label={t("common.close")} disabled={change.isPending} onClick={onClose}>×</button></div>
       <form onSubmit={submit} aria-busy={change.isPending}>
-        <label><span>{t("nav.currentPassword")}</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required autoFocus /></label>
+        <label><span>{t("nav.currentPassword")}</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required /></label>
         <label><span>{t("nav.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
         <label><span>{t("nav.confirmNewPassword")}</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
         {(mismatch || change.isError) && <p className="account-error" role="alert">{t(mismatch ? "nav.passwordMismatch" : "nav.passwordInvalid")}</p>}

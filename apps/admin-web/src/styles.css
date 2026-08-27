@@ -1148,16 +1148,70 @@ td {
   .character-submissions {
     grid-template-columns: 1fr;
   }
-  table {
-    min-width: 42rem;
+  .table-card,
+  .audit-table-card {
+    overflow: visible;
+    background: transparent;
+    box-shadow: none;
   }
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+    width: 100%;
+  }
+  table { min-width: 0; }
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  tbody {
+    display: grid;
+    gap: 0.55rem;
+  }
+  tbody tr {
+    padding: 0.65rem 0.75rem;
+    border-radius: 0.65rem;
+    background: #fff;
+    box-shadow: 0 8px 22px -22px rgba(15, 44, 33, 0.85);
+  }
+  tbody td {
+    display: grid;
+    grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr);
+    align-items: start;
+    gap: 0.65rem;
+    padding: 0.42rem 0;
+    border: 0;
+    overflow-wrap: anywhere;
+    text-align: start;
+  }
+  tbody td::before {
+    content: attr(data-label);
+    color: #6f8179;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  tbody td > * {
+    grid-column: 2;
+    min-width: 0;
+  }
+  tbody td.numeric { text-align: start; }
+  tbody td .row-actions { justify-content: flex-start; }
+  tbody audio { width: min(100%, 18rem); }
   .sidebar {
     gap: 0.35rem;
     padding: calc(0.4rem + env(safe-area-inset-top)) max(0.4rem, env(safe-area-inset-right)) 0.4rem max(0.4rem, env(safe-area-inset-left));
   }
   .sidebar nav {
     gap: 0.2rem;
+    padding-right: 0.8rem;
     overscroll-behavior-inline: contain;
+    scroll-snap-type: inline proximity;
     scrollbar-width: thin;
   }
   .sidebar nav a,
@@ -1167,6 +1221,7 @@ td {
     padding-inline: 0.65rem;
     font-size: 0.78rem;
     white-space: nowrap;
+    scroll-snap-align: start;
   }
   button,
   input,

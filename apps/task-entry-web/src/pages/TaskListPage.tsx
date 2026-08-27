@@ -113,7 +113,7 @@ export function TaskListPage() {
         <div className="reference-stat-card"><span>{t("tasks.stats.total")}</span><strong>{totalCount.data?.total ?? "—"}</strong></div>
         <div className="reference-stat-card"><span>{t("tasks.stats.drafts")}</span><strong>{draftCount.data?.total ?? "—"}</strong></div>
         <div className="reference-stat-card"><span>{t("tasks.stats.submitted")}</span><strong>{submittedCount.data?.total ?? "—"}</strong></div>
-        <div className="reference-stat-card"><span>{t("tasks.stats.pageRecords")}</span><strong>{tasks.data?.items.length ?? "—"}</strong></div>
+        <div className="reference-stat-card reference-stat-card-current-page"><span>{t("tasks.stats.pageRecords")}</span><strong>{tasks.data?.items.length ?? "—"}</strong></div>
       </section>
 
       {(totalCount.isError || draftCount.isError || submittedCount.isError) && <div className="inline-error stat-error" role="alert">{localizedApiError(totalCount.error ?? draftCount.error ?? submittedCount.error, t)} <button className="button button-secondary" type="button" onClick={() => { void totalCount.refetch(); void draftCount.refetch(); void submittedCount.refetch(); }}>{t("common.retry")}</button></div>}

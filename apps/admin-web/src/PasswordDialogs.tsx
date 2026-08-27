@@ -27,7 +27,7 @@ export function ChangeOwnPasswordDialog({ onClose }: { onClose: () => void }) {
   return <ModalFrame labelledBy="change-own-password-title" busy={change.isPending} onClose={requestClose}>
     <div className="modal-title"><h2 id="change-own-password-title">{t("admin.account.changePassword")}</h2><button type="button" aria-label={t("common.close")} disabled={change.isPending} onClick={requestClose}>×</button></div>
     <form onSubmit={submit} onChange={markDirty} aria-busy={change.isPending}>
-      <label><span>{t("admin.account.currentPassword")}</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required autoFocus /></label>
+      <label><span>{t("admin.account.currentPassword")}</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required /></label>
       <label><span>{t("admin.account.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
       <label><span>{t("admin.account.confirmPassword")}</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
       {(mismatch || change.isError) && <div className="message error" role="alert">{t(mismatch ? "admin.account.mismatch" : "admin.account.invalid")}</div>}
@@ -55,7 +55,7 @@ export function ResetUserPasswordDialog({ user, onClose }: { user: AdminUser; on
   return <ModalFrame labelledBy="reset-user-password-title" busy={reset.isPending} onClose={requestClose}>
     <div className="modal-title"><div><h2 id="reset-user-password-title">{t("admin.users.resetTitle")}</h2><p>{t("admin.users.resetFor", { name: user.displayName })}</p></div><button type="button" aria-label={t("common.close")} disabled={reset.isPending} onClick={requestClose}>×</button></div>
     <form onSubmit={submit} onChange={markDirty} aria-busy={reset.isPending}>
-      <label><span>{t("admin.account.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required autoFocus /></label>
+      <label><span>{t("admin.account.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
       <label><span>{t("admin.account.confirmPassword")}</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
       {(mismatch || reset.isError) && <div className="message error" role="alert">{t(mismatch ? "admin.account.mismatch" : "admin.account.invalid")}</div>}
       <div className="modal-actions"><button type="button" disabled={reset.isPending} onClick={requestClose}>{t("common.cancel")}</button><button className="primary" disabled={reset.isPending}>{t(reset.isPending ? "admin.account.saving" : "admin.users.resetAction")}</button></div>

@@ -45,11 +45,11 @@ export function FormOptionConfigPage({ locale }: { locale: SupportedLocale }) {
     <section className="table-card">
       <table><thead><tr><th>{t("admin.formOptions.option")}</th><th>{t("admin.formOptions.secondaryLabel")}</th><th>{t("admin.formOptions.order")}</th><th>{t("admin.formOptions.status")}</th><th>{t("admin.formOptions.action")}</th></tr></thead>
         <tbody>{options.data?.map((option) => <tr key={option.id}>
-          <td><div className="voice-config-name"><strong>{locale === "zh-CN" ? option.labelZhCn : option.labelEnUs}</strong><small translate="no">{option.id}</small></div></td>
-          <td>{locale === "zh-CN" ? option.labelEnUs : option.labelZhCn}</td>
-          <td className="numeric">{option.sortOrder}</td>
-          <td><span className={option.enabled ? "status active" : "status inactive"}>{t(option.enabled ? "admin.formOptions.enabled" : "admin.formOptions.disabled")}</span></td>
-          <td><button type="button" onClick={() => { save.reset(); setEditing({ ...option }); }}>{t("admin.formOptions.edit")}</button></td>
+          <td data-label={t("admin.formOptions.option")}><div className="voice-config-name"><strong>{locale === "zh-CN" ? option.labelZhCn : option.labelEnUs}</strong><small translate="no">{option.id}</small></div></td>
+          <td data-label={t("admin.formOptions.secondaryLabel")}>{locale === "zh-CN" ? option.labelEnUs : option.labelZhCn}</td>
+          <td className="numeric" data-label={t("admin.formOptions.order")}>{option.sortOrder}</td>
+          <td data-label={t("admin.formOptions.status")}><span className={option.enabled ? "status active" : "status inactive"}>{t(option.enabled ? "admin.formOptions.enabled" : "admin.formOptions.disabled")}</span></td>
+          <td data-label={t("admin.formOptions.action")}><button type="button" onClick={() => { save.reset(); setEditing({ ...option }); }}>{t("admin.formOptions.edit")}</button></td>
         </tr>)}</tbody>
       </table>
       {!options.isPending && !options.data?.length && <div className="empty">{t("admin.formOptions.empty")}</div>}

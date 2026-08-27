@@ -165,7 +165,7 @@ export function AuditPage({ locale }: { locale: SupportedLocale }) {
           <tbody>
             {events.data?.items.map((event) => (
               <tr key={event.id}>
-                <td>
+                <td data-label={t("admin.audit.actor")}>
                   <div className="user-cell">
                     <img
                       src={`/api/admin/audit-avatar/${encodeURIComponent(event.actorUserId)}?name=${encodeURIComponent(event.actorName)}`}
@@ -180,20 +180,20 @@ export function AuditPage({ locale }: { locale: SupportedLocale }) {
                     </div>
                   </div>
                 </td>
-                <td>
+                <td data-label={t("admin.audit.action")}>
                   <span className="audit-action">
                     {actionLabels.get(event.actionId) ?? event.actionId}
                   </span>
                 </td>
-                <td>
+                <td data-label={t("admin.audit.target")}>
                   <code>{event.targetId ?? "—"}</code>
                 </td>
-                <td>
+                <td data-label={t("admin.audit.time")}>
                   <time dateTime={event.occurredAt}>
                     {formatter.format(new Date(event.occurredAt))}
                   </time>
                 </td>
-                <td>
+                <td data-label={t("admin.audit.request")}>
                   <code title={event.traceId}>
                     {event.traceId.slice(0, 12)}
                   </code>

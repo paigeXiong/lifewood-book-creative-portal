@@ -133,7 +133,7 @@ body {
 .button-secondary { border-color: var(--reference-border-strong); color: var(--ink); }
 .button-secondary:hover:not(:disabled) { border-color: var(--green-700); background: var(--cream); }
 
-.wizard-heading { margin: 0 0 1.1rem; }
+.wizard-heading { margin: 0 0 .75rem; }
 .wizard-heading h1 { color: var(--ink); font-family: var(--lw-font-editorial); font-size: clamp(1.55rem, 2.3vw, 2rem); letter-spacing: -.02em; }
 .wizard-heading p { margin-top: .4rem; color: var(--ink-muted); font-size: .9rem; }
 .step-progress {
@@ -145,8 +145,24 @@ body {
   box-shadow: 0 1px 2px rgba(15, 36, 28, .06);
 }
 .step-progress ol { gap: .5rem; }
-.step-item { gap: .65rem; min-height: 38px; padding: .35rem .5rem; border-radius: 8px; color: var(--ink-faint); font-size: .82rem; }
-.step-item::after { display: none; }
+.step-item { isolation: isolate; gap: .65rem; min-height: 38px; padding: .35rem .5rem; border-radius: 8px; color: var(--ink-faint); font-size: .82rem; }
+.step-item:not(:last-child)::after {
+  display: block;
+  left: calc(.5rem + 14px);
+  right: calc(-1rem - 14px);
+  top: 50%;
+  z-index: 0;
+  height: 2px;
+  background: var(--reference-border-strong);
+}
+.step-item.step-complete:not(:last-child)::after { background: var(--green-700); }
+.step-item > span:last-child {
+  position: relative;
+  z-index: 1;
+  padding-right: .25rem;
+  background: var(--surface);
+}
+.step-current > span:last-child { background: var(--green-50); }
 .step-marker { width: 28px; height: 28px; border: 1.5px solid var(--reference-border-strong); border-radius: 999px; background: var(--surface); color: var(--ink-muted); font-size: .8rem; font-weight: 700; }
 .step-current { background: var(--green-50); color: var(--ink); }
 .step-current .step-marker { border-color: var(--green-900); border-radius: 999px; background: var(--green-900); color: white; clip-path: none; }
@@ -326,9 +342,23 @@ body {
 }
 
 @media (max-width: 680px) {
-  .reference-stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-bottom: 1rem; }
-  .reference-stat-card { padding: .75rem .85rem; }
-  .reference-stat-card strong { font-size: 1.35rem; }
+  .reference-stat-row {
+    display: flex;
+    gap: .4rem;
+    margin-bottom: .75rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .reference-stat-row::-webkit-scrollbar { display: none; }
+  .reference-stat-card {
+    flex: 1 0 5.5rem;
+    min-width: 0;
+    padding: .55rem .65rem;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .reference-stat-card-current-page { display: none; }
+  .reference-stat-card strong { font-size: 1.2rem; }
 }
 
 @media (max-width: 360px) {
@@ -337,7 +367,7 @@ body {
 /* Continuous panel parity */
 .wizard-heading {
   min-height: 0;
-  margin: 0 0 1.25rem;
+  margin: 0 0 .75rem;
   padding: 0;
 }
 .form-stack {
@@ -437,6 +467,26 @@ body {
 .review-summary-rail > * { border: 1px solid var(--reference-border); border-radius: 12px; background: var(--surface); box-shadow: 0 1px 2px rgba(15, 36, 28, .06); }
 .review-summary-rail .submit-notice { margin: 0; }
 .mobile-create-fab { display: none; }
+
+/* Compact hierarchy: reserve visible borders for controls and data separators. */
+.reference-toolbar,
+.reference-table-panel,
+.form-panel,
+.handoff-card,
+.form-stack,
+.review-main-stack,
+.review-summary-rail > * {
+  border-color: transparent;
+  box-shadow: 0 8px 24px -22px rgb(19 48 32 / 55%);
+}
+.step-progress {
+  margin-bottom: 1rem;
+  padding: .65rem .75rem;
+  border-color: transparent;
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 8px 24px -24px rgb(19 48 32 / 55%);
+}
+.wizard-heading p { margin-top: .2rem; }
 
 @media (max-width: 980px) {
   .review-layout { grid-template-columns: 1fr; }
@@ -554,8 +604,8 @@ body {
   .page-list.mobile-create-visible { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
   .mobile-create-fab {
     position: fixed;
-    right: max(1rem, env(safe-area-inset-right));
-    bottom: max(1rem, env(safe-area-inset-bottom));
+    right: calc(1rem + env(safe-area-inset-right));
+    bottom: calc(1rem + env(safe-area-inset-bottom));
     z-index: 24;
     width: 56px;
     height: 56px;
@@ -563,7 +613,7 @@ body {
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 16px;
+    border-radius: 50%;
     background: var(--green-900);
     color: #fff;
     box-shadow: 0 14px 30px -12px rgb(19 48 32 / 65%);
@@ -596,7 +646,7 @@ body {
   .sticky-actions {
     min-height: 64px;
     gap: .4rem;
-    padding: .5rem max(.625rem, env(safe-area-inset-right)) calc(.5rem + env(safe-area-inset-bottom)) max(.625rem, env(safe-area-inset-left));
+    padding: .5rem calc(.625rem + env(safe-area-inset-right)) calc(.5rem + env(safe-area-inset-bottom)) calc(.625rem + env(safe-area-inset-left));
   }
   .sticky-actions > div { gap: .4rem; min-width: 0; }
   .sticky-actions .button { min-height: 44px; }
@@ -606,7 +656,7 @@ body {
   .reference-topbar .brand-text { display: none; }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 600px) {
   .sticky-actions {
     position: static;
     display: grid;
@@ -621,4 +671,29 @@ body {
   }
   .sticky-actions > div .button:last-child:nth-child(odd) { grid-column: 1 / -1; }
   .wizard-page { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 680px) {
+  .wizard-page { padding-top: .55rem; }
+  .wizard-heading { margin-bottom: .55rem; }
+  .wizard-heading h1 { font-size: 1.35rem; }
+  .wizard-heading p { margin-top: .15rem; font-size: .8rem; }
+  .step-progress { margin-bottom: .75rem; padding: .5rem .6rem; }
+  .step-progress ol { display: grid; }
+  .step-compact { display: block; margin-bottom: .4rem; font-size: .72rem; }
+  .step-item { justify-content: center; min-height: 28px; padding: 0; }
+  .step-item > span:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .step-item:not(:last-child)::after {
+    left: calc(50% + 14px);
+    right: calc(-50% - .5rem + 13px);
+    top: 13px;
+  }
+  .step-marker { width: 26px; height: 26px; }
 }

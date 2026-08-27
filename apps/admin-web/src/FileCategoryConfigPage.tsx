@@ -45,11 +45,11 @@ export function FileCategoryConfigPage({ locale }: { locale: SupportedLocale }) 
     <section className="table-card"><table><thead><tr>
       <th>{t("admin.fileCategories.category")}</th><th>{t("admin.fileCategories.constraints")}</th><th>{t("admin.fileCategories.order")}</th><th>{t("admin.fileCategories.status")}</th><th>{t("admin.fileCategories.action")}</th>
     </tr></thead><tbody>{categories.data?.map((category) => <tr key={category.id}>
-      <td><div className="voice-config-name"><strong>{locale === "zh-CN" ? category.labelZhCn : category.labelEnUs}</strong><small translate="no">{category.id}</small></div></td>
-      <td><div className="voice-config-name"><span>{t("admin.fileCategories.limitSummary", { size: category.maxBytes / 1_000_000, count: category.maxFiles })}</span><small translate="no">{category.accept.join(", ")}</small></div></td>
-      <td className="numeric">{category.sortOrder}</td>
-      <td><span className={category.enabled ? "status active" : "status inactive"}>{t(category.enabled ? "admin.formOptions.enabled" : "admin.formOptions.disabled")}</span></td>
-      <td><button type="button" onClick={() => { save.reset(); setEditing({ ...category }); }}>{t("admin.formOptions.edit")}</button></td>
+      <td data-label={t("admin.fileCategories.category")}><div className="voice-config-name"><strong>{locale === "zh-CN" ? category.labelZhCn : category.labelEnUs}</strong><small translate="no">{category.id}</small></div></td>
+      <td data-label={t("admin.fileCategories.constraints")}><div className="voice-config-name"><span>{t("admin.fileCategories.limitSummary", { size: category.maxBytes / 1_000_000, count: category.maxFiles })}</span><small translate="no">{category.accept.join(", ")}</small></div></td>
+      <td className="numeric" data-label={t("admin.fileCategories.order")}>{category.sortOrder}</td>
+      <td data-label={t("admin.fileCategories.status")}><span className={category.enabled ? "status active" : "status inactive"}>{t(category.enabled ? "admin.formOptions.enabled" : "admin.formOptions.disabled")}</span></td>
+      <td data-label={t("admin.fileCategories.action")}><button type="button" onClick={() => { save.reset(); setEditing({ ...category }); }}>{t("admin.formOptions.edit")}</button></td>
     </tr>)}</tbody></table>{!categories.isPending && !categories.data?.length && <div className="empty">{t("admin.fileCategories.empty")}</div>}</section>
     {editing && supportedTypes.data && <FileCategoryDialog supportedTypes={supportedTypes.data} category={editing} busy={save.isPending} error={save.error} onClose={() => { save.reset(); setEditing(undefined); }} onSave={(value) => save.mutate(value)} />}
   </main>;

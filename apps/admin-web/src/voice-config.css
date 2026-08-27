@@ -160,6 +160,22 @@
   gap: 6px;
 }
 
+@media (max-width: 640px) {
+  .voice-audio-cell {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .voice-audio-cell audio {
+    width: min(100%, 18rem);
+  }
+
+  .voice-audio-actions {
+    grid-column: 1;
+    flex-wrap: wrap;
+  }
+}
+
 .compact-action {
   display: inline-flex;
   align-items: center;

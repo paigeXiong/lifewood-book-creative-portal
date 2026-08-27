@@ -83,11 +83,11 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
           </tr></thead>
           <tbody>{organizations.data?.items.map((organization) => (
             <tr key={organization.id}>
-              <td><strong>{organization.name}</strong><small className="identifier">{organization.id}</small></td>
-              <td>{organization.memberCount}</td>
-              <td><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
-              <td>{formatDate(organization.updatedAt, locale)}</td>
-              <td><button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button></td>
+              <td data-label={t("admin.organizations.name")}><strong>{organization.name}</strong><small className="identifier">{organization.id}</small></td>
+              <td data-label={t("admin.organizations.members")}>{organization.memberCount}</td>
+              <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
+              <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>
+              <td data-label={t("admin.organizations.action")}><button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button></td>
             </tr>
           ))}</tbody>
         </table>
@@ -134,7 +134,7 @@ function OrganizationDialog({ organization, busy, error, onClose, onSave }: {
         <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button>
       </div>
       <form onSubmit={submit} onChange={markDirty}>
-        <label><span>{t("admin.organizations.name")}</span><input name="name" defaultValue={organization?.name} minLength={2} maxLength={120} required autoFocus /></label>
+        <label><span>{t("admin.organizations.name")}</span><input name="name" defaultValue={organization?.name} minLength={2} maxLength={120} required /></label>
         {organization && <label className="check-row"><input name="active" type="checkbox" defaultChecked={organization.active} /><span>{t("admin.organizations.enabled")}</span></label>}
         {Boolean(error) && <div className="message error" role="alert">{localizedApiError(error, t)}</div>}
         <div className="modal-actions">

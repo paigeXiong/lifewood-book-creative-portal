@@ -80,9 +80,9 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
       <table>
         <thead><tr><th>{t("admin.voices.reference")}</th><th>{t("admin.voices.tags")}</th><th>{t("admin.voices.audio")}</th><th>{t("admin.voices.order")}</th><th>{t("admin.voices.status")}</th><th>{t("admin.voices.action")}</th></tr></thead>
         <tbody>{voices.data?.map((voice) => <tr key={voice.id}>
-          <td><div className="voice-config-name"><strong>{locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs}</strong><small translate="no">{voice.id}</small></div></td>
-          <td><span className="voice-tags">{voice.tagIds.map((tag) => options.data?.voiceTags.find((item) => item.id === tag)?.label ?? tag).join(" · ") || "—"}</span></td>
-          <td><div className="voice-audio-cell">
+          <td data-label={t("admin.voices.reference")}><div className="voice-config-name"><strong>{locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs}</strong><small translate="no">{voice.id}</small></div></td>
+          <td data-label={t("admin.voices.tags")}><span className="voice-tags">{voice.tagIds.map((tag) => options.data?.voiceTags.find((item) => item.id === tag)?.label ?? tag).join(" · ") || "—"}</span></td>
+          <td data-label={t("admin.voices.audio")}><div className="voice-audio-cell">
             <span className={voice.audioUrl ? "status active" : "status inactive"}>{t(voice.audioUrl ? "admin.voices.audioReady" : "admin.voices.audioEmpty")}</span>
             {voice.audioUrl && <audio controls preload="none" src={`/api/admin/voices/${encodeURIComponent(voice.id)}/sample`} aria-label={`${locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs} · ${t("admin.voices.audio")}`} />}
             <div className="voice-audio-actions">
@@ -93,9 +93,9 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
               {voice.audioUrl && <button type="button" disabled={audioBusy} onClick={() => { if (!window.confirm(t("admin.voices.removeAudioConfirm"))) return; setAudioError(undefined); uploadSample.reset(); removeSample.reset(); removeSample.mutate(voice.id); }}>{t("admin.voices.removeAudio")}</button>}
             </div>
           </div></td>
-          <td className="numeric">{voice.sortOrder}</td>
-          <td><span className={voice.enabled ? "status active" : "status inactive"}>{t(voice.enabled ? "admin.voices.enabled" : "admin.voices.disabled")}</span>{voice.recommended && <span className="status status-confirmed">{t("admin.voices.recommended")}</span>}</td>
-          <td><button type="button" onClick={() => { save.reset(); setEditing({ ...voice, tagIds: [...voice.tagIds] }); }}>{t("admin.voices.edit")}</button></td>
+          <td className="numeric" data-label={t("admin.voices.order")}>{voice.sortOrder}</td>
+          <td data-label={t("admin.voices.status")}><span className={voice.enabled ? "status active" : "status inactive"}>{t(voice.enabled ? "admin.voices.enabled" : "admin.voices.disabled")}</span>{voice.recommended && <span className="status status-confirmed">{t("admin.voices.recommended")}</span>}</td>
+          <td data-label={t("admin.voices.action")}><button type="button" onClick={() => { save.reset(); setEditing({ ...voice, tagIds: [...voice.tagIds] }); }}>{t("admin.voices.edit")}</button></td>
         </tr>)}</tbody>
       </table>
       {!voices.isPending && !voices.data?.length && <div className="empty">{t("admin.voices.empty")}</div>}
