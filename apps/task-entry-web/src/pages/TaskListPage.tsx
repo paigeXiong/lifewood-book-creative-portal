@@ -5,6 +5,11 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 
+function presentValue(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized && normalized !== "—" ? normalized : undefined;
+}
+
 export function TaskListPage() {
   const { t } = useTranslation();
   const { locale } = useParams();
@@ -158,12 +163,18 @@ export function TaskListPage() {
                 const statusId = task.status === "draft" ? task.status : (task.workflowStatus ?? task.status);
                 const statusOption = statusMap.get(statusId);
                 const target = task.status === "draft" ? `/tasks/${task.id}/edit/project` : `/tasks/${task.id}`;
+                const projectTitle = presentValue(task.bookTitle) ?? presentValue(task.projectName) ?? t("tasks.untitledDraft");
+                const projectContext = presentValue(task.clientName) ?? presentValue(task.projectName) ?? t("tasks.pendingInput");
+                const authorName = presentValue(task.authorName) ?? t("tasks.pendingInput");
                 return <tr key={task.id}>
                   <td><Link className="task-identity" to={localizedPath(locale, target)}>
-                    {task.coverUrl ? <img className="list-cover" src={task.coverUrl} alt="" width="40" height="52" loading="lazy" /> : null}
-                    <span><strong>{task.bookTitle || task.projectName}</strong><small>{task.clientName || task.projectName}</small></span>
+                    <span className="list-cover-slot">
+                      <span className="list-cover-pending">{t("tasks.coverPending")}</span>
+                      {task.coverUrl ? <img className="list-cover" src={task.coverUrl} alt="" width="40" height="52" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
+                    </span>
+                    <span><strong>{projectTitle}</strong><small>{projectContext}</small></span>
                   </Link></td>
-                  <td data-label={t("tasks.columns.book")}>{task.authorName || "—"}</td>
+                  <td data-label={t("tasks.columns.book")}>{authorName}</td>
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${statusOption?.tone ?? "neutral"}`}>{statusOption?.label ?? statusId}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
                   <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{task.status === "draft" ? t("tasks.continueEditing") : t("tasks.view")}</Link>{task.status === "draft" && <button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { if (window.confirm(t("tasks.deleteDraftConfirm"))) deleteDraft.mutate({ id: task.id, version: task.version }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t("tasks.deleteDraft")}</button>}</div></td>

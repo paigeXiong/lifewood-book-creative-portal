@@ -124,8 +124,50 @@ body {
 .reference-table-panel .task-table td { height: 68px; padding: .75rem 1rem; border-bottom-color: var(--reference-border); font-size: .88rem; }
 .reference-table-panel .task-table tbody tr:hover { background: #fafcfa; }
 .reference-table-panel .task-identity { gap: .75rem; }
-.reference-table-panel .list-cover { width: 40px; height: 52px; border-radius: 5px; }
+.reference-table-panel .list-cover-slot {
+  position: relative;
+  width: 40px;
+  height: 52px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #edf1ef;
+}
+.reference-table-panel .list-cover-pending {
+  max-width: 3.5em;
+  color: var(--ink-faint);
+  font-size: .58rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+}
+.reference-table-panel .list-cover-slot .list-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+}
 .reference-table-panel .button-small { min-height: 34px; padding-inline: .75rem; font-size: .8rem; }
+@media (min-width: 681px) {
+  .reference-table-panel .task-table th:last-child,
+  .reference-table-panel .task-table td:last-child { width: 18rem; }
+  .reference-table-panel .task-actions {
+    width: 17.25rem;
+    display: grid;
+    grid-template-columns: minmax(9.75rem, 1fr) 7rem;
+    gap: .5rem;
+    margin-left: auto;
+  }
+  .reference-table-panel .task-actions > .button {
+    width: 100%;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .reference-table-panel .task-actions > :only-child { grid-column: 1; }
+}
 .status-badge { padding: .2rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 650; }
 .button { border-radius: 8px; font-weight: 650; }
 .button-primary { background: var(--green-900); box-shadow: none; }
