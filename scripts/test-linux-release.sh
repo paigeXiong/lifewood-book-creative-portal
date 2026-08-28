@@ -7,11 +7,20 @@ command -v curl >/dev/null 2>&1 || { printf 'curl is required.\n' >&2; exit 2; }
 
 temp_root="$(mktemp -d)"
 api_pid=""
-cleanup() {
+stop_api() {
   if [[ -n "$api_pid" ]] && kill -0 "$api_pid" 2>/dev/null; then
-    kill -INT "$api_pid" 2>/dev/null || true
+    kill -TERM "$api_pid" 2>/dev/null || true
+    for _ in {1..20}; do
+      if ! kill -0 "$api_pid" 2>/dev/null; then break; fi
+      sleep 0.25
+    done
+    if kill -0 "$api_pid" 2>/dev/null; then kill -KILL "$api_pid" 2>/dev/null || true; fi
     wait "$api_pid" 2>/dev/null || true
   fi
+  api_pid=""
+}
+cleanup() {
+  stop_api
   rm -rf -- "$temp_root"
 }
 trap cleanup EXIT
@@ -56,9 +65,7 @@ fi
 
 curl --fail --silent --max-time 2 "http://127.0.0.1:$port/zh-CN/tasks" >/dev/null
 curl --fail --silent --max-time 2 "http://127.0.0.1:$port/admin/zh-CN/overview" >/dev/null
-kill -INT "$api_pid"
-wait "$api_pid"
-api_pid=""
+stop_api
 
 [[ -f "$temp_root/smoke-data/platform.db" ]] || { printf 'Smoke run did not create the platform database.\n' >&2; exit 1; }
 printf 'Linux release smoke test passed.\n'
