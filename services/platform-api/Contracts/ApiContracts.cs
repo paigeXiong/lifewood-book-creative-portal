@@ -15,7 +15,8 @@ public sealed record CurrentUserDto(
     string[] Permissions,
     string? Locale,
     string? TimeZone,
-    bool HasCustomAvatar = false);
+    bool HasCustomAvatar = false,
+    string? Phone = null);
 
 public sealed record AuthStatusDto(bool RequiresBootstrap);
 public sealed record CsrfTokenDto(string Token);
@@ -24,10 +25,10 @@ public sealed record LoginRequest(string Email, string Password, bool RememberMe
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ResetPasswordRequest(string NewPassword);
 
-public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? Phone = null);
 public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int PageSize, int Total);
-public sealed record CreateUserRequest(string DisplayName, string Email, string Password, string Role, string? OrganizationId);
-public sealed record UpdateUserRequest(string DisplayName, string Role, bool Active, string? OrganizationId);
+public sealed record CreateUserRequest(string DisplayName, string Email, string Password, string Role, string? OrganizationId, string? Phone = null);
+public sealed record UpdateUserRequest(string DisplayName, string Role, bool Active, string? OrganizationId, string? Phone = null);
 
 public sealed record AdminOrganizationDto(string Id, string Name, bool Active, int MemberCount, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record PagedAdminOrganizationsDto(AdminOrganizationDto[] Items, int Page, int PageSize, int Total);
@@ -321,9 +322,9 @@ public sealed record AdminNoteDto(string Id, string ProjectId, string AuthorUser
 
 public sealed record AdminProjectDetailDto(
     TaskDraftDto Project, string OwnerId, string OwnerName, string OwnerEmail, string WorkflowStatus, string Priority,
-    string? AssigneeUserId, string? AssigneeName, AdminNoteDto[] Notes);
+    string? AssigneeUserId, string? AssigneeName, DateTimeOffset WorkflowUpdatedAt, AdminNoteDto[] Notes);
 
-public sealed record UpdateProjectWorkflowRequest(string WorkflowStatus, string Priority, string? AssigneeUserId);
+public sealed record UpdateProjectWorkflowRequest(string WorkflowStatus, string Priority, string? AssigneeUserId, DateTimeOffset ExpectedWorkflowUpdatedAt);
 
 public sealed record AddAdminNoteRequest(string Body);
 

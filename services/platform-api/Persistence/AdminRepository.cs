@@ -53,7 +53,7 @@ internal sealed class AdminRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT u.id, u.email, u.display_name, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at
+            SELECT u.id, u.email, u.display_name, u.phone, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at
             FROM users u LEFT JOIN organizations o ON o.id = u.organization_id
             WHERE u.is_active = 1 AND u.role IN ('owner', 'admin')
             ORDER BY u.display_name COLLATE NOCASE;
@@ -82,13 +82,13 @@ internal sealed class AdminRepository(string connectionString)
     public PagedAdminUsersDto ListUsers(string? search, string? role, int page, int pageSize)
     {
         using var connection = Open();
-        const string where = "WHERE ($search = '' OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR o.name LIKE '%' || $search || '%' COLLATE NOCASE) AND ($role = '' OR u.role = $role)";
+        const string where = "WHERE ($search = '' OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR u.phone LIKE '%' || $search || '%' COLLATE NOCASE OR o.name LIKE '%' || $search || '%' COLLATE NOCASE) AND ($role = '' OR u.role = $role)";
         using var count = connection.CreateCommand();
         count.CommandText = $"SELECT COUNT(*) FROM users u LEFT JOIN organizations o ON o.id = u.organization_id {where};";
         AddUserFilters(count, search, role);
         var total = Convert.ToInt32(count.ExecuteScalar());
         using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT u.id, u.email, u.display_name, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id {where} ORDER BY u.created_at DESC LIMIT $pageSize OFFSET $offset;";
+        command.CommandText = $"SELECT u.id, u.email, u.display_name, u.phone, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id {where} ORDER BY u.created_at DESC LIMIT $pageSize OFFSET $offset;";
         AddUserFilters(command, search, role);
         command.Parameters.AddWithValue("$pageSize", pageSize);
         command.Parameters.AddWithValue("$offset", (long)(page - 1) * pageSize);
@@ -102,7 +102,7 @@ internal sealed class AdminRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT u.id, u.email, u.display_name, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id WHERE u.id = $id;";
+        command.CommandText = "SELECT u.id, u.email, u.display_name, u.phone, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id WHERE u.id = $id;";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadUser(reader) : null;
@@ -120,6 +120,8 @@ internal sealed class AdminRepository(string connectionString)
         var id = Guid.NewGuid().ToString("N");
         var email = candidateEmail;
         var displayName = request.DisplayName.Trim();
+        var phone = NormalizePhone(request.Phone);
+        if (phone is { Length: > 50 }) return new(AdminWriteOutcome.Invalid, "phone");
         var now = DateTimeOffset.UtcNow;
         var passwordHash = passwordHasher.HashPassword(new PasswordTarget(id), request.Password);
         try
@@ -130,13 +132,14 @@ internal sealed class AdminRepository(string connectionString)
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
-                INSERT INTO users(id, email, normalized_email, display_name, password_hash, role, is_active, organization_id, created_at, updated_at)
-                VALUES ($id, $email, $normalizedEmail, $displayName, $passwordHash, $role, 1, $organizationId, $now, $now);
+                INSERT INTO users(id, email, normalized_email, display_name, phone, password_hash, role, is_active, organization_id, created_at, updated_at)
+                VALUES ($id, $email, $normalizedEmail, $displayName, $phone, $passwordHash, $role, 1, $organizationId, $now, $now);
                 """;
             command.Parameters.AddWithValue("$id", id);
             command.Parameters.AddWithValue("$email", email);
             command.Parameters.AddWithValue("$normalizedEmail", email.ToUpperInvariant());
             command.Parameters.AddWithValue("$displayName", displayName);
+            command.Parameters.AddWithValue("$phone", DbValue(phone));
             command.Parameters.AddWithValue("$passwordHash", passwordHash);
             command.Parameters.AddWithValue("$role", request.Role);
             command.Parameters.AddWithValue("$organizationId", DbValue(request.OrganizationId));
@@ -157,6 +160,8 @@ internal sealed class AdminRepository(string connectionString)
         user = null;
         if (request is null || string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Trim().Length is < 2 or > 100) return new(AdminWriteOutcome.Invalid, "displayName");
         if (!UpdatableRoles.Contains(request.Role)) return new(AdminWriteOutcome.Invalid, "role");
+        var phone = NormalizePhone(request.Phone);
+        if (phone is { Length: > 50 }) return new(AdminWriteOutcome.Invalid, "phone");
         using var connection = Open();
         using var transaction = connection.BeginTransaction(deferred: false);
         using var existing = connection.CreateCommand();
@@ -173,8 +178,9 @@ internal sealed class AdminRepository(string connectionString)
         if (!CanAssignOrganization(connection, transaction, request.OrganizationId, currentOrganizationId)) return new(AdminWriteOutcome.Invalid, "organizationId");
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "UPDATE users SET display_name = $displayName, role = $role, is_active = $active, organization_id = $organizationId, updated_at = $now WHERE id = $id;";
+        command.CommandText = "UPDATE users SET display_name = $displayName, phone = $phone, role = $role, is_active = $active, organization_id = $organizationId, updated_at = $now WHERE id = $id;";
         command.Parameters.AddWithValue("$displayName", request.DisplayName.Trim());
+        command.Parameters.AddWithValue("$phone", DbValue(phone));
         command.Parameters.AddWithValue("$role", request.Role);
         command.Parameters.AddWithValue("$active", request.Active ? 1 : 0);
         command.Parameters.AddWithValue("$organizationId", DbValue(request.OrganizationId));
@@ -222,7 +228,7 @@ internal sealed class AdminRepository(string connectionString)
         command.CommandText = """
             SELECT p.id, p.task_number, p.status, p.version, p.project_json, p.book_json, p.creative_json, p.voice_json,
                    p.created_at, p.updated_at, p.owner_id, u.display_name, u.email, p.workflow_status, p.priority,
-                   p.assignee_user_id, a.display_name
+                   p.assignee_user_id, a.display_name, COALESCE(p.workflow_updated_at, p.updated_at)
             FROM projects p JOIN users u ON u.id = p.owner_id LEFT JOIN users a ON a.id = p.assignee_user_id
             WHERE p.id = $id AND p.status = 'submitted';
             """;
@@ -237,8 +243,9 @@ internal sealed class AdminRepository(string connectionString)
         var priority = reader.GetString(14);
         var assigneeId = reader.IsDBNull(15) ? null : reader.GetString(15);
         var assigneeName = reader.IsDBNull(16) ? null : reader.GetString(16);
+        var workflowUpdatedAt = DateTimeOffset.Parse(reader.GetString(17));
         reader.Close();
-        return new(project, ownerId, ownerName, ownerEmail, workflow, priority, assigneeId, assigneeName, ListNotes(connection, id));
+        return new(project, ownerId, ownerName, ownerEmail, workflow, priority, assigneeId, assigneeName, workflowUpdatedAt, ListNotes(connection, id));
     }
 
     public AdminWriteResult UpdateWorkflow(string id, UpdateProjectWorkflowRequest? request)
@@ -246,21 +253,36 @@ internal sealed class AdminRepository(string connectionString)
         if (request is null || !WorkflowStatuses.Contains(request.WorkflowStatus)) return new(AdminWriteOutcome.Invalid, "workflowStatus");
         if (!Priorities.Contains(request.Priority)) return new(AdminWriteOutcome.Invalid, "priority");
         using var connection = Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
         if (request.AssigneeUserId is not null)
         {
             using var assignee = connection.CreateCommand();
+            assignee.Transaction = transaction;
             assignee.CommandText = "SELECT COUNT(*) FROM users WHERE id = $id AND is_active = 1 AND role IN ('owner', 'admin');";
             assignee.Parameters.AddWithValue("$id", request.AssigneeUserId);
             if (Convert.ToInt32(assignee.ExecuteScalar()) == 0) return new(AdminWriteOutcome.Invalid, "assigneeUserId");
         }
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE projects SET workflow_status = $workflow, priority = $priority, assignee_user_id = $assignee, workflow_updated_at = $now WHERE id = $id AND status = 'submitted';";
+        command.Transaction = transaction;
+        command.CommandText = "UPDATE projects SET workflow_status = $workflow, priority = $priority, assignee_user_id = $assignee, workflow_updated_at = $now WHERE id = $id AND status = 'submitted' AND COALESCE(workflow_updated_at, updated_at) = $expectedWorkflowUpdatedAt;";
         command.Parameters.AddWithValue("$workflow", request.WorkflowStatus);
         command.Parameters.AddWithValue("$priority", request.Priority);
         command.Parameters.AddWithValue("$assignee", (object?)request.AssigneeUserId ?? DBNull.Value);
         command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$expectedWorkflowUpdatedAt", request.ExpectedWorkflowUpdatedAt.ToString("O"));
         command.Parameters.AddWithValue("$id", id);
-        return command.ExecuteNonQuery() == 1 ? new(AdminWriteOutcome.Saved) : new(AdminWriteOutcome.NotFound);
+        if (command.ExecuteNonQuery() == 1)
+        {
+            transaction.Commit();
+            return new(AdminWriteOutcome.Saved);
+        }
+        using var exists = connection.CreateCommand();
+        exists.Transaction = transaction;
+        exists.CommandText = "SELECT COUNT(*) FROM projects WHERE id = $id AND status = 'submitted';";
+        exists.Parameters.AddWithValue("$id", id);
+        return Convert.ToInt32(exists.ExecuteScalar()) == 1
+            ? new(AdminWriteOutcome.Conflict, "workflowUpdatedAt")
+            : new(AdminWriteOutcome.NotFound);
     }
 
     public AdminWriteResult AddNote(string projectId, string authorUserId, AddAdminNoteRequest? request, out AdminNoteDto? note)
@@ -430,10 +452,12 @@ internal sealed class AdminRepository(string connectionString)
             return new(AdminWriteOutcome.Conflict, "name");
         }
     }
-    private static AdminUserDto ReadUser(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4) == 1, reader.IsDBNull(5) ? null : new OrganizationDto(reader.GetString(5), reader.GetString(6)), DateTimeOffset.Parse(reader.GetString(7)), DateTimeOffset.Parse(reader.GetString(8)));
+    private static AdminUserDto ReadUser(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(4), reader.GetInt32(5) == 1, reader.IsDBNull(6) ? null : new OrganizationDto(reader.GetString(6), reader.GetString(7)), DateTimeOffset.Parse(reader.GetString(8)), DateTimeOffset.Parse(reader.GetString(9)), reader.IsDBNull(3) ? null : reader.GetString(3));
     private static AdminOrganizationDto ReadOrganization(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2) == 1, reader.GetInt32(3), DateTimeOffset.Parse(reader.GetString(4)), DateTimeOffset.Parse(reader.GetString(5)));
     private static AdminOrganizationDto? GetOrganization(SqliteConnection connection, string id) { using var command = connection.CreateCommand(); command.CommandText = "SELECT o.id, o.name, o.is_active, COUNT(u.id), o.created_at, o.updated_at FROM organizations o LEFT JOIN users u ON u.organization_id = o.id WHERE o.id = $id GROUP BY o.id, o.name, o.is_active, o.created_at, o.updated_at;"; command.Parameters.AddWithValue("$id", id); using var reader = command.ExecuteReader(); return reader.Read() ? ReadOrganization(reader) : null; }
     private static bool CanAssignOrganization(SqliteConnection connection, SqliteTransaction transaction, string? requestedId, string? currentId) { if (string.IsNullOrWhiteSpace(requestedId)) return true; var id = requestedId.Trim(); using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "SELECT is_active FROM organizations WHERE id = $id;"; command.Parameters.AddWithValue("$id", id); var value = command.ExecuteScalar(); return value is not null && (Convert.ToInt32(value) == 1 || id == currentId); }
+    private static string? NormalizePhone(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static object DbValue(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     private static void AddUserFilters(SqliteCommand command, string? search, string? role) { command.Parameters.AddWithValue("$search", search?.Trim() ?? ""); command.Parameters.AddWithValue("$role", role?.Trim() ?? ""); }
     private static void AddProjectFilters(SqliteCommand command, string? workflow, string? priority, string? search) { command.Parameters.AddWithValue("$workflow", workflow?.Trim() ?? ""); command.Parameters.AddWithValue("$priority", priority?.Trim() ?? ""); command.Parameters.AddWithValue("$search", search?.Trim() ?? ""); }

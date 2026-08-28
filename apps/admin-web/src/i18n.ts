@@ -7,6 +7,7 @@ i18n.addResourceBundle(
     common: { search: "搜索", save: "保存", close: "关闭", cancel: "取消", unsavedConfirm: "尚有未保存的修改，确定关闭吗？" },
     errors: {
       network: { upload: "上传未能完成，请检查网络后重试。", invalidResponse: "服务器返回了无效响应，请重试。" },
+      auth: { bootstrapLocalOnly: "首次初始化只能在服务器本机完成。请在服务器上打开页面，或通过 SSH 端口转发访问。" },
       admin: {
         emailExists: "该邮箱已被其他账号使用。",
         selfDeactivate: "不能停用当前登录账号。",
@@ -19,7 +20,7 @@ i18n.addResourceBundle(
         file: "请选择不超过 500 MB 的 MP4 或 MOV 视频。",
         note: "交付说明不能超过 2000 个字符。",
       },
-      project: { notSubmitted: "只有客户已提交的项目才能交付最终成品。" },
+      project: { notSubmitted: "只有客户已提交的项目才能交付最终成品。", workflowConflict: "其他管理员刚刚更新了跟进信息。请重新载入后再试。" },
     },
     admin: {
       feedback: {
@@ -304,7 +305,7 @@ i18n.addResourceBundle(
         },
       },
       users: {
-        search: "姓名或邮箱",
+        search: "姓名、邮箱或电话",
         allRoles: "全部角色",
         count: "共 {{count}} 个账号",
         roleFilter: "按角色筛选",
@@ -330,6 +331,7 @@ i18n.addResourceBundle(
         empty: "没有符合条件的用户。",
         name: "姓名",
         email: "邮箱",
+        phone: "电话",
         password: "密码",
         confirmPassword: "确认密码",
         passwordHint: "至少 12 个字符；请通过安全渠道交给用户。",
@@ -375,6 +377,7 @@ i18n.addResourceBundle(
     },
     errors: {
       network: { upload: "The upload could not be completed. Check your connection and try again.", invalidResponse: "The server returned an invalid response. Try again." },
+      auth: { bootstrapLocalOnly: "Initial setup can only be completed on the server. Open the page locally or use an SSH port forward." },
       admin: {
         emailExists: "An account already uses this email.",
         selfDeactivate: "You cannot deactivate your own account.",
@@ -390,6 +393,8 @@ i18n.addResourceBundle(
       project: {
         notSubmitted:
           "Only a customer-submitted project can receive a final delivery.",
+        workflowConflict:
+          "Another administrator just updated this workflow. Reload and try again.",
       },
     },
     admin: {
@@ -692,7 +697,7 @@ i18n.addResourceBundle(
         },
       },
       users: {
-        search: "Name or email",
+        search: "Name, email, or phone",
         allRoles: "All roles",
         count: "{{count}} accounts",
         create: "Create user",
@@ -718,6 +723,7 @@ i18n.addResourceBundle(
         empty: "No users match these filters.",
         name: "Name",
         email: "Email",
+        phone: "Phone",
         password: "Password",
         confirmPassword: "Confirm password",
         passwordHint:

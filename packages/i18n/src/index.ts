@@ -103,6 +103,7 @@ const resources = {
           currentPassword: "当前密码不正确。",
           locked: "登录失败次数过多，请 15 分钟后重试。",
           alreadyInitialized: "平台负责人账号已经创建，请直接登录。",
+          bootstrapLocalOnly: "首次初始化只能在服务器本机完成。请在服务器上打开页面，或通过 SSH 端口转发访问。",
           csrf: "安全会话已过期，请刷新页面后重试。",
           fields: {
             displayName: "姓名应为 2 至 100 个字符。",
@@ -115,6 +116,7 @@ const resources = {
           notFound: "项目不存在或无权访问。",
           notEditable: "项目资料已提交，不能再修改。",
           versionConflict: "项目草稿已在别处更新，请重新载入。",
+          workflowConflict: "其他管理员刚刚更新了跟进信息。请重新载入后再试。",
         },
         validation: {
           failed: "部分字段无效，请检查后重试。",
@@ -551,6 +553,8 @@ const resources = {
           locked: "Too many failed sign-in attempts. Try again in 15 minutes.",
           alreadyInitialized:
             "The platform owner account already exists. Sign in instead.",
+          bootstrapLocalOnly:
+            "Initial setup can only be completed on the server. Open the page locally or use an SSH port forward.",
           csrf: "The secure session expired. Refresh the page and try again.",
           fields: {
             displayName: "Use 2 to 100 characters for the name.",
@@ -565,6 +569,8 @@ const resources = {
             "This project package has been submitted and can no longer be changed.",
           versionConflict:
             "This project draft changed elsewhere. Reload it first.",
+          workflowConflict:
+            "Another administrator just updated this workflow. Reload and try again.",
         },
         validation: {
           failed: "Some fields are invalid. Review them and try again.",

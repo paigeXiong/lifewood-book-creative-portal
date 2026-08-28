@@ -27,8 +27,38 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
             builder.UseEnvironment("Development");
             builder.UseSetting("Lifewood:DataDirectory", root);
             builder.UseSetting("Lifewood:RequireWebAssets", "false");
+            builder.ConfigureServices(services => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, LoopbackConnectionStartupFilter>(services));
         });
         ownerClient = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+    }
+
+    [Fact]
+    public async Task BootstrapRejectsNonLoopbackClients()
+    {
+        var remoteRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-remote-bootstrap-" + Guid.NewGuid().ToString("N"));
+        WebApplicationFactory<Program>? remoteFactory = null;
+        try
+        {
+            remoteFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Development");
+                builder.UseSetting("Lifewood:DataDirectory", remoteRoot);
+                builder.UseSetting("Lifewood:RequireWebAssets", "false");
+                builder.ConfigureServices(services => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, RemoteConnectionStartupFilter>(services));
+            });
+            using var client = remoteFactory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+            var csrf = await GetCsrf(client);
+            using var response = await Send(client, HttpMethod.Post, "/api/auth/bootstrap", csrf,
+                JsonContent.Create(new { displayName = "Remote Owner", email = "remote@example.test", password = "remote-password-123" }));
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal("auth.bootstrap_local_only", await ErrorCode(response));
+        }
+        finally
+        {
+            remoteFactory?.Dispose();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(remoteRoot)) Directory.Delete(remoteRoot, recursive: true);
+        }
     }
 
     [Fact]
@@ -290,6 +320,35 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task NewDraftUsesCurrentUserContactAndOrganizationProfile()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+
+        using var organizationResponse = await Send(ownerClient, HttpMethod.Post, "/api/admin/organizations", csrf,
+            JsonContent.Create(new { name = "Lifewood Books" }));
+        Assert.Equal(HttpStatusCode.OK, organizationResponse.StatusCode);
+        using var organization = JsonDocument.Parse(await organizationResponse.Content.ReadAsStringAsync());
+        var organizationId = organization.RootElement.GetProperty("id").GetString();
+
+        using var meResponse = await ownerClient.GetAsync("/api/me");
+        using var me = JsonDocument.Parse(await meResponse.Content.ReadAsStringAsync());
+        var ownerId = me.RootElement.GetProperty("id").GetString();
+
+        using var updateResponse = await Send(ownerClient, HttpMethod.Put, $"/api/admin/users/{ownerId}", csrf,
+            JsonContent.Create(new { displayName = "Test Owner", phone = "+86 138 0000 0000", role = "owner", active = true, organizationId }));
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+
+        using var created = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var draft = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var project = draft.RootElement.GetProperty("project");
+        Assert.Equal("Lifewood Books", project.GetProperty("clientName").GetString());
+        Assert.Equal("Test Owner", project.GetProperty("contactName").GetString());
+        Assert.Equal("owner@example.test", project.GetProperty("email").GetString());
+        Assert.Equal("+86 138 0000 0000", project.GetProperty("phone").GetString());
+    }
+    [Fact]
     public async Task AdministratorWorkflowDoesNotExposeOrMutateCustomerDrafts()
     {
         await BootstrapOwner();
@@ -424,7 +483,7 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
         using var characterUpload = ReferenceRequest(png, "character.png", "image/png", version, "character-reference", characterId);
-        using var uploadResponse = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files", csrf, characterUpload);
+        using var uploadResponse = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files?categoryId=character-reference", csrf, characterUpload);
         Assert.Equal(HttpStatusCode.OK, uploadResponse.StatusCode);
         var uploadedDraft = JsonNode.Parse(await uploadResponse.Content.ReadAsStringAsync())!["draft"]!.AsObject();
         var characterAsset = uploadedDraft["creative"]!["characters"]![0]!["referenceImages"]![0]!;
@@ -437,7 +496,7 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
 
         var webp = "RIFF"u8.ToArray().Concat(new byte[4]).Concat("WEBP"u8.ToArray()).ToArray();
         using var styleUpload = ReferenceRequest(webp, "style.webp", "image/webp", version, "style-reference");
-        using var styleResponse = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files", csrf, styleUpload);
+        using var styleResponse = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files?categoryId=style-reference", csrf, styleUpload);
         Assert.Equal(HttpStatusCode.OK, styleResponse.StatusCode);
         var styleDraft = JsonNode.Parse(await styleResponse.Content.ReadAsStringAsync())!["draft"]!.AsObject();
         var styleFileId = styleDraft["creative"]!["styleReferenceImages"]![0]!["id"]!.GetValue<string>();
@@ -463,6 +522,32 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         using var response = await Send(ownerClient, HttpMethod.Post, "/api/auth/bootstrap", csrf,
             JsonContent.Create(new { displayName = "Test Owner", email = "owner@example.test", password = "owner-password-123" }));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private sealed class LoopbackConnectionStartupFilter : Microsoft.AspNetCore.Hosting.IStartupFilter
+    {
+        public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) => app =>
+        {
+            app.Use(nextMiddleware => async context =>
+            {
+                context.Connection.RemoteIpAddress = IPAddress.Loopback;
+                await nextMiddleware(context);
+            });
+            next(app);
+        };
+    }
+
+    private sealed class RemoteConnectionStartupFilter : Microsoft.AspNetCore.Hosting.IStartupFilter
+    {
+        public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) => app =>
+        {
+            app.Use(nextMiddleware => async context =>
+            {
+                context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.10");
+                await nextMiddleware(context);
+            });
+            next(app);
+        };
     }
 
     private async Task<HttpClient> CreateCustomerClient(string ownerCsrf)

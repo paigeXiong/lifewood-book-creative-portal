@@ -58,7 +58,7 @@ var dataDirectory = string.IsNullOrWhiteSpace(configuredDataDirectory)
 var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db")}";
 var voiceSampleDirectory = Path.Combine(dataDirectory, "voice-samples");
 var voiceSampleLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
-var projectWriteLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
+var projectWriteLocks = new AsyncKeyedLock();
 Directory.CreateDirectory(dataDirectory);
 var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
 using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
@@ -79,9 +79,10 @@ if (!File.Exists(bundledSampleMarker) && Directory.Exists(bundledSampleDirectory
     if (bundledSamples.Length > 0) File.WriteAllText(bundledSampleMarker, DateTimeOffset.UtcNow.ToString("O"));
 }var keyDirectory = Path.Combine(dataDirectory, "data-protection-keys");
 Directory.CreateDirectory(keyDirectory);
-builder.Services.AddDataProtection()
+var dataProtection = builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(keyDirectory))
     .SetApplicationName("Lifewood.BookVideoPlatform");
+if (OperatingSystem.IsWindows()) dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -186,11 +187,16 @@ if (requireWebAssets && (!File.Exists(customerIndex) || !File.Exists(adminIndex)
     throw new InvalidOperationException($"The production web assets are incomplete under {webRoot}. Both customer/index.html and admin/index.html are required.");
 RecoverDraftUploadTombstones(dataDirectory, repository, app.Logger);
 RecoverDeletedReferenceFiles(dataDirectory, repository, app.Logger);
+foreach (var (projectId, deliveryId) in deliveries.ListRevokedFileKeys())
+    DeliveryEndpoints.DeleteDeliveryFiles(dataDirectory, projectId, deliveryId, app.Logger);
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'";
     context.Response.Headers.Append("X-Request-Id", context.TraceIdentifier);
     await next();
 });
@@ -223,6 +229,17 @@ app.Use(async (context, next) =>
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             await context.Response.WriteAsJsonAsync(
                 new ApiErrorDto("auth.csrf", "errors.auth.csrf", "The security token is missing or expired. Refresh and try again.", null, true, context.TraceIdentifier),
+                AppJsonContext.Default.ApiErrorDto);
+        }
+    }
+    catch (BadHttpRequestException exception) when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+    {
+        if (!context.Response.HasStarted)
+        {
+            context.Response.Clear();
+            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            await context.Response.WriteAsJsonAsync(
+                new ApiErrorDto("validation.file", "errors.validation.file", "The uploaded file is larger than this category allows.", null, false, context.TraceIdentifier),
                 AppJsonContext.Default.ApiErrorDto);
         }
     }
@@ -300,6 +317,8 @@ api.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
     Results.Ok(new CsrfTokenDto(antiforgery.GetAndStoreTokens(context).RequestToken!)));
 api.MapPost("/auth/bootstrap", async (BootstrapAccountRequest? request, HttpContext context, UserRepository accounts) =>
 {
+    if (!IsLoopbackRequest(context))
+        return Error(context, 403, "auth.bootstrap_local_only", "errors.auth.bootstrapLocalOnly", "Initial setup must be completed from the server itself.", false);
     if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
     var result = accounts.CreateOwner(request.DisplayName, request.Email, request.Password);
     if (result.Outcome == AccountCreateOutcome.AlreadyInitialized)
@@ -536,6 +555,7 @@ api.MapPut("/admin/projects/{id}/workflow", (string id, UpdateProjectWorkflowReq
     if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     var result = admin.UpdateWorkflow(id, request);
     if (result.Outcome == AdminWriteOutcome.NotFound) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
+    if (result.Outcome == AdminWriteOutcome.Conflict) return Error(context, 409, "project.workflow_conflict", "errors.project.workflowConflict", "The workflow was changed by another administrator. Reload and try again.", true);
     if (result.Outcome != AdminWriteOutcome.Saved) return Error(context, 400, "validation.failed", "errors.validation.failed", "The workflow values are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")]);
     return Results.Ok(admin.GetProject(id));
 });
@@ -832,15 +852,17 @@ api.MapPost("/projects", async (HttpContext context, ProjectRepository projects,
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var gate = projectWriteLocks.GetOrAdd($"{user.Id}:create", static _ => new SemaphoreSlim(1, 1));
-    await gate.WaitAsync(context.RequestAborted);
-    try
+    await using (await projectWriteLocks.AcquireAsync($"{user.Id}:create", context.RequestAborted))
     {
         if (projects.CountDrafts(user.Id) >= limits.MaxDraftsPerUser)
             return Error(context, 409, "project.draft_limit", "errors.project.draftLimit", "Finish or delete an existing draft before creating another one.", false);
-        return Results.Ok(projects.Create(user.Id));
+        return Results.Ok(projects.Create(
+            user.Id,
+            user.Organization?.Name ?? "",
+            user.DisplayName,
+            user.Email ?? "",
+            user.Phone));
     }
-    finally { gate.Release(); }
 });
 
 api.MapGet("/admin/organizations", (HttpContext context, AdminRepository admin, string? search, int page = 1, int pageSize = 20) =>
@@ -897,9 +919,7 @@ api.MapDelete("/projects/{id}", async (string id, int version, HttpContext conte
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
-    await projectWriteLock.WaitAsync(context.RequestAborted);
-    try
+    await using (await projectWriteLocks.AcquireAsync($"{user.Id}:{id}", context.RequestAborted))
     {
 
     var current = projects.Get(user.Id, id);
@@ -936,7 +956,6 @@ api.MapDelete("/projects/{id}", async (string id, int version, HttpContext conte
     }
     return Results.NoContent();
     }
-    finally { projectWriteLock.Release(); }
 });
 api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
@@ -968,9 +987,7 @@ api.MapPut("/projects/{id}/creative", async (string id, SaveCreativeRequest? req
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
-    await projectWriteLock.WaitAsync(context.RequestAborted);
-    try
+    await using (await projectWriteLocks.AcquireAsync($"{user.Id}:{id}", context.RequestAborted))
     {
         var current = projects.Get(user.Id, id);
         if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
@@ -1028,7 +1045,6 @@ api.MapPut("/projects/{id}/creative", async (string id, SaveCreativeRequest? req
             _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: result.CurrentVersion)
         };
     }
-    finally { projectWriteLock.Release(); }
 });
 
 api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndReferencesRequest? request, HttpContext context, ProjectRepository projects, VoiceReferenceRepository voices, FormOptionRepository options, FileCategoryRepository fileCategories) =>
@@ -1106,22 +1122,28 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
-    await projectWriteLock.WaitAsync(context.RequestAborted);
-    try
+    await using (await projectWriteLocks.AcquireAsync($"{user.Id}:{id}", context.RequestAborted))
     {
     var project = projects.Get(user.Id, id);
     if (project is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
     if (project.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false);
     if (!context.Request.HasFormContentType) return Error(context, 400, "validation.failed", "errors.validation.failed", "A multipart form is required.", false);
+    var requestedCategoryId = context.Request.Query["categoryId"].ToString();
+    var definition = categories.FindEnabled(requestedCategoryId);
+    var category = definition?.Category;
+    if (definition is null || category is null)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "The file category is invalid.", false);
+    var multipartLimit = Math.Min(501_000_000, checked(category.MaxBytes + 1_000_000));
+    var requestSizeFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (requestSizeFeature is { IsReadOnly: false }) requestSizeFeature.MaxRequestBodySize = multipartLimit;
+    if (context.Request.ContentLength is > 0 && context.Request.ContentLength > multipartLimit)
+        return Error(context, 413, "validation.file", "errors.validation.file", "The file is larger than this category allows.", false);
     var form = await context.Request.ReadFormAsync(context.RequestAborted);
     var categoryId = form["categoryId"].ToString();
     var characterId = form["characterId"].ToString();
     if (!int.TryParse(form["version"].ToString(), out var version)) return Error(context, 400, "validation.failed", "errors.validation.failed", "The draft version is required.", false);
-    var definition = categories.FindEnabled(categoryId);
-    var category = definition?.Category;
     var file = form.Files.GetFile("file");
-    if (definition is null || category is null || file is null || file.Length <= 0)
+    if (!categoryId.Equals(requestedCategoryId, StringComparison.Ordinal) || file is null || file.Length <= 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The file or category is invalid.", false);
     var contentType = NormalizeContentType(file.ContentType, file.FileName);
     if (project.Version != version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before uploading.", false, currentVersion: project.Version);
@@ -1163,27 +1185,28 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     var path = Path.Combine(folder, $"{fileId}_{safeName}");
     try
     {
-        await using var output = File.Create(path);
-        await file.CopyToAsync(output, context.RequestAborted);
+        await using (var output = File.Create(path))
+        {
+            await file.CopyToAsync(output, context.RequestAborted);
+        }
+        context.RequestAborted.ThrowIfCancellationRequested();
+        var asset = new ReferenceAssetDto(fileId, categoryId, safeName, contentType, file.Length, $"/api/projects/{id}/files/{fileId}");
+        var result = projects.AddAsset(user.Id, id, version, asset, target, string.IsNullOrWhiteSpace(characterId) ? null : characterId);
+        if (result.Outcome == SaveOutcome.Saved) return Results.Ok(new UploadReferenceResultDto(result.Draft!, asset));
+        File.Delete(path);
+        return result.Outcome switch
+        {
+            SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
+            SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: result.CurrentVersion),
+            _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before uploading.", false, currentVersion: result.CurrentVersion)
+        };
     }
     catch
     {
         if (File.Exists(path)) File.Delete(path);
         throw;
     }
-    context.RequestAborted.ThrowIfCancellationRequested();
-    var asset = new ReferenceAssetDto(fileId, categoryId, safeName, contentType, file.Length, $"/api/projects/{id}/files/{fileId}");
-    var result = projects.AddAsset(user.Id, id, version, asset, target, string.IsNullOrWhiteSpace(characterId) ? null : characterId);
-    if (result.Outcome == SaveOutcome.Saved) return Results.Ok(new UploadReferenceResultDto(result.Draft!, asset));
-    File.Delete(path);
-    return result.Outcome switch
-    {
-        SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
-        SaveOutcome.NotEditable => Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: result.CurrentVersion),
-        _ => Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before uploading.", false, currentVersion: result.CurrentVersion)
-    };
     }
-    finally { projectWriteLock.Release(); }
 }).DisableAntiforgery();
 
 api.MapGet("/projects/{id}/files/{fileId}", (string id, string fileId, HttpContext context, ProjectRepository projects) =>
@@ -1207,9 +1230,7 @@ api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, 
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
-    var projectWriteLock = projectWriteLocks.GetOrAdd($"{user.Id}:{id}", static _ => new SemaphoreSlim(1, 1));
-    await projectWriteLock.WaitAsync(context.RequestAborted);
-    try
+    await using (await projectWriteLocks.AcquireAsync($"{user.Id}:{id}", context.RequestAborted))
     {
         var project = projects.Get(user.Id, id);
         if (project is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
@@ -1244,7 +1265,6 @@ api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, 
         }
         return Results.Ok(result.Draft);
     }
-    finally { projectWriteLock.Release(); }
 });
 if (File.Exists(adminIndex))
 {
@@ -1291,6 +1311,15 @@ static Task SignIn(HttpContext context, CurrentUserDto user, bool persistent)
     return context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
 }
 static bool Can(CurrentUserDto user, string permission) => user.Permissions.Contains(permission, StringComparer.Ordinal);
+
+static bool IsLoopbackRequest(HttpContext context)
+{
+    if (context.Request.Headers.ContainsKey("Forwarded") ||
+        context.Request.Headers.ContainsKey("X-Forwarded-For") ||
+        context.Request.Headers.ContainsKey("X-Original-For")) return false;
+    var address = context.Connection.RemoteIpAddress;
+    return address is not null && System.Net.IPAddress.IsLoopback(address);
+}
 static string Locale(HttpContext context)
 {
     var value = context.Request.Headers.AcceptLanguage.ToString();

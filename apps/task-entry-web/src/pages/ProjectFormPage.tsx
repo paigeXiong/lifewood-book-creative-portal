@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
-import type { ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
+import type { CurrentUser, ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
 import { Field } from "../components/Field";
 import { ChoiceField } from "../components/ChoiceField";
 import { EditableSelect, preserveEditableSelection } from "../components/EditableSelect";
@@ -112,6 +112,7 @@ export function ProjectFormPage() {
     enabled: Boolean(taskId),
   });
   const optionsQuery = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
+  const currentUser = queryClient.getQueryData<CurrentUser>(["current-user"]);
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -130,14 +131,16 @@ export function ProjectFormPage() {
     const draft = draftQuery.data;
     if (!draft || form.formState.isDirty) return;
     form.reset({
-      clientName: draft.project.clientName, contactName: draft.project.contactName, email: draft.project.email,
-      phone: draft.project.phone ?? "", brandId: draft.project.brandId ?? "", projectName: draft.project.projectName,
+      clientName: draft.project.clientName || currentUser?.organization?.name || "",
+      contactName: draft.project.contactName || currentUser?.displayName || "",
+      email: draft.project.email || currentUser?.email || "",
+      phone: draft.project.phone || currentUser?.phone || "", brandId: draft.project.brandId ?? "", projectName: draft.project.projectName,
       videoGoalId: draft.project.videoGoalId ?? "", deadline: draft.project.deadline ?? "", audienceIds: draft.project.audienceIds,
       title: draft.book.title, subtitle: draft.book.subtitle ?? "", authorName: draft.book.authorName, genreId: draft.book.genreId ?? "",
       sellingPoint: draft.book.sellingPoint, synopsis: draft.book.synopsis, contentLanguageId: draft.book.contentLanguageId ?? "",
       videoDurationId: draft.book.videoDurationId ?? "", customVideoDuration: draft.book.customVideoDuration ?? "", publishingPlatformIds: draft.book.publishingPlatformIds,
     });
-  }, [draftQuery.data, form, form.formState.isDirty]);
+  }, [currentUser, draftQuery.data, form, form.formState.isDirty]);
 
   useEffect(() => {
     const dirty = form.formState.isDirty;

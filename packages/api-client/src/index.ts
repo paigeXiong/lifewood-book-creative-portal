@@ -197,7 +197,7 @@ export const projectService = {
     body.append("categoryId", categoryId);
     if (characterId) body.append("characterId", characterId);
     body.append("file", file);
-    return request<UploadReferenceResult>(`/projects/${encodeURIComponent(projectId)}/files`, { method: "POST", locale, body, signal });
+    return request<UploadReferenceResult>(`/projects/${encodeURIComponent(projectId)}/files?categoryId=${encodeURIComponent(categoryId)}`, { method: "POST", locale, body, signal });
   },
   deleteAsset: (projectId: string, fileId: string, version: number, locale: SupportedLocale) =>
     request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}?version=${version}`, { method: "DELETE", locale }),
@@ -330,8 +330,8 @@ export const adminService = {
     return request<PagedResult<AdminProjectSummary>>(`/admin/projects?${query}`);
   },
   getProject: (id: string) => request<AdminProjectDetail>(`/admin/projects/${encodeURIComponent(id)}`),
-  updateWorkflow: (id: string, workflowStatus: WorkflowStatus, priority: ProjectPriority, assigneeUserId?: string) =>
-    request<AdminProjectDetail>(`/admin/projects/${encodeURIComponent(id)}/workflow`, { method: "PUT", body: JSON.stringify({ workflowStatus, priority, assigneeUserId: assigneeUserId || null }) }),
+  updateWorkflow: (id: string, workflowStatus: WorkflowStatus, priority: ProjectPriority, expectedWorkflowUpdatedAt: string, assigneeUserId?: string) =>
+    request<AdminProjectDetail>(`/admin/projects/${encodeURIComponent(id)}/workflow`, { method: "PUT", body: JSON.stringify({ workflowStatus, priority, assigneeUserId: assigneeUserId || null, expectedWorkflowUpdatedAt }) }),
   addNote: (id: string, body: string) =>
     request(`/admin/projects/${encodeURIComponent(id)}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
   listDeliveries: (id: string) => request<FinalDelivery[]>(`/admin/projects/${encodeURIComponent(id)}/deliveries`),
@@ -350,9 +350,9 @@ export const adminService = {
     if (role) query.set("role", role);
     return request<PagedResult<AdminUser>>(`/admin/users?${query}`);
   },
-  createUser: (account: { displayName: string; email: string; password: string; role: "customer" | "admin"; organizationId?: string }) =>
+  createUser: (account: { displayName: string; email: string; phone?: string; password: string; role: "customer" | "admin"; organizationId?: string }) =>
     request<AdminUser>("/admin/users", { method: "POST", body: JSON.stringify(account) }),
-  updateUser: (id: string, account: { displayName: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) =>
+  updateUser: (id: string, account: { displayName: string; phone?: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) =>
     request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(account) }),
   resetUserPassword: (id: string, newPassword: string) =>
     request<void>(`/admin/users/${encodeURIComponent(id)}/password`, { method: "PUT", body: JSON.stringify({ newPassword }) }),

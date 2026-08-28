@@ -116,7 +116,7 @@ describe("API client", () => {
 
     const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
     const body = options.body as FormData;
-    expect(url).toBe("/api/projects/project%2F1/files");
+    expect(url).toBe("/api/projects/project%2F1/files?categoryId=character-reference");
     expect(options.method).toBe("POST");
     expect(body.get("version")).toBe("4");
     expect(body.get("categoryId")).toBe("character-reference");

@@ -87,8 +87,12 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Equal(1, listed.Total);
         Assert.Equal(submitted.Id, Assert.Single(listed.Items).Id);
         Assert.Null(admin.GetProject(draft.Id));
-        Assert.Equal(AdminWriteOutcome.NotFound, admin.UpdateWorkflow(draft.Id, new("contacting", "normal", null)).Outcome);
+        Assert.Equal(AdminWriteOutcome.NotFound, admin.UpdateWorkflow(draft.Id, new("contacting", "normal", null, DateTimeOffset.UtcNow)).Outcome);
         Assert.Equal(AdminWriteOutcome.NotFound, admin.AddNote(draft.Id, owner.Id, new("Must not be added"), out _).Outcome);
+
+        var workflow = Assert.IsType<AdminProjectDetailDto>(admin.GetProject(submitted.Id));
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateWorkflow(submitted.Id, new("confirmed", "high", owner.Id, workflow.WorkflowUpdatedAt)).Outcome);
+        Assert.Equal(AdminWriteOutcome.Conflict, admin.UpdateWorkflow(submitted.Id, new("contacting", "normal", null, workflow.WorkflowUpdatedAt)).Outcome);
     }
 
     [Fact]
@@ -171,13 +175,15 @@ public sealed class PersistenceIntegrationTests : IDisposable
 
         Assert.Equal(AdminWriteOutcome.Saved, admin.CreateOrganization(new("Lifewood Books"), out var organizationResult).Outcome);
         var organization = Assert.IsType<AdminOrganizationDto>(organizationResult);
-        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateUser(owner.Id, new("Owner", "owner", true, organization.Id), out var updatedOwner).Outcome);
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateUser(owner.Id, new("Owner", "owner", true, organization.Id, "+86 138 0000 0000"), out var updatedOwner).Outcome);
         Assert.Equal(organization.Id, Assert.IsType<AdminUserDto>(updatedOwner).Organization?.Id);
+        Assert.Equal("+86 138 0000 0000", updatedOwner.Phone);
 
-        Assert.Equal(AdminWriteOutcome.Saved, admin.CreateUser(new("Reader", "reader@example.test", "customer-password-123", "customer", organization.Id), out var createdUser).Outcome);
+        Assert.Equal(AdminWriteOutcome.Saved, admin.CreateUser(new("Reader", "reader@example.test", "customer-password-123", "customer", organization.Id, "+1 555 0100"), out var createdUser).Outcome);
         var customer = Assert.IsType<AdminUserDto>(createdUser);
         Assert.Equal("Lifewood Books", customer.Organization?.Name);
         Assert.Equal("Lifewood Books", users.Authenticate("reader@example.test", "customer-password-123").User?.Organization?.Name);
+        Assert.Equal("+1 555 0100", users.Authenticate("reader@example.test", "customer-password-123").User?.Phone);
         Assert.Equal(2, Assert.Single(admin.ListOrganizations("Lifewood", 1, 20).Items).MemberCount);
         Assert.Equal(customer.Id, Assert.Single(admin.ListUsers("Lifewood Books", null, 1, 20).Items, item => item.Role == "customer").Id);
 
@@ -222,6 +228,7 @@ public sealed class PersistenceIntegrationTests : IDisposable
         new UserRepository(ConnectionString, root).Initialize();
 
         Assert.True(HasColumn("users", "organization_id"));
+        Assert.True(HasColumn("users", "phone"));
         Assert.Equal(3L, ScalarLong("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'trg_%organization%';"));
         Execute("INSERT INTO organizations(id, name, normalized_name, is_active, created_at, updated_at) VALUES ('org-legacy', 'Legacy Org', 'LEGACY ORG', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');");
         Execute("UPDATE users SET organization_id = 'org-legacy' WHERE id = 'legacy-user';");
@@ -334,6 +341,54 @@ public sealed class PersistenceIntegrationTests : IDisposable
         var restored = Assert.IsType<CurrentUserDto>(users.RemoveAvatar(owner.Id));
         Assert.False(restored.HasCustomAvatar);
         Assert.False(File.Exists(Path.Combine(avatarDirectory, currentFile)));
+    }
+
+    [Fact]
+    public async Task AsyncKeyedLockReleasesUnusedKeys()
+    {
+        var keyedLock = new AsyncKeyedLock();
+        var first = await keyedLock.AcquireAsync("shared-project", CancellationToken.None);
+        var waiting = keyedLock.AcquireAsync("shared-project", CancellationToken.None).AsTask();
+        await Task.Yield();
+        Assert.False(waiting.IsCompleted);
+
+        var independent = await keyedLock.AcquireAsync("other-project", CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        await independent.DisposeAsync();
+
+        using (var cancellation = new CancellationTokenSource())
+        {
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => keyedLock.AcquireAsync("shared-project", cancellation.Token).AsTask());
+        }
+        Assert.Equal(1, keyedLock.Count);
+
+        await first.DisposeAsync();
+        var second = await waiting.WaitAsync(TimeSpan.FromSeconds(1));
+        await second.DisposeAsync();
+        await second.DisposeAsync();
+        Assert.Equal(0, keyedLock.Count);
+
+        for (var index = 0; index < 100; index++)
+        {
+            await using var lease = await keyedLock.AcquireAsync($"project-{index}", CancellationToken.None);
+        }
+        Assert.Equal(0, keyedLock.Count);
+    }
+
+    [Fact]
+    public void RevokedDeliveryCleanupDeletesOnlyTheTargetPhysicalFile()
+    {
+        var folder = Path.Combine(root, "deliveries", "project-1");
+        Directory.CreateDirectory(folder);
+        var revoked = Path.Combine(folder, "delivery-1_final.mp4");
+        var retained = Path.Combine(folder, "delivery-2_final.mp4");
+        File.WriteAllBytes(revoked, [1, 2, 3]);
+        File.WriteAllBytes(retained, [4, 5, 6]);
+
+        DeliveryEndpoints.DeleteDeliveryFiles(root, "project-1", "delivery-1", Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+
+        Assert.False(File.Exists(revoked));
+        Assert.True(File.Exists(retained));
     }
 
     [Fact]

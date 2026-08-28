@@ -57,7 +57,7 @@
                       Type="ownProcess"
                       Start="auto"
                       ErrorControl="normal"
-                      Account="NT AUTHORITY\LocalService"
+                      Account="NT SERVICE\LifewoodBookCreativePortal"
                       Arguments='--urls http://127.0.0.1:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot; --Lifewood:AllowInsecureHttp true'>
         <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="none" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
       </ServiceInstall>
@@ -67,7 +67,7 @@
 
     <Component Id="PersistentDataDirectory" Directory="DATAFOLDER" Guid="F7EEB036-DA44-4201-9F1D-D4321F46B37D" Bitness="always64" Permanent="yes" NeverOverwrite="yes">
       <CreateFolder>
-        <util:PermissionEx User="NT AUTHORITY\LOCAL SERVICE" GenericAll="yes" />
+        <util:PermissionEx User="NT SERVICE\LifewoodBookCreativePortal" GenericRead="yes" GenericWrite="yes" Delete="yes" />
       </CreateFolder>
       <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="DataDirectory" Type="string" Value="[DATAFOLDER]" KeyPath="yes" />
       <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Installed" Type="integer" Value="1" />

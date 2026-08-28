@@ -6,6 +6,7 @@ export interface CurrentUser {
   displayName: string;
   avatarUrl?: string;
   email?: string;
+  phone?: string;
   organization?: { id: string; name: string };
   roles: string[];
   permissions: string[];
@@ -223,6 +224,7 @@ export interface AdminUser {
   id: string;
   email: string;
   displayName: string;
+  phone?: string;
   role: AdminRole;
   active: boolean;
   organization?: { id: string; name: string };
@@ -315,6 +317,7 @@ export interface AdminProjectDetail {
   priority: ProjectPriority;
   assigneeUserId?: string;
   assigneeName?: string;
+  workflowUpdatedAt: string;
   notes: AdminNote[];
 }
 export interface TaskDraft {

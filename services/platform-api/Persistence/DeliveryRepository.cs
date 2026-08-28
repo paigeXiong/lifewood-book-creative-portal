@@ -60,6 +60,17 @@ internal sealed class DeliveryRepository(string connectionString)
         return [.. items];
     }
 
+    public (string ProjectId, string DeliveryId)[] ListRevokedFileKeys()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT project_id, id FROM project_deliveries WHERE revoked_at IS NOT NULL;";
+        using var reader = command.ExecuteReader();
+        var items = new List<(string ProjectId, string DeliveryId)>();
+        while (reader.Read()) items.Add((reader.GetString(0), reader.GetString(1)));
+        return [.. items];
+    }
+
     public FinalDeliveryDto? Find(string projectId, string deliveryId)
     {
         using var connection = Open();

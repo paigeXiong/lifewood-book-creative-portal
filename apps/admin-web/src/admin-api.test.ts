@@ -46,12 +46,12 @@ describe("administrator API client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ token: "csrf-admin" }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ workflowStatus: "confirmed", priority: "urgent" }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    await adminService.updateWorkflow("project-1", "confirmed", "urgent", "admin-1");
+    await adminService.updateWorkflow("project-1", "confirmed", "urgent", "2026-08-28T06:00:00.0000000+00:00", "admin-1");
     const request = fetchMock.mock.calls[1];
     const options = request[1] as RequestInit;
     expect(options.method).toBe("PUT");
     expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-admin");
-    expect(JSON.parse(String(options.body))).toEqual({ workflowStatus: "confirmed", priority: "urgent", assigneeUserId: "admin-1" });
+    expect(JSON.parse(String(options.body))).toEqual({ workflowStatus: "confirmed", priority: "urgent", assigneeUserId: "admin-1", expectedWorkflowUpdatedAt: "2026-08-28T06:00:00.0000000+00:00" });
   });
 
   it("withdraws a delivery with CSRF protection", async () => {
@@ -99,10 +99,10 @@ describe("administrator API client", () => {
     expect(options.method).toBe("POST");
     expect(JSON.parse(String(options.body))).toEqual({ name: "Lifewood Books" });
 
-    await adminService.updateUser("customer-1", { displayName: "Reader", role: "customer", active: true, organizationId: "org-1" });
+    await adminService.updateUser("customer-1", { displayName: "Reader", phone: "+86 138 0000 0000", role: "customer", active: true, organizationId: "org-1" });
     [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
     expect(url).toBe("/api/admin/users/customer-1");
-    expect(JSON.parse(String(options.body))).toMatchObject({ organizationId: "org-1" });
+    expect(JSON.parse(String(options.body))).toMatchObject({ organizationId: "org-1", phone: "+86 138 0000 0000" });
   });
 
   it("saves bilingual form options with CSRF protection", async () => {

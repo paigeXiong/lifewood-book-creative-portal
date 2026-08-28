@@ -50,7 +50,10 @@ foreach ($candidate in $PackagePath) {
     Assert-True ($service.Count -eq 1 -and $service[0][0].Contains('--Lifewood:DataDirectory "[DATAFOLDER]."')) "Service does not use a quote-safe persistent data property in $resolved"
 
     $serviceAccount = @(Read-MsiRows $database "SELECT StartName FROM ServiceInstall WHERE Name='LifewoodBookCreativePortal'")
-    Assert-True ($serviceAccount.Count -eq 1 -and $serviceAccount[0][0] -eq 'NT AUTHORITY\LocalService') "Service does not run as LocalService in $resolved"
+    Assert-True ($serviceAccount.Count -eq 1 -and $serviceAccount[0][0] -eq 'NT SERVICE\LifewoodBookCreativePortal') "Service does not run under its dedicated virtual account in $resolved"
+
+    $dataAcl = @(Read-MsiRows $database "SELECT * FROM Wix4SecureObject")
+    Assert-True ($dataAcl.Count -eq 1 -and $dataAcl[0][0] -eq 'DATAFOLDER' -and $dataAcl[0][1] -eq 'CreateFolder' -and $dataAcl[0][3] -eq 'NT SERVICE\LifewoodBookCreativePortal' -and $dataAcl[0][5] -eq '-1073676288') "Persistent data ACL does not grant the dedicated service account generic read, generic write, and delete in $resolved"
 
     $registry = @(Read-MsiRows $database "SELECT Value FROM Registry WHERE Name='DataDirectory' AND Component_='PersistentDataDirectory'")
     Assert-True ($registry.Count -eq 1 -and $registry[0][0] -eq '[DATAFOLDER]') "Persistent data path is not recorded in $resolved"

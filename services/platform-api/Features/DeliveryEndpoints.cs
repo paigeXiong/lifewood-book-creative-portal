@@ -85,16 +85,17 @@ internal static class DeliveryEndpoints
             }
         }).DisableAntiforgery();
 
-        api.MapDelete("/admin/projects/{id}/deliveries/{deliveryId}", (string id, string deliveryId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
+        api.MapDelete("/admin/projects/{id}/deliveries/{deliveryId}", (string id, string deliveryId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries, ILoggerFactory loggerFactory) =>
         {
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
             if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
             if (admin.GetProject(id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
             var result = deliveries.Revoke(id, deliveryId);
-            return result.Outcome == AdminWriteOutcome.Saved
-                ? Results.NoContent()
-                : Error(context, 404, "delivery.not_found", "admin.delivery.notFound", "The delivery was not found.");
+            if (result.Outcome != AdminWriteOutcome.Saved)
+                return Error(context, 404, "delivery.not_found", "admin.delivery.notFound", "The delivery was not found.");
+            DeleteDeliveryFiles(dataDirectory, id, deliveryId, loggerFactory.CreateLogger("DeliveryCleanup"));
+            return Results.NoContent();
         });
         api.MapGet("/admin/projects/{id}/deliveries/{deliveryId}/file", (string id, string deliveryId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
         {
@@ -136,6 +137,24 @@ internal static class DeliveryEndpoints
         return path is null
             ? Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.")
             : Results.File(path, delivery.ContentType, delivery.FileName, enableRangeProcessing: true);
+    }
+
+    internal static void DeleteDeliveryFiles(string dataDirectory, string projectId, string deliveryId, ILogger logger)
+    {
+        var folder = Path.Combine(dataDirectory, "deliveries", projectId);
+        if (!Directory.Exists(folder)) return;
+        string[] paths;
+        try { paths = [.. Directory.EnumerateFiles(folder, $"{deliveryId}_*")]; }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Could not enumerate revoked delivery files for {DeliveryId}; cleanup will retry on restart", deliveryId);
+            return;
+        }
+        foreach (var path in paths)
+        {
+            try { File.Delete(path); }
+            catch (Exception exception) { logger.LogWarning(exception, "Revoked delivery file {DeliveryId} will be cleaned on restart", deliveryId); }
+        }
     }
 
     private static CurrentUserDto? CurrentUser(HttpContext context)

@@ -135,12 +135,12 @@ internal sealed class ProjectRepository(string connectionString)
         return new PagedProjectsDto(rows.Select(ToSummary).ToArray(), page, pageSize, total);
     }
 
-    public TaskDraftDto Create(string ownerId)
+    public TaskDraftDto Create(string ownerId, string clientName = "", string contactName = "", string email = "", string? phone = null)
     {
         var now = DateTimeOffset.UtcNow;
         var draft = new TaskDraftDto(
             Guid.NewGuid().ToString("N"), null, "draft", 1,
-            new ProjectInfoDto("", "", "", null, null, "", null, null, []),
+            new ProjectInfoDto(clientName, contactName, email, phone, null, "", null, null, []),
             new BookInfoDto("", null, "", null, "", "", null, null, [], []),
             EmptyCreative(),
             EmptyVoiceAndReferences(),

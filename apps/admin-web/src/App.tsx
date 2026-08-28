@@ -560,6 +560,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
         selectedId!,
         value.workflowStatus,
         value.priority,
+        detail.data!.workflowUpdatedAt,
         value.assigneeUserId,
       ),
     onSuccess: async () => {
@@ -1178,16 +1179,18 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
     mutationFn: ({
       id,
       displayName,
+      phone,
       role,
       active,
       organizationId,
     }: {
       id: string;
       displayName: string;
+      phone?: string;
       role: "owner" | "customer" | "admin";
       active: boolean;
       organizationId?: string;
-    }) => adminService.updateUser(id, { displayName, role, active, organizationId }),
+    }) => adminService.updateUser(id, { displayName, phone, role, active, organizationId }),
     onSuccess: async () => {
       setEditUser(undefined);
       showAdminToast(t("admin.feedback.userUpdated"));
@@ -1286,7 +1289,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                     />
                     <div>
                       <strong>{user.displayName}</strong>
-                      <small>{user.email}</small>
+                      <small>{user.email}{user.phone ? ` · ${user.phone}` : ""}</small>
                     </div>
                   </div>
                 </td>
@@ -1332,6 +1335,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                           update.mutate({
                             id: user.id,
                             displayName: user.displayName,
+                            phone: user.phone,
                             role: user.role,
                             active: !user.active,
                             organizationId: user.organization?.id,
@@ -1424,6 +1428,7 @@ function CreateUserDialog({
   onCreate: (value: {
     displayName: string;
     email: string;
+    phone?: string;
     password: string;
     role: "customer" | "admin";
     organizationId?: string;
@@ -1437,6 +1442,7 @@ function CreateUserDialog({
     onCreate({
       displayName: String(data.get("displayName")),
       email: String(data.get("email")),
+      phone: String(data.get("phone") ?? "").trim() || undefined,
       password: String(data.get("password")),
       role: String(data.get("role")) as "customer" | "admin",
       organizationId: String(data.get("organizationId") ?? "") || undefined,
@@ -1471,6 +1477,10 @@ function CreateUserDialog({
             maxLength={254}
             required
           />
+        </label>
+        <label>
+          <span>{t("admin.users.phone")}</span>
+          <input name="phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={50} />
         </label>
         <label>
           <span>{t("admin.users.password")}</span>
@@ -1523,7 +1533,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
   busy: boolean;
   error: unknown;
   onClose: () => void;
-  onSave: (value: { id: string; displayName: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) => void;
+  onSave: (value: { id: string; displayName: string; phone?: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) => void;
 }) {
   const { t } = useTranslation();
   const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
@@ -1533,6 +1543,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
     onSave({
       id: user.id,
       displayName: String(data.get("displayName") ?? ""),
+      phone: String(data.get("phone") ?? "").trim() || undefined,
       role: user.role === "owner" ? "owner" : String(data.get("role")) as "customer" | "admin",
       active: user.role === "owner" || data.get("active") === "on",
       organizationId: String(data.get("organizationId") ?? "") || undefined,
@@ -1548,6 +1559,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
       <form onSubmit={submit} onChange={markDirty}>
         <label><span>{t("admin.users.name")}</span><input name="displayName" defaultValue={user.displayName} minLength={2} maxLength={100} required /></label>
         <label><span>{t("admin.users.email")}</span><input value={user.email} readOnly aria-readonly="true" /></label>
+        <label><span>{t("admin.users.phone")}</span><input name="phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={50} defaultValue={user.phone ?? ""} /></label>
         <label>
           <span>{t("admin.users.role")}</span>
           {user.role === "owner" ? <input value={t("admin.roles.owner")} readOnly aria-readonly="true" /> : (

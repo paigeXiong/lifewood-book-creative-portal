@@ -42,6 +42,7 @@ internal sealed class UserRepository
                 email TEXT NOT NULL,
                 normalized_email TEXT NOT NULL UNIQUE,
                 display_name TEXT NOT NULL,
+                phone TEXT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL,
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
@@ -58,6 +59,7 @@ internal sealed class UserRepository
         command.ExecuteNonQuery();
         if (!HasColumn(connection, "users", "session_version")) Execute(connection, "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0;");
         if (!HasColumn(connection, "users", "avatar_file_name")) Execute(connection, "ALTER TABLE users ADD COLUMN avatar_file_name TEXT NULL;");
+        if (!HasColumn(connection, "users", "phone")) Execute(connection, "ALTER TABLE users ADD COLUMN phone TEXT NULL;");
         OrganizationSchema.Ensure(connection);
         CleanupAvatarDirectory(connection);
     }
@@ -178,7 +180,7 @@ internal sealed class UserRepository
             : null;
         UpdateLoginState(connection, transaction, account.Id, 0, null, replacementHash);
         transaction.Commit();
-        return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role, account.AvatarFileName, account.OrganizationId, account.OrganizationName));
+        return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role, account.AvatarFileName, account.OrganizationId, account.OrganizationName, account.Phone));
     }
 
     public CurrentUserDto? Get(string id, int? sessionVersion = null)
@@ -186,7 +188,7 @@ internal sealed class UserRepository
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT u.id, u.email, u.display_name, u.role, u.avatar_file_name, o.id, o.name
+            SELECT u.id, u.email, u.display_name, u.role, u.avatar_file_name, o.id, o.name, u.phone
             FROM users u
             LEFT JOIN organizations o ON o.id = u.organization_id
             WHERE u.id = $id AND u.is_active = 1 AND ($sessionVersion IS NULL OR u.session_version = $sessionVersion);
@@ -194,7 +196,7 @@ internal sealed class UserRepository
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$sessionVersion", sessionVersion is null ? DBNull.Value : sessionVersion.Value);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6)) : null;
+        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7)) : null;
     }
 
     public StoredAvatar? OpenAvatar(string id)
@@ -360,7 +362,7 @@ internal sealed class UserRepository
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.failed_attempts, u.locked_until, u.is_active, u.avatar_file_name, o.id, o.name
+            SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.failed_attempts, u.locked_until, u.is_active, u.avatar_file_name, o.id, o.name, u.phone
             FROM users u
             LEFT JOIN organizations o ON o.id = u.organization_id
             WHERE u.normalized_email = $email;
@@ -370,7 +372,7 @@ internal sealed class UserRepository
         if (!reader.Read()) return null;
         return new StoredAccount(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5),
             reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt32(7) == 1, reader.IsDBNull(8) ? null : reader.GetString(8),
-            reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10));
+            reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11));
     }
 
     private static void UpdateLoginState(SqliteConnection connection, SqliteTransaction transaction, string id, int attempts, DateTimeOffset? lockedUntil, string? passwordHash)
@@ -403,7 +405,7 @@ internal sealed class UserRepository
 
     private static string NormalizeEmail(string value) => value.Trim().ToUpperInvariant();
     private static bool IsValidEmail(string value) => MailAddress.TryCreate(value.Trim(), out var address) && address.Address.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase);
-    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role, string? avatarFileName, string? organizationId, string? organizationName)
+    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role, string? avatarFileName, string? organizationId, string? organizationName, string? phone = null)
     {
         var permissions = role switch
         {
@@ -413,7 +415,7 @@ internal sealed class UserRepository
         };
         var avatarVersion = avatarFileName ?? id;
         var organization = organizationId is not null && organizationName is not null ? new OrganizationDto(organizationId, organizationName) : null;
-        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(avatarVersion)}", email, organization, [role], permissions, null, null, avatarFileName is not null);
+        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(avatarVersion)}", email, organization, [role], permissions, null, null, avatarFileName is not null, phone);
     }
 
     private static bool ValidNewPassword(string password) => !string.IsNullOrEmpty(password) && password.Length is >= 12 and <= 128;
@@ -435,7 +437,7 @@ internal sealed class UserRepository
     private static void Execute(SqliteConnection connection, string sql)
     { using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
     private sealed record AccountPasswordTarget(string Id);
-    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active, string? AvatarFileName, string? OrganizationId, string? OrganizationName);
+    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active, string? AvatarFileName, string? OrganizationId, string? OrganizationName, string? Phone);
     public PasswordUpdateResult ChangePassword(string id, string currentPassword, string newPassword)
     {
         if (string.IsNullOrEmpty(currentPassword) || currentPassword.Length > 128) return new(PasswordUpdateOutcome.Invalid, "currentPassword");
