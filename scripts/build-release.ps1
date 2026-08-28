@@ -28,12 +28,21 @@ $stagingRoot = Join-Path $artifactsRoot "release-staging"
 $archive = $null
 $hash = $null
 
-# Capture source provenance before any build tool can create or update generated files.
-$revision = (& git -C $repositoryRoot rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revision)) { throw "A Git revision is required for a reproducible release." }
-$statusLines = @(& git -C $repositoryRoot status --porcelain=v1 --untracked-files=all)
-if ($LASTEXITCODE -ne 0) { throw "Git status is required to determine release provenance." }
-$sourceState = if ($statusLines.Count -eq 0) { "clean" } else { "dirty" }
+# Capture source provenance before this script runs build tools. CI may provide a
+# clean-checkout snapshot captured before earlier verification steps ran.
+$currentRevision = (& git -C $repositoryRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($currentRevision)) { throw "A Git revision is required for a reproducible release." }
+$revision = if ([string]::IsNullOrWhiteSpace($env:RELEASE_SOURCE_REVISION)) { $currentRevision } else { $env:RELEASE_SOURCE_REVISION.Trim() }
+if ($revision -ne $currentRevision) { throw "RELEASE_SOURCE_REVISION does not match the checked-out Git revision." }
+if ([string]::IsNullOrWhiteSpace($env:RELEASE_SOURCE_STATE)) {
+    $statusLines = @(& git -C $repositoryRoot status --porcelain=v1 --untracked-files=all)
+    if ($LASTEXITCODE -ne 0) { throw "Git status is required to determine release provenance." }
+    $sourceState = if ($statusLines.Count -eq 0) { "clean" } else { "dirty" }
+}
+else {
+    $sourceState = $env:RELEASE_SOURCE_STATE.Trim().ToLowerInvariant()
+    if ($sourceState -notin @("clean", "dirty")) { throw "RELEASE_SOURCE_STATE must be clean or dirty." }
+}
 $epochText = if ([string]::IsNullOrWhiteSpace($env:SOURCE_DATE_EPOCH)) { (& git -C $repositoryRoot show -s --format=%ct HEAD).Trim() } else { $env:SOURCE_DATE_EPOCH.Trim() }
 $epoch = 0L
 if (-not [long]::TryParse($epochText, [ref]$epoch)) { throw "SOURCE_DATE_EPOCH must be a Unix timestamp." }
