@@ -1,6 +1,6 @@
 {
   "name": "@lifewood/admin-web",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,10 +9,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lifewood/api-client": "0.2.2",
-    "@lifewood/domain": "0.2.2",
-    "@lifewood/i18n": "0.2.2",
-    "@lifewood/ui": "0.2.2",
+    "@lifewood/api-client": "0.3.0",
+    "@lifewood/domain": "0.3.0",
+    "@lifewood/i18n": "0.3.0",
+    "@lifewood/ui": "0.3.0",
     "@tanstack/react-query": "^5.87.1",
     "i18next": "^25.5.2",
     "react": "^19.1.1",

@@ -1,52 +1,95 @@
-# 发布就绪检查
+---
+meta:
+  contentType: How-to
+  title: 验证并发布平台
+  navLabel: 发布就绪
+  category: 部署
+---
 
-## 一次性验证
+# 验证并发布平台
+
+本页说明如何验证代码、生成 Windows 与 Linux 发布包，并确认正式上线所需的外部配置。只有自动化检查和人工检查都通过后才能向客户开放。
+
+## 运行完整代码验证
 
 在仓库根目录运行：
 
-~~~powershell
+```powershell
 npm run verify
 npm run publish:aot
 npm run smoke:aot
-~~~
+```
 
-以上命令依次验证客户前端、管理中心、平台 API、生产构建、Native AOT 编译以及真实 AOT 可执行程序中的建号、Cookie 会话、CSRF、管理员写操作和审计查询。
+这些命令验证两套前端、平台 API、生产构建和 Windows x64 Native AOT 可执行程序。验证范围包括建号、Cookie 会话、跨站请求伪造（CSRF）防护、管理员写操作和审计查询。
 
-GitHub 的 .github/workflows/verify.yml 会在 main 推送和 Pull Request 上执行相同等级的验证，并上传 Windows x64 正式发布包。
+## 检查 GitHub Actions
 
-## 生成正式发布包
+推送 `main` 或创建 Pull Request 后，确认以下任务通过：
 
-Windows 用户可双击根目录的 build-release.bat，或运行：
+- **Windows verify**：单元测试、端到端测试、Windows x64 Native AOT 冒烟和可复现发布包
+- **Linux x64**：安装器安全检查、systemd 单元验证、Native AOT 发布包和运行冒烟
+- **Linux arm64**：与 Linux x64 相同的原生架构验证
 
-~~~powershell
+不要在 Linux 矩阵尚未完成时把本机 Bash 语法检查当作实机验证。
+
+## 生成 Windows 发布包
+
+双击根目录的 `build-release.bat`，或运行：
+
+```powershell
 npm run build:release
-~~~
+```
 
-输出位于 artifacts/release/：
+脚本在 `artifacts/release/` 生成以下文件：
 
-- lifewood-book-creative-portal-win-x64-*.zip
-- 同名 .sha256 校验文件
+- `lifewood-book-creative-portal-win-x64-revision.zip`
+- 对应的 `.sha256` 校验文件
 
-压缩包结构：
+压缩包包含客户门户、管理中心、Windows x64 API 和 `release-manifest.json`。文件名使用提交短标识；脏工作区产物会增加 `dirty` 和内容指纹。
 
-- customer/：客户门户静态文件，部署到 /。
-- admin/：管理中心静态文件，部署到 /admin/。
-- api/：Windows x64 Native AOT 平台 API。
-- release-manifest.json：提交版本、运行时和路径信息。
+需要 Windows 安装界面时，双击 `build-installer.bat` 或运行 `npm run build:msi`。覆盖安装不得删除 `C:\ProgramData\Lifewood\BookCreativePortal\data` 或安装时选择的其他生产数据目录。
 
-文件名包含 Git 提交短标识。干净工作区使用提交标识；存在未提交改动时会明确增加 `dirty` 与发布内容指纹，清单也会记录 `sourceState` 和 `contentId`，避免把本地产物误标成干净提交。同一来源状态、运行时和前后端产物会使用提交时间作为固定时间戳，按与系统语言无关的稳定顺序生成相同字节与 SHA256；需要指定其他可复现时间时可设置 `SOURCE_DATE_EPOCH`。
+## 生成 Linux 发布包
 
-脚本会自动清理暂存目录、剥离调试符号，并拒绝包含测试控制台、开发日志、开发数据库、源码、环境文件、备份文件、源码映射或本地服务状态文件的发布内容。
+在目标 CPU 架构的 Linux 构建机运行：
 
-## 上线前仍需人工确认
+```bash
+npm ci
+npm run build:linux
+```
 
-代码验证通过不代表业务与基础设施决策已经完成。正式上线前仍需确认：
+脚本按当前架构生成 `linux-x64` 或 `linux-arm64` 的 `.tar.gz` 与 SHA256 文件。Native AOT 不支持使用本脚本跨架构编译。
 
-- 正式 HTTPS 域名、TLS 终止代理和 Network:TrustedProxies；
-- 组织与账号共享边界；
-- 授权确认形式；
-- 最终文件限制和大文件传输方式；
-- 正式字体授权；
-- 备份存储、加密和恢复演练责任人。
+解压后运行中英文安装向导：
 
-完整业务决策清单见 [产品需求第 21 节](./product-requirements.md#21-待确认事项)。
+```bash
+sudo ./linux/install.sh --lang zh-CN
+```
+
+安装器只替换程序与托管配置。覆盖安装保留生产数据，并在启动检查失败时恢复旧程序、配置和服务状态。
+
+## 检查发布包内容
+
+发布脚本必须拒绝以下内容：
+
+- 测试控制台和测试账号
+- 开发日志、开发数据库和本地服务状态
+- 源码、源码映射和临时构建目录
+- 环境文件、备份文件和生产数据
+
+发布包必须包含前端静态文件、Native AOT API、提交标识、运行时标识和 SHA256 校验文件。
+
+## 完成上线前人工检查
+
+正式开放前确认：
+
+1. 配置 HTTPS 域名、传输层安全协议（TLS）终止代理和 `Network:TrustedProxies`
+2. 创建首个真实管理员账号，确认发布物不含默认密码
+3. 确认组织与账号共享边界
+4. 确认授权形式、文件限制和大文件上传方式
+5. 确认正式字体授权
+6. 设置受控且加密的备份存储
+7. 完成一次数据库、附件、最终成品和数据保护密钥的恢复演练
+8. 使用手机和桌面设备检查中文、英文、上传、提交和最终成品下载
+
+部署路径、覆盖安装和恢复步骤见 [正式部署与数据备份](./deployment-and-backup.md)。业务决策见 [产品需求](./product-requirements.md#21-待确认事项)。

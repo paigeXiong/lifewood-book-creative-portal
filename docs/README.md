@@ -29,9 +29,9 @@ npm run stop:local
 1. [产品需求](./product-requirements.md)：范围、用户、字段、流程、状态和验收标准。
 2. [技术架构](./technical-architecture.md)：React 前端、API 适配层、正式平台服务及 Native AOT 限制。
 3. [UI 设计规范](./ui-design-specification.md)：品牌化项目资料提交体验、紧凑布局、组件和 i18n 规则。
-4. [开发准备与实施基线](./development-readiness.md)：仓库结构、路由、API、组件清单和第一轮顺序。
+4. [当前实现与继续开发基线](./development-readiness.md)：已交付范围、仓库结构、工程约束和继续开发优先级。
 5. [正式部署与数据备份](./deployment-and-backup.md)：同域路由、Native AOT 发布、数据目录、备份和恢复要求。
-6. [发布就绪检查](./release-readiness.md)：一键验证、真实 AOT 冒烟、CI、正式发布包和上线前人工确认项。
+6. [验证并发布平台](./release-readiness.md)：Windows 与 Linux 验证、Native AOT 发布包和上线前人工检查。
 
 ## 设计研究与参考
 

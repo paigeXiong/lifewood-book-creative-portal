@@ -1,0 +1,25 @@
+[Unit]
+Description=Lifewood Book Creative Portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lifewood-portal
+Group=lifewood-portal
+EnvironmentFile=-/etc/lifewood-book-portal/custom.env
+EnvironmentFile=/etc/lifewood-book-portal/portal.env
+WorkingDirectory=/opt/lifewood-book-portal/api
+ExecStart=/opt/lifewood-book-portal/api/Lifewood.PlatformApi
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

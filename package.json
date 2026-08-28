@@ -1,7 +1,7 @@
 {
   "name": "lifewood-task-platform",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.3.0",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -21,6 +21,7 @@
     "publish:aot": "dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-local",
     "smoke:aot": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-local",
     "build:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1",
+    "build:linux": "bash scripts/build-linux-release.sh",
     "build:msi": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-msi.ps1"
   },
   "engines": {

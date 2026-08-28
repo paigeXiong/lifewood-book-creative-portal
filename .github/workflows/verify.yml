@@ -50,3 +50,69 @@ jobs:
             artifacts/release/*.zip
             artifacts/release/*.sha256
           if-no-files-found: error
+
+  linux-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            runtime: linux-x64
+          - runner: ubuntu-24.04-arm
+            runtime: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Native AOT prerequisites
+        run: sudo apt-get update
+      - name: Install compiler dependencies
+        run: sudo apt-get install -y clang zlib1g-dev
+      - run: npm ci
+      - name: Validate Linux scripts
+        run: bash -n linux/install.sh scripts/build-linux-release.sh scripts/test-linux-installer.sh scripts/test-linux-installer-transaction.sh scripts/test-linux-release.sh
+      - name: Test Linux installer safety checks
+        run: bash scripts/test-linux-installer.sh
+      - name: Test failed first-install rollback and retry
+        run: sudo env CI=true LIFEWOOD_ALLOW_DESTRUCTIVE_INSTALLER_TEST=1 bash scripts/test-linux-installer-transaction.sh
+      - name: Build reproducible Linux Native AOT release
+        shell: bash
+        run: |
+          bash scripts/build-linux-release.sh "${{ matrix.runtime }}"
+          archive="$(find artifacts/release -maxdepth 1 -name "lifewood-book-creative-portal-${{ matrix.runtime }}-*.tar.gz" -print -quit)"
+          first_hash="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          bash scripts/build-linux-release.sh "${{ matrix.runtime }}"
+          second_hash="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          test "$first_hash" = "$second_hash"
+      - name: Verify systemd unit
+        run: |
+          sudo groupadd --system lifewood-portal
+          sudo useradd --system --gid lifewood-portal --home-dir /var/lib/lifewood-book-portal --shell /usr/sbin/nologin lifewood-portal
+          sudo install -d /opt/lifewood-book-portal/api
+          sudo install -d /etc/lifewood-book-portal
+          sudo install -m 0755 /bin/true /opt/lifewood-book-portal/api/Lifewood.PlatformApi
+          sudo install -m 0600 /dev/null /etc/lifewood-book-portal/portal.env
+          systemd-analyze verify linux/lifewood-book-portal.service
+          sudo rm -f /opt/lifewood-book-portal/api/Lifewood.PlatformApi
+          sudo rm -f /etc/lifewood-book-portal/portal.env
+          sudo rmdir /opt/lifewood-book-portal/api
+          sudo rmdir /opt/lifewood-book-portal
+          sudo rmdir /etc/lifewood-book-portal
+          sudo userdel lifewood-portal
+          sudo groupdel lifewood-portal
+      - name: Smoke-test packaged Linux service
+        run: bash scripts/test-linux-release.sh "$(find artifacts/release -maxdepth 1 -name 'lifewood-book-creative-portal-${{ matrix.runtime }}-*.tar.gz' -print -quit)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lifewood-${{ matrix.runtime }}
+          path: |
+            artifacts/release/*.tar.gz
+            artifacts/release/*.tar.gz.sha256
+          if-no-files-found: error

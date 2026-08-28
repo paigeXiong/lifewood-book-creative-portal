@@ -10,6 +10,28 @@ function presentValue(value: string | null | undefined) {
   return normalized && normalized !== "—" ? normalized : undefined;
 }
 
+export function ProjectCover({ coverUrl, pendingLabel }: { coverUrl?: string | null; pendingLabel: string }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const hasUsableCover = Boolean(coverUrl) && failedUrl !== coverUrl;
+
+  return (
+    <span className="list-cover-slot">
+      {!hasUsableCover ? <span className="list-cover-pending" aria-hidden="true">{pendingLabel}</span> : null}
+      {hasUsableCover && coverUrl ? (
+        <img
+          className="list-cover"
+          src={coverUrl}
+          alt=""
+          width="40"
+          height="52"
+          loading="lazy"
+          onError={() => setFailedUrl(coverUrl)}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 export function TaskListPage() {
   const { t } = useTranslation();
   const { locale } = useParams();
@@ -168,10 +190,7 @@ export function TaskListPage() {
                 const authorName = presentValue(task.authorName) ?? t("tasks.pendingInput");
                 return <tr key={task.id}>
                   <td><Link className="task-identity" to={localizedPath(locale, target)}>
-                    <span className="list-cover-slot">
-                      <span className="list-cover-pending">{t("tasks.coverPending")}</span>
-                      {task.coverUrl ? <img className="list-cover" src={task.coverUrl} alt="" width="40" height="52" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /> : null}
-                    </span>
+                    <ProjectCover coverUrl={task.coverUrl} pendingLabel={t("tasks.coverPending")} />
                     <span><strong>{projectTitle}</strong><small>{projectContext}</small></span>
                   </Link></td>
                   <td data-label={t("tasks.columns.book")}>{authorName}</td>

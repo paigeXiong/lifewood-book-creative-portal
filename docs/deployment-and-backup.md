@@ -38,6 +38,55 @@ MSI 的直连模式只监听 `127.0.0.1`，适用于本机操作或由同机 HTT
 
 管理中心生产包已使用 /admin/ 作为资源和路由基址。本地开发仍使用独立的 5174 端口。
 
+## Linux 安装与配置
+
+Linux 正式包是对应架构的 Native AOT `tar.gz`，支持 `linux-x64` 和 `linux-arm64`，但必须在相同 CPU 架构的 Linux 主机上构建。Native AOT 不通过本脚本跨架构编译。构建机需要 Node.js 22、.NET 10 SDK、Clang、zlib 开发包、GNU tar 和 sha256sum：
+
+    npm ci
+    npm run build:linux
+
+脚本默认根据当前 Linux 主机架构选择 `linux-x64` 或 `linux-arm64`。也可以显式指定并校验目标架构，例如：
+
+    npm run build:linux -- linux-arm64
+
+解压发布包后运行：
+
+    tar -xzf lifewood-book-creative-portal-linux-x64-*.tar.gz
+    sudo ./linux/install.sh --lang zh-CN
+
+安装器优先使用 `dialog`，其次使用 `whiptail`；两者都没有时使用普通终端问答。配置内容包括本机监听端口、生产数据目录和 HTTPS 反向代理 IP。服务器自动部署可以使用无人值守参数：
+
+    sudo ./linux/install.sh \
+      --non-interactive \
+      --lang zh-CN \
+      --port 5077 \
+      --data-dir /var/lib/lifewood-book-portal \
+      --trusted-proxy 127.0.0.1
+
+安装后的固定路径：
+
+- `/opt/lifewood-book-portal`：程序与两套前端静态资源；
+- `/etc/lifewood-book-portal/portal.env`：仅 root 可读的运行配置；
+- `/etc/lifewood-book-portal/custom.env`：可选的高级环境变量覆盖文件；
+- `/var/lib/lifewood-book-portal`：默认生产数据目录；
+- `/etc/systemd/system/lifewood-book-portal.service`：systemd 服务。
+
+重新配置端口或可信代理时运行：
+
+    sudo lifewood-portal-configure --lang zh-CN
+
+首次安装后，生产数据目录会被锁定。覆盖安装如果找不到原配置中的数据目录记录会直接中止；命令行不能把升级重定向到新的空目录。安装器先暂存并校验新程序，停止旧服务后切换版本，再通过 `/api/health` 检查启动结果；失败时恢复上一版程序和配置。首次启动已经写入数据库或文件时，即使启动检查失败，安装器也会保留数据目录记录，确保重试继续使用同一份数据。整个过程不会删除生产数据目录。
+
+常用运维命令：
+
+    systemctl status lifewood-book-portal.service
+    journalctl -u lifewood-book-portal.service -f
+    sudo systemctl restart lifewood-book-portal.service
+
+服务仅监听 `127.0.0.1`，不得直接暴露到公网。使用 Nginx、Caddy 或其他 HTTPS 反向代理，并把代理实际连接 API 时使用的 IP 配置为可信代理。`dialog`、`whiptail` 和安装器只负责配置，不负责签发 TLS 证书或自动修改现有反向代理。
+
+容量限制等高级设置写入 `/etc/lifewood-book-portal/custom.env`，然后重启服务。安装器管理的 `portal.env` 在后加载，因此自定义文件不能覆盖监听地址、数据目录、Web 根目录和基础安全开关；覆盖安装不会修改 `custom.env`。
+
 ## 服务要求
 
 - 只让反向代理对公网开放，API 监听本机或内网地址。
@@ -59,9 +108,23 @@ MSI 的直连模式只监听 `127.0.0.1`，适用于本机操作或由同机 HTT
 
 ## 备份
 
-API 运行期间会独占 data/platform.lock；备份脚本也会持有同一锁，因此即使服务不是由本地启动脚本启动，也不会在数据仍被写入时生成备份。
+API 运行期间会独占 `data/platform.lock`。任何平台的备份都必须覆盖整个生产数据目录，并确保服务在归档期间不能写入；只复制 `platform.db` 会丢失附件、最终成品和登录 Cookie 密钥。
 
-先停止平台，再双击根目录的 backup-platform.bat。备份默认写入 backups/，该目录不会提交到 Git。正式环境设置 `Lifewood__DataDirectory` 后，脚本会自动备份同一目录；也可传入 `-DataDirectory` 和 `-Destination` 指定路径。
+### Windows
+
+先停止平台，再双击根目录的 `backup-platform.bat`。备份脚本会持有与 API 相同的锁；备份默认写入 `backups/`，该目录不会提交到 Git。正式环境设置 `Lifewood__DataDirectory` 后，脚本会自动备份同一目录；也可传入 `-DataDirectory` 和 `-Destination` 指定路径。
+
+### Linux
+
+先从 `/etc/lifewood-book-portal/portal.env` 确认实际的 `Lifewood__DataDirectory`。默认数据目录可按以下方式一致性备份：
+
+    sudo install -d -m 0700 /var/backups/lifewood-book-portal
+    sudo systemctl stop lifewood-book-portal.service
+    sudo tar --one-file-system --acls --xattrs -C /var/lib -czf /var/backups/lifewood-book-portal/portal-data.tar.gz lifewood-book-portal
+    sudo systemctl start lifewood-book-portal.service
+    curl --fail http://127.0.0.1:5077/api/health
+
+若使用自定义数据目录，必须相应调整 `tar` 的 `-C` 父目录和最后一个目录名。不要在服务仍运行时直接打包，也不要把备份写入生产数据目录内部。备份命令失败时仍须立即重新启动服务并检查日志。
 
 备份包同时包含：
 
@@ -74,9 +137,20 @@ API 运行期间会独占 data/platform.lock；备份脚本也会持有同一锁
 
 ## 恢复演练
 
+Windows：
+
 1. 停止平台服务。
-2. 执行 `restore-platform.bat 备份文件.zip -Replace`。脚本会先为当前数据创建安全备份，再完整替换 data/；不要手动混合两个备份中的文件。
-4. 启动 API，检查 /api/health、登录、项目附件和最终成品下载。
-5. 确认无误后再开放客户访问。
+2. 执行 `restore-platform.bat 备份文件.zip -Replace`。脚本会先为当前数据创建安全备份，再完整替换 `data/`；不要手动混合两个备份中的文件。
+3. 启动 API，检查 `/api/health`、登录、项目附件和最终成品下载。
+4. 确认无误后再开放客户访问。
+
+Linux：
+
+1. 在隔离主机解压备份并确认根目录结构、`platform.db`、附件和数据保护密钥完整；不要直接把未知归档解压到生产目录。
+2. 停止 `lifewood-book-portal.service`，再次归档当前生产数据作为即时回退副本。
+3. 在与生产数据相同的文件系统中准备恢复目录，完整替换数据目录，不要混合两个版本中的文件。
+4. 把恢复目录及内容的所有者设置为 `lifewood-portal:lifewood-portal`，目录权限不高于 `0750`，然后启动服务。
+5. 检查 `/api/health`、登录、项目附件和最终成品下载；失败时停止服务并完整恢复即时回退副本。
+6. 确认无误后再开放客户访问。
 
 至少每季度执行一次恢复演练；只有实际恢复成功的备份才算可用备份。

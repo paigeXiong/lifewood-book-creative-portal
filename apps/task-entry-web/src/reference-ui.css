@@ -151,7 +151,7 @@ body {
   border-radius: 5px;
 }
 .reference-table-panel .button-small { min-height: 34px; padding-inline: .75rem; font-size: .8rem; }
-@media (min-width: 681px) {
+@media (min-width: 1100px) {
   .reference-table-panel .task-table th:last-child,
   .reference-table-panel .task-table td:last-child { width: 18rem; }
   .reference-table-panel .task-actions {
