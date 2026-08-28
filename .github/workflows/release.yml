@@ -1,0 +1,92 @@
+name: Release packages
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture clean release source
+        shell: pwsh
+        run: |
+          $status = @(git status --porcelain=v1 --untracked-files=all)
+          if ($LASTEXITCODE -ne 0 -or $status.Count -ne 0) { throw "Release checkout is not clean: $($status -join ', ')" }
+          "RELEASE_SOURCE_REVISION=$((git rev-parse HEAD).Trim())" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_SOURCE_STATE=clean" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: npm ci
+      - run: npm run build:web
+      - run: npm run build:admin
+      - run: dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-release
+      - shell: powershell
+        run: ./scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-release
+      - name: Build reproducible Windows package
+        shell: powershell
+        run: |
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-release
+          $revision = (git rev-parse HEAD).Substring(0, 12)
+          $archive = Get-Item "artifacts/release/lifewood-book-creative-portal-win-x64-$revision.zip"
+          $firstHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-release
+          $secondHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
+          if ($firstHash -ne $secondHash) { throw "Release package is not reproducible." }
+      - name: Upload Windows package to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem -LiteralPath artifacts/release -File | Where-Object { $_.Name -like '*.zip' -or $_.Name -like '*.zip.sha256' }
+          if ($files.Count -ne 2) { throw "Expected one Windows archive and checksum, found $($files.Count)." }
+          gh release upload $env:GITHUB_REF_NAME @($files.FullName) --clobber
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed." }
+
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            runtime: linux-x64
+          - runner: ubuntu-24.04-arm
+            runtime: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Native AOT prerequisites
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - run: npm ci
+      - name: Build reproducible Linux package
+        shell: bash
+        run: |
+          bash scripts/build-linux-release.sh "${{ matrix.runtime }}"
+          archive="$(find artifacts/release -maxdepth 1 -name "lifewood-book-creative-portal-${{ matrix.runtime }}-*.tar.gz" -print -quit)"
+          first_hash="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          bash scripts/build-linux-release.sh "${{ matrix.runtime }}"
+          second_hash="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          test "$first_hash" = "$second_hash"
+          bash scripts/test-linux-release.sh "$archive"
+      - name: Upload Linux package to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" artifacts/release/*.tar.gz artifacts/release/*.tar.gz.sha256 --clobber

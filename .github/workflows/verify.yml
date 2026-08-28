@@ -50,13 +50,6 @@ jobs:
           $secondHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
           if ($firstHash -ne $secondHash) { throw "Release package is not reproducible." }
           if (Test-Path artifacts/release-staging) { throw "Release staging directory was not cleaned." }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lifewood-win-x64
-          path: |
-            artifacts/release/*.zip
-            artifacts/release/*.sha256
-          if-no-files-found: error
 
   linux-release:
     strategy:
@@ -116,10 +109,3 @@ jobs:
           getent group lifewood-portal >/dev/null && sudo groupdel lifewood-portal || true
       - name: Smoke-test packaged Linux service
         run: bash scripts/test-linux-release.sh "$(find artifacts/release -maxdepth 1 -name 'lifewood-book-creative-portal-${{ matrix.runtime }}-*.tar.gz' -print -quit)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lifewood-${{ matrix.runtime }}
-          path: |
-            artifacts/release/*.tar.gz
-            artifacts/release/*.tar.gz.sha256
-          if-no-files-found: error
