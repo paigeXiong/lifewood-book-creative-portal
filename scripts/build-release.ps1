@@ -28,6 +28,18 @@ $stagingRoot = Join-Path $artifactsRoot "release-staging"
 $archive = $null
 $hash = $null
 
+# Capture source provenance before any build tool can create or update generated files.
+$revision = (& git -C $repositoryRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revision)) { throw "A Git revision is required for a reproducible release." }
+$statusLines = @(& git -C $repositoryRoot status --porcelain=v1 --untracked-files=all)
+if ($LASTEXITCODE -ne 0) { throw "Git status is required to determine release provenance." }
+$sourceState = if ($statusLines.Count -eq 0) { "clean" } else { "dirty" }
+$epochText = if ([string]::IsNullOrWhiteSpace($env:SOURCE_DATE_EPOCH)) { (& git -C $repositoryRoot show -s --format=%ct HEAD).Trim() } else { $env:SOURCE_DATE_EPOCH.Trim() }
+$epoch = 0L
+if (-not [long]::TryParse($epochText, [ref]$epoch)) { throw "SOURCE_DATE_EPOCH must be a Unix timestamp." }
+$releaseTimestamp = [DateTimeOffset]::FromUnixTimeSeconds($epoch).ToUniversalTime()
+if ($releaseTimestamp.Year -lt 1980) { $releaseTimestamp = [DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [TimeSpan]::Zero) }
+
 function Assert-WorkspaceArtifactPath([string]$Path) {
     $resolvedArtifacts = [IO.Path]::GetFullPath($artifactsRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
     $resolvedPath = [IO.Path]::GetFullPath($Path)
@@ -138,17 +150,6 @@ try {
         (($_.Extension -in @(".ps1", ".bat")) -and -not $_.FullName.StartsWith($opsTarget + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
     }
     if ($forbidden) { throw "Release contains forbidden development content: $($forbidden.FullName -join ', ')" }
-
-    $revision = (& git -C $repositoryRoot rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($revision)) { throw "A Git revision is required for a reproducible release." }
-    $statusLines = @(& git -C $repositoryRoot status --porcelain=v1 --untracked-files=all)
-    if ($LASTEXITCODE -ne 0) { throw "Git status is required to determine release provenance." }
-    $sourceState = if ($statusLines.Count -eq 0) { "clean" } else { "dirty" }
-    $epochText = if ([string]::IsNullOrWhiteSpace($env:SOURCE_DATE_EPOCH)) { (& git -C $repositoryRoot show -s --format=%ct HEAD).Trim() } else { $env:SOURCE_DATE_EPOCH.Trim() }
-    $epoch = 0L
-    if (-not [long]::TryParse($epochText, [ref]$epoch)) { throw "SOURCE_DATE_EPOCH must be a Unix timestamp." }
-    $releaseTimestamp = [DateTimeOffset]::FromUnixTimeSeconds($epoch).ToUniversalTime()
-    if ($releaseTimestamp.Year -lt 1980) { $releaseTimestamp = [DateTimeOffset]::new(1980, 1, 1, 0, 0, 0, [TimeSpan]::Zero) }
 
     $payloadLines = foreach ($relativePath in Get-StableRelativeFiles $stagingRoot) {
         $payloadPath = Join-Path $stagingRoot $relativePath.Replace('/', [IO.Path]::DirectorySeparatorChar)
