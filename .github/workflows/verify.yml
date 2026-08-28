@@ -106,7 +106,7 @@ jobs:
           sudo rmdir /opt/lifewood-book-portal
           sudo rmdir /etc/lifewood-book-portal
           sudo userdel lifewood-portal
-          sudo groupdel lifewood-portal
+          getent group lifewood-portal >/dev/null && sudo groupdel lifewood-portal || true
       - name: Smoke-test packaged Linux service
         run: bash scripts/test-linux-release.sh "$(find artifacts/release -maxdepth 1 -name 'lifewood-book-creative-portal-${{ matrix.runtime }}-*.tar.gz' -print -quit)"
       - uses: actions/upload-artifact@v4
