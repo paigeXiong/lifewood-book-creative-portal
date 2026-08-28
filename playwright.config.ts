@@ -14,7 +14,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "powershell -NoProfile -Command \"$env:ASPNETCORE_URLS='http://127.0.0.1:5090'; $env:ASPNETCORE_ENVIRONMENT='Development'; $env:Lifewood__DataDirectory='../../artifacts/e2e-data'; dotnet run --project services/platform-api/Lifewood.PlatformApi.csproj -c Release --no-build --no-launch-profile\"",
+        "powershell -NoProfile -Command \"$env:ASPNETCORE_URLS='http://127.0.0.1:5090'; $env:ASPNETCORE_ENVIRONMENT='Development'; $env:Lifewood__DataDirectory='../../artifacts/e2e-data'; $env:Lifewood__RequireWebAssets='false'; dotnet run --project services/platform-api/Lifewood.PlatformApi.csproj -c Release --no-build --no-launch-profile\"",
       url: "http://127.0.0.1:5090/api/health",
       timeout: 120_000,
     },

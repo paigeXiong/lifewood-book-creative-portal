@@ -8,7 +8,7 @@ meta:
 
 # 当前实现与继续开发基线
 
-本页说明平台当前已经实现的范围、工程约束和下一阶段入口。新开发必须连接真实平台 API，保持 Native AOT、双语路由和生产数据兼容。
+本页说明平台当前已经实现的范围、工程约束和下一阶段入口。新开发必须连接真实服务端，保持 Native AOT、双语路由和生产数据兼容。
 
 ## 当前交付范围
 
@@ -33,7 +33,7 @@ meta:
 | 数据请求 | TanStack Query |
 | 表单与校验 | React Hook Form、Zod |
 | 国际化 | i18next、locale 路由前缀 |
-| 平台 API | C#、.NET 10、ASP.NET Core Minimal API |
+| 服务端 | C#、.NET 10、ASP.NET Core、Native AOT；同进程托管客户门户与管理中心 |
 | 数据存储 | Microsoft.Data.Sqlite、显式 SQL |
 | JSON | System.Text.Json 源码生成 |
 | 自动化验证 | Vitest、Playwright、xUnit、Native AOT 冒烟 |
@@ -46,10 +46,10 @@ meta:
 apps/
   task-entry-web/       客户门户
   admin-web/            管理中心
-  test-console/         可移除的真实 API 验收工具
+  test-console/         可移除的真实服务端验收工具
 services/
-  platform-api/         正式平台 API
-  platform-api.Tests/   API 集成测试
+  platform-api/         正式服务端源码
+  platform-api.Tests/   服务端集成测试
 packages/
   api-client/           HTTP 客户端与 DTO
   domain/               领域模型与业务规则
@@ -59,7 +59,7 @@ linux/                  Linux 安装器与 systemd 单元
 scripts/                测试、发布、安装和备份脚本
 ```
 
-`apps/test-console` 只读取真实 API，不得拥有独立账号、业务数据或认证降级路径。
+`apps/test-console` 只读取真实服务端数据，不得拥有独立账号、业务数据或认证降级路径。
 
 ## 客户路由
 
@@ -79,9 +79,9 @@ scripts/                测试、发布、安装和备份脚本
 
 ## 数据与配置原则
 
-页面不得硬编码业务枚举。书籍类型、目标受众、视频目标、投放平台、视觉风格、文件类别和参考音色均由平台 API 返回。
+页面不得硬编码业务枚举。书籍类型、目标受众、视频目标、投放平台、视觉风格、文件类别和参考音色均由服务端返回。
 
-业务记录保存稳定 ID 或代码。接口按 locale 返回显示文案。没有真实头像时，API 返回根据昵称生成的实际图片。
+业务记录保存稳定 ID 或代码。接口按 locale 返回显示文案。没有真实头像时，服务端返回根据昵称生成的实际图片。
 
 已提交项目是不可变快照。客户只能查看提交记录、受理状态和最终成品；管理员可以修改内部跟进状态并上传最终成品。
 

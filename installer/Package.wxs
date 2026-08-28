@@ -28,7 +28,7 @@
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Lifewood Book Creative Portal">
-        <Directory Id="APIFOLDER" Name="api" />
+        <Directory Id="SERVERFOLDER" Name="server" />
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="CommonAppDataFolder">
@@ -44,12 +44,12 @@
 
     <ComponentGroup Id="PayloadFiles" Directory="INSTALLFOLDER">
       <Files Include="$(PayloadDir)\**">
-        <Exclude Files="$(PayloadDir)\api\Lifewood.PlatformApi.exe" />
+        <Exclude Files="$(PayloadDir)\server\Lifewood.BookPortal.Server.exe" />
       </Files>
     </ComponentGroup>
 
-    <Component Id="PlatformService" Directory="APIFOLDER" Guid="4CCDC91E-66EA-4A07-B85C-01C3FB287304" Bitness="always64">
-      <File Id="PlatformServiceExe" Source="$(PayloadDir)\api\Lifewood.PlatformApi.exe" KeyPath="yes" />
+    <Component Id="PlatformService" Directory="SERVERFOLDER" Guid="D64A5D8C-2B29-4F40-80BA-8B04E4EBC728" Bitness="always64">
+      <File Id="PlatformServiceExe" Source="$(PayloadDir)\server\Lifewood.BookPortal.Server.exe" KeyPath="yes" />
       <ServiceInstall Id="PlatformServiceInstall"
                       Name="LifewoodBookCreativePortal"
                       DisplayName="!(loc.ServiceDisplayName)"
@@ -58,7 +58,7 @@
                       Start="auto"
                       ErrorControl="normal"
                       Account="NT AUTHORITY\LocalService"
-                      Arguments='--urls http://127.0.0.1:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot; --Lifewood:WebRoot &quot;[INSTALLFOLDER]web&quot; --Lifewood:AllowInsecureHttp true'>
+                      Arguments='--urls http://127.0.0.1:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot; --Lifewood:AllowInsecureHttp true'>
         <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="none" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
       </ServiceInstall>
       <ServiceControl Id="PlatformServiceControl" Name="LifewoodBookCreativePortal" Start="install" Stop="both" Remove="uninstall" Wait="yes" />

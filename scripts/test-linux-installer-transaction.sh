@@ -39,16 +39,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-install -d "$payload_root/linux" "$payload_root/api" "$payload_root/web/customer" "$payload_root/web/admin" "$fake_bin" "$state_dir"
+install -d "$payload_root/linux" "$payload_root/server/web/customer" "$payload_root/server/web/admin" "$fake_bin" "$state_dir"
 printf 'inactive\n' > "$state_dir/active"
 printf 'disabled\n' > "$state_dir/enabled"
 printf '0\n' > "$state_dir/restart-count"
 install -m 0755 "$repository_root/linux/install.sh" "$payload_root/linux/install.sh"
 install -m 0644 "$repository_root/linux/lifewood-book-portal.service" "$payload_root/linux/lifewood-book-portal.service"
-printf '#!/usr/bin/env sh\nexit 0\n' > "$payload_root/api/Lifewood.PlatformApi"
-chmod 0755 "$payload_root/api/Lifewood.PlatformApi"
-printf '<!doctype html><title>customer</title>\n' > "$payload_root/web/customer/index.html"
-printf '<!doctype html><title>admin</title>\n' > "$payload_root/web/admin/index.html"
+printf '#!/usr/bin/env sh\nexit 0\n' > "$payload_root/server/Lifewood.BookPortal.Server"
+chmod 0755 "$payload_root/server/Lifewood.BookPortal.Server"
+printf '<!doctype html><title>customer</title>\n' > "$payload_root/server/web/customer/index.html"
+printf '<!doctype html><title>admin</title>\n' > "$payload_root/server/web/admin/index.html"
 
 cat > "$fake_bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
@@ -124,20 +124,20 @@ printf '0\n' > "$state_dir/restart-count"
 env PATH="$test_path" FAKE_INSTALLER_DATA_DIR="$data_dir" FAKE_SYSTEMCTL_STATE_DIR="$state_dir" FAKE_SYSTEMCTL_RESTART_MODE=success \
   bash "$payload_root/linux/install.sh" --non-interactive --lang en-US --port 65432 --trusted-proxy '' >"$output_log" 2>&1
 
-[[ -x "$install_dir/api/Lifewood.PlatformApi" ]] || { printf 'Retry did not install the API.\n' >&2; exit 1; }
+[[ -x "$install_dir/server/Lifewood.BookPortal.Server" ]] || { printf 'Retry did not install the server.\n' >&2; exit 1; }
 [[ -f "$unit_file" && -x "$configure_command" ]] || { printf 'Retry did not install service management files.\n' >&2; exit 1; }
 grep -Fqx "Lifewood__DataDirectory=$data_dir" "$config_dir/portal.env"
 [[ -f "$data_dir/platform.db" ]] || { printf 'Retry did not retain the first-start database.\n' >&2; exit 1; }
 
 snapshot_dir="$test_root/snapshot"
 install -d "$snapshot_dir"
-cp -a "$install_dir/api/Lifewood.PlatformApi" "$snapshot_dir/api"
+cp -a "$install_dir/server/Lifewood.BookPortal.Server" "$snapshot_dir/server"
 cp -a "$config_dir/portal.env" "$snapshot_dir/portal.env"
 cp -a "$unit_file" "$snapshot_dir/service"
 cp -a "$configure_command" "$snapshot_dir/configure"
 
-printf '#!/usr/bin/env sh\nexit 2\n' > "$payload_root/api/Lifewood.PlatformApi"
-chmod 0755 "$payload_root/api/Lifewood.PlatformApi"
+printf '#!/usr/bin/env sh\nexit 2\n' > "$payload_root/server/Lifewood.BookPortal.Server"
+chmod 0755 "$payload_root/server/Lifewood.BookPortal.Server"
 printf '0\n' > "$state_dir/restart-count"
 if env PATH="$test_path" FAKE_INSTALLER_DATA_DIR="$data_dir" FAKE_SYSTEMCTL_STATE_DIR="$state_dir" \
   FAKE_SYSTEMCTL_LOAD_STATE=loaded FAKE_SYSTEMCTL_RESTART_MODE=fail-once \
@@ -146,7 +146,7 @@ if env PATH="$test_path" FAKE_INSTALLER_DATA_DIR="$data_dir" FAKE_SYSTEMCTL_STAT
   exit 1
 fi
 
-cmp -s "$snapshot_dir/api" "$install_dir/api/Lifewood.PlatformApi"
+cmp -s "$snapshot_dir/server" "$install_dir/server/Lifewood.BookPortal.Server"
 cmp -s "$snapshot_dir/portal.env" "$config_dir/portal.env"
 cmp -s "$snapshot_dir/service" "$unit_file"
 cmp -s "$snapshot_dir/configure" "$configure_command"
@@ -163,7 +163,7 @@ if env PATH="$test_path" FAKE_INSTALLER_DATA_DIR="$data_dir" FAKE_SYSTEMCTL_STAT
   exit 1
 fi
 
-cmp -s "$snapshot_dir/api" "$install_dir/api/Lifewood.PlatformApi"
+cmp -s "$snapshot_dir/server" "$install_dir/server/Lifewood.BookPortal.Server"
 cmp -s "$snapshot_dir/portal.env" "$config_dir/portal.env"
 cmp -s "$snapshot_dir/service" "$unit_file"
 cmp -s "$snapshot_dir/configure" "$configure_command"

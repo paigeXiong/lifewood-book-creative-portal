@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $dataDirectory = if (-not [string]::IsNullOrWhiteSpace($DataDirectory)) { [IO.Path]::GetFullPath($DataDirectory) }
     elseif (-not [string]::IsNullOrWhiteSpace($env:Lifewood__DataDirectory)) { [IO.Path]::GetFullPath($env:Lifewood__DataDirectory) }
-    elseif (Test-Path -LiteralPath (Join-Path $repositoryRoot "api")) { Join-Path $repositoryRoot "api\data" }
+    elseif (Test-Path -LiteralPath (Join-Path $repositoryRoot "server")) { Join-Path $repositoryRoot "data" }
     else { Join-Path $repositoryRoot "services\platform-api\data" }
 $backupRoot = if ([string]::IsNullOrWhiteSpace($Destination)) { Join-Path $repositoryRoot "backups" } else { $Destination }
 

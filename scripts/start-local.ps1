@@ -15,7 +15,7 @@ $webUrl = "http://127.0.0.1:$WebPort"
 $apiUrl = "http://127.0.0.1:$ApiPort"
 $adminUrl = "http://127.0.0.1:$AdminPort"
 $apiProject = Join-Path $repositoryRoot "services\platform-api\Lifewood.PlatformApi.csproj"
-$apiExecutable = Join-Path $repositoryRoot "services\platform-api\bin\Debug\net10.0\Lifewood.PlatformApi.exe"
+$apiExecutable = Join-Path $repositoryRoot "services\platform-api\bin\Debug\net10.0\Lifewood.BookPortal.Server.exe"
 $nodeModules = Join-Path $repositoryRoot "node_modules"
 $viteEntry = Join-Path $repositoryRoot "node_modules\vite\bin\vite.js"
 $logDirectory = Join-Path $repositoryRoot "artifacts\dev-logs"
@@ -111,7 +111,7 @@ try {
         $recordedProcesses = @($existing.processes)
         $runningProcesses = @($recordedProcesses | Where-Object { Test-RecordedProcess $_ })
         $allProcessesRunning = $recordedProcesses.Count -gt 0 -and $runningProcesses.Count -eq $recordedProcesses.Count
-        $recordedApi = $recordedProcesses | Where-Object { $_.name -eq "API" } | Select-Object -First 1
+        $recordedApi = $recordedProcesses | Where-Object { $_.name -eq "Server" } | Select-Object -First 1
         $apiMatchesCurrentLauncher = $null -ne $recordedApi -and $recordedApi.path -eq $apiExecutable
         $allProcessesRunning = $allProcessesRunning -and $apiMatchesCurrentLauncher
         $allEndpointsHealthy = (Test-HttpEndpoint "$apiUrl/api/health") -and
@@ -122,7 +122,7 @@ try {
             Write-Host "Local development environment is already running." -ForegroundColor Green
             Write-Host "Web:  $webUrl/zh-CN/tasks"
             Write-Host "Admin center: $adminUrl/zh-CN/projects"
-            Write-Host "API:  $apiUrl/api/health"
+            Write-Host "Server health: $apiUrl/api/health"
             return
         }
 
@@ -132,17 +132,17 @@ try {
     Set-Location -LiteralPath $repositoryRoot
 
     if (-not $SkipBuild) {
-        Write-Host "Checking the platform API..." -ForegroundColor DarkGreen
+        Write-Host "Checking the web server..." -ForegroundColor DarkGreen
         & dotnet build $apiProject --no-restore
-        if ($LASTEXITCODE -ne 0) { throw "The platform API build failed." }
+        if ($LASTEXITCODE -ne 0) { throw "The web server build failed." }
     }
     if (-not (Test-Path -LiteralPath $apiExecutable)) {
-        throw "The platform API executable was not found. Retry without -SkipBuild."
+        throw "The web server executable was not found. Retry without -SkipBuild."
     }
 
     $env:ASPNETCORE_ENVIRONMENT = "Development"
     $apiProcess = Start-Process -FilePath $apiExecutable `
-        -ArgumentList "--urls", $apiUrl `
+        -ArgumentList "--urls", $apiUrl, "--Lifewood:RequireWebAssets", "false" `
         -WorkingDirectory (Split-Path -Parent $apiProject) `
         -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $apiLog -RedirectStandardError $apiErrorLog
@@ -162,7 +162,7 @@ try {
         -RedirectStandardOutput $adminLog -RedirectStandardError $adminErrorLog
     $startedProcesses.Add($adminProcess)
 
-    Wait-ForHttp "$apiUrl/api/health" "Platform API" $apiProcess $apiErrorLog
+    Wait-ForHttp "$apiUrl/api/health" "Web server" $apiProcess $apiErrorLog
     Wait-ForHttp $webUrl "Web application" $webProcess $webErrorLog
     Wait-ForHttp $adminUrl "Admin center" $adminProcess $adminErrorLog
 
@@ -172,7 +172,7 @@ try {
         adminUrl = "$adminUrl/zh-CN/projects"
         apiUrl = "$apiUrl/api/health"
         processes = @(
-            @{ name = "API"; id = $apiProcess.Id; path = $apiProcess.Path },
+            @{ name = "Server"; id = $apiProcess.Id; path = $apiProcess.Path },
             @{ name = "Web"; id = $webProcess.Id; path = $webProcess.Path }
             @{ name = "Admin center"; id = $adminProcess.Id; path = $adminProcess.Path }
         )
@@ -182,7 +182,7 @@ try {
     Write-Host "Local development environment is ready." -ForegroundColor Green
     Write-Host "Web:  $webUrl/zh-CN/tasks"
     Write-Host "Admin center: $adminUrl/zh-CN/projects"
-    Write-Host "API:  $apiUrl/api/health"
+    Write-Host "Server health: $apiUrl/api/health"
     Write-Host "Logs: $logDirectory"
     Write-Host "Stop: powershell -File scripts/start-local.ps1 -Stop" -ForegroundColor DarkGray
 }

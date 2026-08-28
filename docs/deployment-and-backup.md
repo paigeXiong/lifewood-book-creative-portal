@@ -2,13 +2,13 @@
 
 ## 部署拓扑
 
-正式环境建议使用同一 HTTPS 域名：
+正式环境只运行一个 Lifewood Web 服务端，并使用同一 HTTPS 域名：
 
-- 根路径：客户门户 apps/task-entry-web/dist
-- /admin/：管理中心 apps/admin-web/dist
-- /api/：反向代理到 Lifewood.PlatformApi
+- 根路径：客户门户；
+- /admin/：管理中心；
+- /api/：页面使用的内部数据接口。
 
-同域部署可以继续使用当前的 SameSite=Strict、Secure、HttpOnly Cookie。两个前端都必须配置 SPA 回退：客户路径回退到客户 index.html，/admin/* 只回退到管理中心 index.html。禁止把 /api/* 回退到前端。
+客户门户、管理中心和内部数据接口都由同一个服务端进程通过 HTTP 提供，不需要另行启动 Vite、Node.js 或静态文件服务器。同域部署继续使用 SameSite=Strict、Secure、HttpOnly Cookie；反向代理应把整个站点转发到该服务端。
 
 ## 构建
 
@@ -22,7 +22,7 @@
 
     npm run build:release
 
-Windows 用户也可以双击根目录的 build-release.bat。压缩包与 SHA256 校验文件输出到 artifacts/release/。GitHub CI 会在 main 推送和 Pull Request 上执行前后端测试、双前端生产构建、Native AOT 发布、真实 AOT 运行冒烟和发布包内容检查。
+Windows 用户也可以双击根目录的 build-release.bat。压缩包与 SHA256 校验文件输出到 artifacts/release/。便携包解压后双击 start-server.bat，即由同一个服务端进程提供客户门户和管理中心。GitHub CI 会在 main 推送和 Pull Request 上执行前后端测试、双前端生产构建、Native AOT 发布、真实 AOT 运行冒烟和发布包内容检查。
 
 需要在单台 Windows 计算机上直接安装时，可以双击 `build-installer.bat`，或运行 `npm run build:msi`。中英文 MSI 与 SHA256 校验文件输出到 `artifacts/installer/`。安装界面可选择本机监听端口和生产数据目录；安装完成后平台作为 Windows 服务自动启动，并从开始菜单打开客户门户或管理中心。
 
@@ -83,22 +83,22 @@ Linux 正式包是对应架构的 Native AOT `tar.gz`，支持 `linux-x64` 和 `
     journalctl -u lifewood-book-portal.service -f
     sudo systemctl restart lifewood-book-portal.service
 
-服务仅监听 `127.0.0.1`，不得直接暴露到公网。使用 Nginx、Caddy 或其他 HTTPS 反向代理，并把代理实际连接 API 时使用的 IP 配置为可信代理。`dialog`、`whiptail` 和安装器只负责配置，不负责签发 TLS 证书或自动修改现有反向代理。
+服务仅监听 `127.0.0.1`，不得直接暴露到公网。使用 Nginx、Caddy 或其他 HTTPS 反向代理，并把代理实际连接服务端时使用的 IP 配置为可信代理。`dialog`、`whiptail` 和安装器只负责配置，不负责签发 TLS 证书或自动修改现有反向代理。
 
 容量限制等高级设置写入 `/etc/lifewood-book-portal/custom.env`，然后重启服务。安装器管理的 `portal.env` 在后加载，因此自定义文件不能覆盖监听地址、数据目录、Web 根目录和基础安全开关；覆盖安装不会修改 `custom.env`。
 
 ## 服务要求
 
-- 只让反向代理对公网开放，API 监听本机或内网地址。
+- 只让反向代理对公网开放，服务端监听本机或内网地址。
 - 必须启用 HTTPS，并把可信反向代理地址写入 Network:TrustedProxies。
-- API 的工作目录必须固定；账号数据库、上传资料、最终成品和数据保护密钥均位于其 data/ 目录。
+- 服务端的工作目录必须固定；账号数据库、上传资料、最终成品和数据保护密钥均位于其 data/ 目录。
 - 更新程序时不得覆盖或删除 data/。
 - 运行账号只应拥有程序读取权和 data/ 写入权。
 - 正式发布物不得包含 apps/test-console、本地日志、测试账号或开发数据库。
 
 ## 容量与写入保护
 
-以下配置可通过 `Lifewood__Limits__...` 环境变量覆盖，修改后重启 API 生效：
+以下配置可通过 `Lifewood__Limits__...` 环境变量覆盖，修改后重启服务端生效：
 
 - `MaxDraftsPerUser`：每个客户最多保留的草稿数，默认 20；
 - `MaxStoredBytes`：数据库、上传资料、参考音色和最终成品合计容量，默认 10 GB；
@@ -108,11 +108,11 @@ Linux 正式包是对应架构的 Native AOT `tar.gz`，支持 `linux-x64` 和 `
 
 ## 备份
 
-API 运行期间会独占 `data/platform.lock`。任何平台的备份都必须覆盖整个生产数据目录，并确保服务在归档期间不能写入；只复制 `platform.db` 会丢失附件、最终成品和登录 Cookie 密钥。
+服务端运行期间会独占 `data/platform.lock`。任何平台的备份都必须覆盖整个生产数据目录，并确保服务在归档期间不能写入；只复制 `platform.db` 会丢失附件、最终成品和登录 Cookie 密钥。
 
 ### Windows
 
-先停止平台，再双击根目录的 `backup-platform.bat`。备份脚本会持有与 API 相同的锁；备份默认写入 `backups/`，该目录不会提交到 Git。正式环境设置 `Lifewood__DataDirectory` 后，脚本会自动备份同一目录；也可传入 `-DataDirectory` 和 `-Destination` 指定路径。
+先停止平台，再双击根目录的 `backup-platform.bat`。备份脚本会持有与服务端相同的锁；备份默认写入 `backups/`，该目录不会提交到 Git。正式环境设置 `Lifewood__DataDirectory` 后，脚本会自动备份同一目录；也可传入 `-DataDirectory` 和 `-Destination` 指定路径。
 
 ### Linux
 
@@ -141,7 +141,7 @@ Windows：
 
 1. 停止平台服务。
 2. 执行 `restore-platform.bat 备份文件.zip -Replace`。脚本会先为当前数据创建安全备份，再完整替换 `data/`；不要手动混合两个备份中的文件。
-3. 启动 API，检查 `/api/health`、登录、项目附件和最终成品下载。
+3. 启动服务端，检查 `/api/health`、登录、项目附件和最终成品下载。
 4. 确认无误后再开放客户访问。
 
 Linux：

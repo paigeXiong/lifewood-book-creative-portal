@@ -68,14 +68,14 @@ $customerDist = Join-Path $repositoryRoot "apps\task-entry-web\dist"
 $adminDist = Join-Path $repositoryRoot "apps\admin-web\dist"
 if (-not (Test-Path -LiteralPath (Join-Path $customerDist "index.html"))) { throw "Customer frontend output is missing." }
 if (-not (Test-Path -LiteralPath (Join-Path $adminDist "index.html"))) { throw "Administrator frontend output is missing." }
-New-Item -ItemType Directory -Path (Join-Path $payloadRoot "web") | Out-Null
-Copy-Item -LiteralPath $customerDist -Destination (Join-Path $payloadRoot "web\customer") -Recurse
-Copy-Item -LiteralPath $adminDist -Destination (Join-Path $payloadRoot "web\admin") -Recurse
-
-$apiTarget = Join-Path $payloadRoot "api"
-& dotnet publish (Join-Path $repositoryRoot "services\platform-api\Lifewood.PlatformApi.csproj") -c Release -r win-x64 --self-contained true -p:PublishAot=true -o $apiTarget
-if ($LASTEXITCODE -ne 0) { throw "Native AOT API publish failed." }
-if (-not (Test-Path -LiteralPath (Join-Path $apiTarget "Lifewood.PlatformApi.exe"))) { throw "Native AOT API executable is missing." }
+$serverTarget = Join-Path $payloadRoot "server"
+& dotnet publish (Join-Path $repositoryRoot "services\platform-api\Lifewood.PlatformApi.csproj") -c Release -r win-x64 --self-contained true -p:PublishAot=true -o $serverTarget
+if ($LASTEXITCODE -ne 0) { throw "Native AOT server publish failed." }
+if (-not (Test-Path -LiteralPath (Join-Path $serverTarget "Lifewood.BookPortal.Server.exe"))) { throw "Native AOT server executable is missing." }
+$serverWebTarget = Join-Path $serverTarget "web"
+New-Item -ItemType Directory -Path $serverWebTarget | Out-Null
+Copy-Item -LiteralPath $customerDist -Destination (Join-Path $serverWebTarget "customer") -Recurse
+Copy-Item -LiteralPath $adminDist -Destination (Join-Path $serverWebTarget "admin") -Recurse
 
 $forbiddenPayload = @(Get-ChildItem -LiteralPath $payloadRoot -Recurse -Force | Where-Object {
     $_.FullName -match '[\\/](data|uploads|deliveries|keys)([\\/]|$)' -or

@@ -1,8 +1,8 @@
-# Lifewood Platform API
+# Lifewood Book Portal Server
 
-This is the production backend for the customer book-project intake portal. It owns accounts, sessions, project drafts, submitted registrations, configurable form options, uploaded files, validation, and submission records.
+This is the complete production web server for the customer book-project intake portal. It hosts the customer portal, administrator center, and internal HTTP endpoints in one process. It owns accounts, sessions, project drafts, submitted registrations, configurable form options, uploaded files, validation, and submission records.
 
-It is not a mock API. It supports an administrator-operated final-delivery shortcut, but it does not implement the detailed production or review workflow.
+It is not a mock service. It supports an administrator-operated final-delivery shortcut, but it does not implement the detailed production or review workflow.
 
 ## Authentication
 

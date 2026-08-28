@@ -26,6 +26,7 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         {
             builder.UseEnvironment("Development");
             builder.UseSetting("Lifewood:DataDirectory", root);
+            builder.UseSetting("Lifewood:RequireWebAssets", "false");
         });
         ownerClient = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
     }

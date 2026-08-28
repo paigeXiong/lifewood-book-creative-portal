@@ -20,7 +20,7 @@ npm run publish:aot
 npm run smoke:aot
 ```
 
-这些命令验证两套前端、平台 API、生产构建和 Windows x64 Native AOT 可执行程序。验证范围包括建号、Cookie 会话、跨站请求伪造（CSRF）防护、管理员写操作和审计查询。
+这些命令验证两套前端、完整服务端、生产构建和 Windows x64 Native AOT 可执行程序。验证范围包括建号、Cookie 会话、跨站请求伪造（CSRF）防护、管理员写操作和审计查询。
 
 ## 检查 GitHub Actions
 
@@ -45,9 +45,11 @@ npm run build:release
 - `lifewood-book-creative-portal-win-x64-revision.zip`
 - 对应的 `.sha256` 校验文件
 
-压缩包包含客户门户、管理中心、Windows x64 API 和 `release-manifest.json`。文件名使用提交短标识；脏工作区产物会增加 `dirty` 和内容指纹。
+压缩包包含客户门户、管理中心、Windows x64 服务端和 `release-manifest.json`。文件名使用提交短标识；脏工作区产物会增加 `dirty` 和内容指纹。
 
 需要 Windows 安装界面时，双击 `build-installer.bat` 或运行 `npm run build:msi`。覆盖安装不得删除 `C:\ProgramData\Lifewood\BookCreativePortal\data` 或安装时选择的其他生产数据目录。
+
+推送 `vMAJOR.MINOR.PATCH` 标签时，GitHub Release 必须同时上传 Windows ZIP、中英文 MSI 及各自的 SHA256 校验文件。MSI 文件名包含版本与 `zh-CN`/`en-US` 后缀，避免两个本地化安装包相互覆盖。
 
 ## 生成 Linux 发布包
 
@@ -77,7 +79,7 @@ sudo ./linux/install.sh --lang zh-CN
 - 源码、源码映射和临时构建目录
 - 环境文件、备份文件和生产数据
 
-发布包必须包含前端静态文件、Native AOT API、提交标识、运行时标识和 SHA256 校验文件。
+发布包必须包含前端静态文件、Native AOT 服务端、提交标识、运行时标识和 SHA256 校验文件。
 
 ## 完成上线前人工检查
 

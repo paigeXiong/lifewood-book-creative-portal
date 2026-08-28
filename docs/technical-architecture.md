@@ -1,6 +1,6 @@
 # Lifewood AIGC Story Studio 技术架构与 Native AOT 开发规范
 
-> 架构更新（2026-08-24）：登记 API 已正式化为 `services/platform-api`。本文中“独立测试服务”的旧方案仅作为历史设计记录；当前架构边界以 `docs/scope-registration-platform.md` 和 `services/platform-api/README.md` 为准。
+> 架构更新（2026-08-28）：`services/platform-api` 是完整生产服务端。发布后由一个 Native AOT 进程同时托管客户门户、管理中心、认证、业务数据与文件；Vite 仅用于开发和构建。
 
 > 文档状态：初稿  
 > 版本：v0.6  
@@ -26,7 +26,7 @@
 
 路由采用 locale 前缀，例如 `/zh-CN/tasks` 和 `/en-US/tasks`。
 
-### 1.2 本地测试工单服务
+### 1.2 正式服务端
 
 - C#。
 - .NET 10 LTS。
@@ -36,26 +36,26 @@
 - `System.Text.Json` 源码生成。
 - ASP.NET Core 内置 OpenAPI。
 
-### 1.3 测试管理页面
+### 1.3 管理中心前端
 
 - React 19。
 - TypeScript。
 - Vite。
-- 作为独立测试应用，不包含在正式客户项目提交前端构建中。
+- 生产构建位于服务端的 `/admin/` 路径，与客户门户由同一进程提供。
 
 ### 1.4 明确排除
 
 - 不使用 EF Core。
 - 不使用依赖运行时代码生成的 ORM。
 - 不使用需要运行时扫描程序集的插件体系。
-- 不把本地测试服务或测试管理页面打入正式发布物。
+- 不把历史测试控制台、Vite 开发服务器或 Node.js 运行时打入正式发布物。
 - 不接入任何 AI 模型、AI SDK、AI 推理 API 或生成任务队列。
 - 不在测试服务中模拟虚假的 AI 分析或 AI 生成结果。
 - 不实现动态表单设计器或运行时加载任意表单 Schema 的执行引擎。
 
 ### 1.5 系统职责边界
 
-正式客户前端只处理确定性的项目资料填写与提交操作；测试服务可以独立模拟接收端工单：
+完整服务端负责确定性的项目资料填写、提交、管理员跟进与最终成品交付：
 
 ```text
 登录
@@ -67,16 +67,16 @@
 → 查看项目提交记录
 ```
 
-业务选项、视觉示例和参考音色来自正式 API 或本地测试服务的配置数据。它们是静态参考内容，不是 AI 推荐或实时生成内容。
+业务选项、视觉示例和参考音色来自服务端配置数据。它们是静态参考内容，不是 AI 推荐或实时生成内容。
 
 ## 2. 选择 Native AOT 的目标
 
-测试工单服务采用 Native AOT 的目的：
+正式服务端采用 Native AOT 的目的：
 
 - 生成不依赖目标机器安装 .NET Runtime 的原生可执行程序。
 - 缩短服务启动时间。
 - 降低运行时内存占用。
-- 使测试服务容易作为独立工具分发给开发或测试人员。
+- 生成可独立分发的单一服务端程序，同时提供客户门户与管理中心。
 - 通过编译期检查减少反射、动态代码和隐式 API 契约带来的不确定性。
 
 Native AOT 不是为了应对当前性能瓶颈。AOT 兼容性属于技术约束，不能为了开发便利在后期临时关闭。
@@ -88,22 +88,17 @@ apps/task-entry-web
   React 客户项目提交前端
         │
         ▼
-packages/api-client
-  业务服务 + API 适配器
-        │
-        ├── local/test ──► services/platform-api
-        │                    .NET Native AOT
-        │                    SQLite + 本地文件
-        │
-        └── production ──► 客户正式 API
-
-apps/test-console
-  React 测试管理页面
-        │
-        └───────────────► services/platform-api/test-admin/*
+客户门户构建 ─┐
+              ├──► services/platform-api
+管理中心构建 ─┘      Lifewood.BookPortal.Server
+                     .NET Native AOT
+                     SQLite + 本地文件
+                     /          客户门户
+                     /admin/    管理中心
+                     /api/      内部数据路由
 ```
 
-客户端页面不得区分当前连接的是测试服务还是正式服务。环境差异由配置和 API 适配层处理。
+本地开发可以使用 Vite 热更新；生产发布只运行 `Lifewood.BookPortal.Server`，不需要 Node.js 或独立网页服务器。客户端通过共享 HTTP 适配层访问同源服务端。
 
 ## 4. 建议仓库结构
 
@@ -151,7 +146,7 @@ Aigc/
 要求：
 
 - 使用 `WebApplication.CreateSlimBuilder(args)` 创建应用。
-- 开发阶段可以执行普通 `dotnet run` 提高迭代速度。
+- 开发阶段可以执行普通 `dotnet run` 提高迭代速度；前端由 Vite 单独运行时必须显式设置 `Lifewood__RequireWebAssets=false`，生产环境禁止关闭该检查。
 - 合并前和 CI 中必须执行真实的 `dotnet publish` Native AOT 编译。
 - 不允许用“普通构建成功”代替 AOT 发布验证。
 - 不得全局关闭裁剪或 AOT 分析警告。

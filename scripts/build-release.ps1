@@ -2,7 +2,7 @@
 param(
     [string]$Runtime = "win-x64",
     [string]$OutputDirectory,
-    [string]$ApiPublishDirectory,
+    [string]$ServerPublishDirectory,
     [switch]$SkipFrontendBuild
 )
 
@@ -119,21 +119,24 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $adminDist "index.html"))) { throw "Administrator frontend output is missing." }
     Assert-NoReparsePoints $customerDist
     Assert-NoReparsePoints $adminDist
-    Copy-Item -LiteralPath $customerDist -Destination (Join-Path $stagingRoot "customer") -Recurse
-    Copy-Item -LiteralPath $adminDist -Destination (Join-Path $stagingRoot "admin") -Recurse
-
-    $apiTarget = Join-Path $stagingRoot "api"
-    if ([string]::IsNullOrWhiteSpace($ApiPublishDirectory)) {
-        & dotnet publish (Join-Path $repositoryRoot "services/platform-api/Lifewood.PlatformApi.csproj") -c Release -r $Runtime --self-contained true -p:PublishAot=true -o $apiTarget
-        if ($LASTEXITCODE -ne 0) { throw "Native AOT API publish failed." }
+    $serverTarget = Join-Path $stagingRoot "server"
+    if ([string]::IsNullOrWhiteSpace($ServerPublishDirectory)) {
+        & dotnet publish (Join-Path $repositoryRoot "services/platform-api/Lifewood.PlatformApi.csproj") -c Release -r $Runtime --self-contained true -p:PublishAot=true -o $serverTarget
+        if ($LASTEXITCODE -ne 0) { throw "Native AOT server publish failed." }
     }
     else {
-        $apiSource = (Resolve-Path -LiteralPath $ApiPublishDirectory).Path
-        Assert-NoReparsePoints $apiSource
-        Copy-Item -LiteralPath $apiSource -Destination $apiTarget -Recurse
+        $serverSource = (Resolve-Path -LiteralPath $ServerPublishDirectory).Path
+        Assert-NoReparsePoints $serverSource
+        New-Item -ItemType Directory -Path $serverTarget -Force | Out-Null
+        Get-ChildItem -LiteralPath $serverSource -Force | Copy-Item -Destination $serverTarget -Recurse
     }
 
-    if (-not (Test-Path -LiteralPath (Join-Path $apiTarget "Lifewood.PlatformApi.exe"))) { throw "Release package does not contain the Native AOT API executable." }
+    if (-not (Test-Path -LiteralPath (Join-Path $serverTarget "Lifewood.BookPortal.Server.exe"))) { throw "Release package does not contain the Native AOT server executable." }
+    $serverWebTarget = Join-Path $serverTarget "web"
+    New-Item -ItemType Directory -Path $serverWebTarget -Force | Out-Null
+    Copy-Item -LiteralPath $customerDist -Destination (Join-Path $serverWebTarget "customer") -Recurse
+    Copy-Item -LiteralPath $adminDist -Destination (Join-Path $serverWebTarget "admin") -Recurse
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot "start-server.bat") -Destination $stagingRoot
 
     $opsTarget = Join-Path $stagingRoot "ops"
     New-Item -ItemType Directory -Path $opsTarget | Out-Null
@@ -147,7 +150,7 @@ try {
     Get-ChildItem -LiteralPath $stagingRoot -Recurse -File | Where-Object { $_.Extension -in @(".pdb", ".map") } |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
 
-    $allowedRoots = @("admin", "api", "customer", "ops")
+    $allowedRoots = @("server", "ops")
     $unexpectedRoots = Get-ChildItem -LiteralPath $stagingRoot -Directory | Where-Object { $_.Name -notin $allowedRoots }
     if ($unexpectedRoots) { throw "Release contains an unexpected top-level directory: $($unexpectedRoots.FullName -join ', ')" }
 
@@ -156,7 +159,9 @@ try {
         $_.Name -in @("test-console", "dev-logs", "platform.db", "local-services.json") -or
         $_.Name -like ".env*" -or $_.Name -like "*.secret" -or $_.Name -like "*.bak" -or $_.Name -like "*.tmp" -or
         $_.Name -like "*.Tests.dll" -or $_.Extension -in @(".pdb", ".map", ".cs", ".ts", ".tsx") -or
-        (($_.Extension -in @(".ps1", ".bat")) -and -not $_.FullName.StartsWith($opsTarget + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
+        (($_.Extension -in @(".ps1", ".bat")) -and
+            $_.FullName -ne (Join-Path $stagingRoot "start-server.bat") -and
+            -not $_.FullName.StartsWith($opsTarget + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))
     }
     if ($forbidden) { throw "Release contains forbidden development content: $($forbidden.FullName -join ', ')" }
 
@@ -178,7 +183,7 @@ try {
         contentId = $contentId
         runtime = $Runtime
         createdAtUtc = $releaseTimestamp.ToString("O")
-        paths = [ordered]@{ customer = "/"; admin = "/admin/"; api = "/api/" }
+        paths = [ordered]@{ customer = "/"; admin = "/admin/"; api = "/api/"; server = "server/Lifewood.BookPortal.Server.exe" }
     }
     $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stagingRoot "release-manifest.json") -Encoding utf8
 

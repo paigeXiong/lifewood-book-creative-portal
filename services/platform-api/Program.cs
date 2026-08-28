@@ -175,16 +175,15 @@ builder.Services.AddSingleton(new StorageQuota(dataDirectory, platformLimits));
 var app = builder.Build();
 var configuredWebRoot = builder.Configuration["Lifewood:WebRoot"];
 var webRoot = string.IsNullOrWhiteSpace(configuredWebRoot)
-    ? Path.Combine(app.Environment.ContentRootPath, "web")
+    ? Path.Combine(AppContext.BaseDirectory, "web")
     : Path.GetFullPath(Path.IsPathRooted(configuredWebRoot) ? configuredWebRoot : Path.Combine(app.Environment.ContentRootPath, configuredWebRoot));
 var customerWebRoot = Path.Combine(webRoot, "customer");
 var adminWebRoot = Path.Combine(webRoot, "admin");
 var customerIndex = Path.Combine(customerWebRoot, "index.html");
 var adminIndex = Path.Combine(adminWebRoot, "index.html");
-if (Directory.Exists(adminWebRoot))
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(adminWebRoot), RequestPath = "/admin" });
-if (Directory.Exists(customerWebRoot))
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(customerWebRoot) });
+var requireWebAssets = builder.Configuration.GetValue("Lifewood:RequireWebAssets", true);
+if (requireWebAssets && (!File.Exists(customerIndex) || !File.Exists(adminIndex)))
+    throw new InvalidOperationException($"The production web assets are incomplete under {webRoot}. Both customer/index.html and admin/index.html are required.");
 RecoverDraftUploadTombstones(dataDirectory, repository, app.Logger);
 RecoverDeletedReferenceFiles(dataDirectory, repository, app.Logger);
 app.UseForwardedHeaders();
@@ -192,6 +191,16 @@ app.Use(async (context, next) =>
 {
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    context.Response.Headers.Append("X-Request-Id", context.TraceIdentifier);
+    await next();
+});
+if (Directory.Exists(adminWebRoot))
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(adminWebRoot), RequestPath = "/admin" });
+if (Directory.Exists(customerWebRoot))
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(customerWebRoot) });
+app.UseRouting();
+app.Use(async (context, next) =>
+{
     if ((context.Request.Path.StartsWithSegments("/api/auth") && context.Request.Path != "/api/auth/csrf") || context.Request.Path == "/api/me")
     {
         context.Response.Headers.CacheControl = "no-store";
@@ -206,7 +215,6 @@ app.Use(async (context, next) =>
         var isAuthWrite = context.Request.Path.StartsWithSegments("/api/auth") && !HttpMethods.IsGet(context.Request.Method);
         requestSize.MaxRequestBodySize = isVoiceSample ? 22_000_000 : isLargeUpload ? 510_000_000 : isAuthWrite ? 16_384 : 2_000_000;
     }
-    context.Response.Headers.Append("X-Request-Id", context.TraceIdentifier);
     try { await next(); }
     catch (AntiforgeryValidationException)
     {
@@ -1240,7 +1248,6 @@ api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, 
 });
 if (File.Exists(adminIndex))
 {
-    app.MapGet("/admin", () => Results.Redirect("/admin/"));
     app.MapGet("/admin/{**path}", () => Results.File(adminIndex, "text/html; charset=utf-8"));
 }
 app.MapGet("/api/{**path}", () => Results.NotFound());

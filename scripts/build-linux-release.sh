@@ -38,7 +38,7 @@ cleanup() {
 }
 trap cleanup EXIT
 cleanup
-mkdir -p -- "$staging_root/api" "$staging_root/web/customer" "$staging_root/web/admin" "$staging_root/linux" "$release_root"
+mkdir -p -- "$staging_root/server/web/customer" "$staging_root/server/web/admin" "$staging_root/linux" "$release_root"
 
 cd -- "$repository_root"
 npm run build:web
@@ -46,17 +46,17 @@ npm run build:admin
 
 [[ -f apps/task-entry-web/dist/index.html ]] || { printf 'Customer frontend output is missing.\n' >&2; exit 1; }
 [[ -f apps/admin-web/dist/index.html ]] || { printf 'Administrator frontend output is missing.\n' >&2; exit 1; }
-cp -a -- apps/task-entry-web/dist/. "$staging_root/web/customer/"
-cp -a -- apps/admin-web/dist/. "$staging_root/web/admin/"
+cp -a -- apps/task-entry-web/dist/. "$staging_root/server/web/customer/"
+cp -a -- apps/admin-web/dist/. "$staging_root/server/web/admin/"
 
 dotnet publish services/platform-api/Lifewood.PlatformApi.csproj \
   -c Release \
   -r "$runtime" \
   --self-contained true \
   -p:PublishAot=true \
-  -o "$staging_root/api"
+  -o "$staging_root/server"
 
-[[ -x "$staging_root/api/Lifewood.PlatformApi" ]] || { printf 'Native AOT API executable is missing.\n' >&2; exit 1; }
+[[ -x "$staging_root/server/Lifewood.BookPortal.Server" ]] || { printf 'Native AOT server executable is missing.\n' >&2; exit 1; }
 install -m 0755 linux/install.sh "$staging_root/linux/install.sh"
 install -m 0644 linux/lifewood-book-portal.service "$staging_root/linux/lifewood-book-portal.service"
 install -m 0644 docs/deployment-and-backup.md "$staging_root/linux/README.md"
@@ -82,7 +82,7 @@ cat > "$staging_root/release-manifest.json" <<EOF
   "revision": "$revision",
   "sourceState": "$source_state",
   "runtime": "$runtime",
-  "paths": { "customer": "/", "admin": "/admin/", "api": "/api/" }
+  "paths": { "customer": "/", "admin": "/admin/", "api": "/api/", "server": "server/Lifewood.BookPortal.Server" }
 }
 EOF
 

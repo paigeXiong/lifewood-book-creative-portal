@@ -5,7 +5,7 @@
   <String Id="ProductDescription" Value="Customer book-project intake portal and administrator center" />
   <String Id="DowngradeError" Value="A newer version is already installed." />
   <String Id="ServiceDisplayName" Value="Lifewood Book Creative Portal" />
-  <String Id="ServiceDescription" Value="Hosts the Lifewood customer portal, administrator center, and platform API." />
+  <String Id="ServiceDescription" Value="Hosts the complete Lifewood customer portal and administrator center." />
   <String Id="CustomerShortcut" Value="Customer Portal" />
   <String Id="AdminShortcut" Value="Administrator Center" />
   <String Id="DefaultLocale" Value="en-US" />

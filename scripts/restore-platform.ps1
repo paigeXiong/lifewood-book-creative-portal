@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $target = if (-not [string]::IsNullOrWhiteSpace($DataDirectory)) { [IO.Path]::GetFullPath($DataDirectory) }
     elseif (-not [string]::IsNullOrWhiteSpace($env:Lifewood__DataDirectory)) { [IO.Path]::GetFullPath($env:Lifewood__DataDirectory) }
-    elseif (Test-Path -LiteralPath (Join-Path $repositoryRoot "api")) { Join-Path $repositoryRoot "api\data" }
+    elseif (Test-Path -LiteralPath (Join-Path $repositoryRoot "server")) { Join-Path $repositoryRoot "data" }
     else { Join-Path $repositoryRoot "services\platform-api\data" }
 $source = (Resolve-Path -LiteralPath $Archive).Path
 if ([IO.Path]::GetExtension($source) -ne ".zip") { throw "Choose a .zip backup created by backup-platform.ps1." }

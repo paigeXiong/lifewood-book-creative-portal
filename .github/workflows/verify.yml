@@ -42,11 +42,11 @@ jobs:
         run: ./scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-ci
       - shell: powershell
         run: |
-          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-ci
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ServerPublishDirectory artifacts/aot-ci
           $revision = (git rev-parse HEAD).Substring(0, 12)
           $archive = Get-Item "artifacts/release/lifewood-book-creative-portal-win-x64-$revision.zip"
           $firstHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
-          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-ci
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ServerPublishDirectory artifacts/aot-ci
           $secondHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
           if ($firstHash -ne $secondHash) { throw "Release package is not reproducible." }
           if (Test-Path artifacts/release-staging) { throw "Release staging directory was not cleaned." }
@@ -95,14 +95,14 @@ jobs:
         run: |
           sudo groupadd --system lifewood-portal
           sudo useradd --system --gid lifewood-portal --home-dir /var/lib/lifewood-book-portal --shell /usr/sbin/nologin lifewood-portal
-          sudo install -d /opt/lifewood-book-portal/api
+          sudo install -d /opt/lifewood-book-portal/server
           sudo install -d /etc/lifewood-book-portal
-          sudo install -m 0755 /bin/true /opt/lifewood-book-portal/api/Lifewood.PlatformApi
+          sudo install -m 0755 /bin/true /opt/lifewood-book-portal/server/Lifewood.BookPortal.Server
           sudo install -m 0600 /dev/null /etc/lifewood-book-portal/portal.env
           systemd-analyze verify linux/lifewood-book-portal.service
-          sudo rm -f /opt/lifewood-book-portal/api/Lifewood.PlatformApi
+          sudo rm -f /opt/lifewood-book-portal/server/Lifewood.BookPortal.Server
           sudo rm -f /etc/lifewood-book-portal/portal.env
-          sudo rmdir /opt/lifewood-book-portal/api
+          sudo rmdir /opt/lifewood-book-portal/server
           sudo rmdir /opt/lifewood-book-portal
           sudo rmdir /etc/lifewood-book-portal
           sudo userdel lifewood-portal

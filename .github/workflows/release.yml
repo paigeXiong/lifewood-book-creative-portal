@@ -8,7 +8,23 @@ permissions:
   contents: write
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists."
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "Lifewood Book Creative Portal $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md" --draft
+          fi
+
   windows:
+    needs: prepare-release
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -36,13 +52,28 @@ jobs:
       - name: Build reproducible Windows package
         shell: powershell
         run: |
-          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-release
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ServerPublishDirectory artifacts/aot-release
           $revision = (git rev-parse HEAD).Substring(0, 12)
           $archive = Get-Item "artifacts/release/lifewood-book-creative-portal-win-x64-$revision.zip"
           $firstHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
-          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ApiPublishDirectory artifacts/aot-release
+          ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ServerPublishDirectory artifacts/aot-release
           $secondHash = (Get-FileHash $archive.FullName -Algorithm SHA256).Hash
           if ($firstHash -ne $secondHash) { throw "Release package is not reproducible." }
+      - name: Build localized Windows installers
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Release tag must use vMAJOR.MINOR.PATCH." }
+          ./scripts/build-msi.ps1 -Version $version -SkipFrontendBuild -OutputDirectory artifacts/installer-release
+          $releaseDirectory = New-Item -ItemType Directory -Path artifacts/release-msi -Force
+          foreach ($locale in @('en-US', 'zh-CN')) {
+            $source = Get-Item "artifacts/installer-release/$locale/Lifewood.Installer.msi"
+            $name = "lifewood-book-creative-portal-win-x64-$version-$locale.msi"
+            $target = Join-Path $releaseDirectory.FullName $name
+            Copy-Item -LiteralPath $source.FullName -Destination $target
+            $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name" | Out-File -LiteralPath "$target.sha256" -Encoding ascii -NoNewline
+          }
       - name: Upload Windows package to GitHub Release
         shell: pwsh
         env:
@@ -52,8 +83,18 @@ jobs:
           if ($files.Count -ne 2) { throw "Expected one Windows archive and checksum, found $($files.Count)." }
           gh release upload $env:GITHUB_REF_NAME @($files.FullName) --clobber
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed." }
+      - name: Upload Windows installers to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = @(Get-ChildItem -LiteralPath artifacts/release-msi -File)
+          if ($files.Count -ne 4) { throw "Expected two localized MSI packages and two checksums, found $($files.Count)." }
+          gh release upload $env:GITHUB_REF_NAME @($files.FullName) --clobber
+          if ($LASTEXITCODE -ne 0) { throw "GitHub Release MSI upload failed." }
 
   linux:
+    needs: prepare-release
     strategy:
       fail-fast: false
       matrix:
@@ -90,3 +131,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" artifacts/release/*.tar.gz artifacts/release/*.tar.gz.sha256 --clobber
+  publish-release:
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish completed GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false

@@ -1583,6 +1583,7 @@ function AdminRoot() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
+    window.localStorage.setItem("lw.locale", locale);
     void setLocale(locale);
     document.documentElement.lang = locale;
     document.title = t("admin.documentTitle");
@@ -1681,12 +1682,20 @@ function AdminRoot() {
   );
 }
 
+function AdminRootRedirect() {
+  const stored = window.localStorage.getItem("lw.locale") ?? undefined;
+  const locale: SupportedLocale = isSupportedLocale(stored)
+    ? stored
+    : navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+  return <Navigate replace to={localizedPath(locale, "/overview")} />;
+}
+
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate replace to="/zh-CN/overview" />} />
+      <Route path="/" element={<AdminRootRedirect />} />
       <Route path="/:locale/*" element={<AdminRoot />} />
-      <Route path="*" element={<Navigate replace to="/zh-CN/overview" />} />
+      <Route path="*" element={<AdminRootRedirect />} />
     </Routes>
   );
 }

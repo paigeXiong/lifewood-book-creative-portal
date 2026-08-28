@@ -45,4 +45,4 @@ if ($voices.Count -eq 0) { throw "No enabled voice references were returned." }
 $projects = Invoke-RestMethod -Method Get -Uri "$base/api/projects?page=1&pageSize=1" -WebSession $session
 if ($null -eq $projects.items -or $projects.page -ne 1) { throw "Authenticated project listing returned an invalid payload." }
 
-Write-Output "Platform API smoke test passed for $($me.email)."
+Write-Output "Platform server smoke test passed for $($me.email)."

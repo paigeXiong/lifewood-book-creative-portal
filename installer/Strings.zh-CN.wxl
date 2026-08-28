@@ -5,7 +5,7 @@
   <String Id="ProductDescription" Value="面向客户的书籍项目登记平台与管理中心" />
   <String Id="DowngradeError" Value="计算机上已经安装了更高版本。" />
   <String Id="ServiceDisplayName" Value="Lifewood 书籍创意项目平台" />
-  <String Id="ServiceDescription" Value="托管 Lifewood 客户门户、管理中心和平台 API。" />
+  <String Id="ServiceDescription" Value="托管完整的 Lifewood 客户门户与管理中心。" />
   <String Id="CustomerShortcut" Value="客户门户" />
   <String Id="AdminShortcut" Value="管理中心" />
   <String Id="DefaultLocale" Value="zh-CN" />

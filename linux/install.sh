@@ -116,7 +116,7 @@ translate_error_zh() {
     "curl is required for the startup health check.") printf '%s' "启动健康检查需要 curl" ;;
     "runuser is required to verify production-data permissions.") printf '%s' "生产数据权限检查需要 runuser" ;;
     "GNU stat is required for safe ownership validation.") printf '%s' "所有者安全检查需要 GNU stat" ;;
-    "Linux API executable is missing from the release payload.") printf '%s' "发布包缺少 Linux API 可执行文件" ;;
+    "Linux server executable is missing from the release payload.") printf '%s' "发布包缺少 Linux 服务端程序" ;;
     "Customer frontend is missing from the release payload.") printf '%s' "发布包缺少客户门户" ;;
     "Administrator frontend is missing from the release payload.") printf '%s' "发布包缺少管理中心" ;;
     "systemd unit is missing from the release payload.") printf '%s' "发布包缺少 systemd 单元文件" ;;
@@ -378,12 +378,12 @@ command -v runuser >/dev/null 2>&1 || fail "runuser is required to verify produc
 command -v stat >/dev/null 2>&1 || fail "GNU stat is required for safe ownership validation."
 
 if ! $configure_only; then
-  [[ -x "$payload_root/api/Lifewood.PlatformApi" ]] || fail "Linux API executable is missing from the release payload."
-  [[ -f "$payload_root/web/customer/index.html" ]] || fail "Customer frontend is missing from the release payload."
-  [[ -f "$payload_root/web/admin/index.html" ]] || fail "Administrator frontend is missing from the release payload."
+  [[ -x "$payload_root/server/Lifewood.BookPortal.Server" ]] || fail "Linux server executable is missing from the release payload."
+  [[ -f "$payload_root/server/web/customer/index.html" ]] || fail "Customer frontend is missing from the release payload."
+  [[ -f "$payload_root/server/web/admin/index.html" ]] || fail "Administrator frontend is missing from the release payload."
   [[ -f "$script_dir/lifewood-book-portal.service" ]] || fail "systemd unit is missing from the release payload."
 else
-  [[ -x "$install_dir/api/Lifewood.PlatformApi" ]] || fail "The portal is not installed at $install_dir."
+  [[ -x "$install_dir/server/Lifewood.BookPortal.Server" ]] || fail "The portal is not installed at $install_dir."
 fi
 
 if ! getent group "$service_user" >/dev/null 2>&1; then groupadd --system "$service_user"; fi
@@ -521,7 +521,7 @@ trap cleanup EXIT
 {
   printf 'ASPNETCORE_URLS=http://127.0.0.1:%s\n' "$port"
   printf 'Lifewood__DataDirectory=%s\n' "$data_dir"
-  printf 'Lifewood__WebRoot=%s/web\n' "$install_dir"
+  printf 'Lifewood__WebRoot=%s/server/web\n' "$install_dir"
   printf 'Lifewood__AllowInsecureHttp=true\n'
   printf 'Network__TrustedProxies__0=%s\n' "$trusted_proxy"
 } > "$env_temp"
@@ -530,10 +530,9 @@ chown root:root "$env_temp"
 
 if ! $configure_only; then
   stage_dir="$(mktemp -d "/opt/.lifewood-book-portal.XXXXXX")"
-  install -d -m 0755 "$stage_dir/api" "$stage_dir/web"
-  cp -a -- "$payload_root/api/." "$stage_dir/api/"
-  cp -a -- "$payload_root/web/." "$stage_dir/web/"
-  chmod 0755 "$stage_dir/api/Lifewood.PlatformApi"
+  install -d -m 0755 "$stage_dir/server"
+  cp -a -- "$payload_root/server/." "$stage_dir/server/"
+  chmod 0755 "$stage_dir/server/Lifewood.BookPortal.Server"
   chown -R root:root "$stage_dir"
 fi
 

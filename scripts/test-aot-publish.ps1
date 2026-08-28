@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $publishRoot = (Resolve-Path -LiteralPath $PublishDirectory).Path
-$executable = Join-Path $publishRoot "Lifewood.PlatformApi.exe"
+$executable = Join-Path $publishRoot "Lifewood.BookPortal.Server.exe"
 if (-not (Test-Path -LiteralPath $executable)) {
     throw "Native AOT executable was not found: $executable"
 }
@@ -56,6 +56,7 @@ try {
     $start.Environment["ASPNETCORE_URLS"] = $baseUrl
     $start.Environment["ASPNETCORE_ENVIRONMENT"] = "Development"
     $start.Environment["Lifewood__DataDirectory"] = $dataDirectory
+    $start.Environment["Lifewood__RequireWebAssets"] = "false"
     $process = [Diagnostics.Process]::Start($start)
     if ($null -eq $process) { throw "Native AOT process did not start." }
 
@@ -69,7 +70,7 @@ try {
         catch { Start-Sleep -Milliseconds 250 }
     }
     if (-not $ready) {
-        throw "Native AOT API did not become healthy."
+        throw "Native AOT server did not become healthy."
     }
 
     $anonymousStatus = 0
