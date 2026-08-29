@@ -37,9 +37,13 @@ jobs:
       - run: npm exec playwright install chromium
       - run: npm run test:e2e
       - run: dotnet test services/platform-api.Tests/Lifewood.PlatformApi.Tests.csproj --configuration Release --nologo
+      - run: npm run test:ops
       - run: dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-ci
       - shell: powershell
         run: ./scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-ci
+      - name: Build and inspect localized MSI packages
+        shell: powershell
+        run: ./scripts/build-msi.ps1 -SkipFrontendBuild
       - shell: powershell
         run: |
           ./scripts/build-release.ps1 -Runtime win-x64 -SkipFrontendBuild -ServerPublishDirectory artifacts/aot-ci

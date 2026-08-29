@@ -93,6 +93,16 @@ public sealed class PersistenceIntegrationTests : IDisposable
         var workflow = Assert.IsType<AdminProjectDetailDto>(admin.GetProject(submitted.Id));
         Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateWorkflow(submitted.Id, new("confirmed", "high", owner.Id, workflow.WorkflowUpdatedAt)).Outcome);
         Assert.Equal(AdminWriteOutcome.Conflict, admin.UpdateWorkflow(submitted.Id, new("contacting", "normal", null, workflow.WorkflowUpdatedAt)).Outcome);
+
+        Execute("CREATE TRIGGER fail_note_touch BEFORE UPDATE OF workflow_updated_at ON projects BEGIN SELECT RAISE(ABORT, 'simulated touch failure'); END;");
+        Assert.Throws<SqliteException>(() => admin.AddNote(submitted.Id, owner.Id, new("Must roll back"), out _));
+        Assert.Equal(0L, ScalarLong("SELECT COUNT(*) FROM project_notes WHERE project_id = $id;", ("$id", submitted.Id)));
+        Execute("DROP TRIGGER fail_note_touch;");
+
+        Assert.Equal(AdminWriteOutcome.Saved, admin.AddNote(submitted.Id, owner.Id, new("Atomic note"), out var note).Outcome);
+        Assert.Equal("Atomic note", Assert.IsType<AdminNoteDto>(note).Body);
+        var detailWithNote = Assert.IsType<AdminProjectDetailDto>(admin.GetProject(submitted.Id));
+        Assert.Equal("Atomic note", Assert.Single(detailWithNote.Notes).Body);
     }
 
     [Fact]
@@ -143,9 +153,26 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Execute("UPDATE projects SET workflow_status = 'confirmed', priority = 'high', assignee_user_id = $owner, workflow_updated_at = '2000-01-01T00:00:00Z' WHERE id = $id;", ("$owner", owner.Id), ("$id", draft.Id));
         Execute("INSERT INTO project_notes(id, project_id, author_user_id, body, created_at) VALUES ('legacy-note', $id, $owner, 'Must remain stored but hidden', '2000-01-01T00:00:00Z');", ("$id", draft.Id), ("$owner", owner.Id));
 
-        var submitted = projects.Submit(owner.Id, draft.Id, draft.Version, "submission-key");
+        var snapshot = new SubmissionConfigurationSnapshotDto(
+            1,
+            DateTimeOffset.UtcNow,
+            [new AdminFormOptionDto("brands", "brand-a", "品牌 A", "Brand A", null, null, null, null, false, true, 0, DateTimeOffset.UtcNow)],
+            [],
+            []);
+        var submitted = projects.Submit(owner.Id, draft.Id, draft.Version, "submission-key", snapshot);
 
         Assert.Equal(SaveOutcome.Saved, submitted.Outcome);
+        var storedSnapshot = Assert.IsType<SubmissionConfigurationSnapshotDto>(projects.GetSubmissionSnapshot(owner.Id, draft.Id));
+        Assert.Equal("品牌 A", Assert.Single(storedSnapshot.FormOptions).LabelZhCn);
+        Assert.Equal("Brand A", Assert.Single(storedSnapshot.FormOptions).LabelEnUs);
+        Assert.Equal("Brand A", Assert.Single(Assert.IsType<SubmissionConfigurationSnapshotDto>(projects.GetSubmissionSnapshotForAdmin(draft.Id)).FormOptions).LabelEnUs);
+        var replacementSnapshot = snapshot with
+        {
+            FormOptions = [snapshot.FormOptions[0] with { LabelZhCn = "被覆盖", LabelEnUs = "Overwritten" }]
+        };
+        var replay = projects.Submit(owner.Id, draft.Id, Assert.IsType<TaskDraftDto>(submitted.Draft).Version, "submission-key", replacementSnapshot);
+        Assert.Equal(SaveOutcome.Saved, replay.Outcome);
+        Assert.Equal("Brand A", Assert.Single(Assert.IsType<SubmissionConfigurationSnapshotDto>(projects.GetSubmissionSnapshot(owner.Id, draft.Id)).FormOptions).LabelEnUs);
         var detail = Assert.IsType<AdminProjectDetailDto>(admin.GetProject(draft.Id));
         Assert.Equal("new", detail.WorkflowStatus);
         Assert.Equal("normal", detail.Priority);
@@ -186,6 +213,16 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Equal("+1 555 0100", users.Authenticate("reader@example.test", "customer-password-123").User?.Phone);
         Assert.Equal(2, Assert.Single(admin.ListOrganizations("Lifewood", 1, 20).Items).MemberCount);
         Assert.Equal(customer.Id, Assert.Single(admin.ListUsers("Lifewood Books", null, 1, 20).Items, item => item.Role == "customer").Id);
+
+        Assert.Equal(0, users.GetSessionVersion(customer.Id));
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateUser(customer.Id, new("Reader", "customer", false, organization.Id), out _).Outcome);
+        Assert.Equal(1L, ScalarLong("SELECT session_version FROM users WHERE id = $id;", ("$id", customer.Id)));
+        Assert.Null(users.GetSessionVersion(customer.Id));
+        Assert.Null(users.Get(customer.Id, 0));
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateUser(customer.Id, new("Reader", "customer", true, organization.Id), out _).Outcome);
+        Assert.Equal(1, users.GetSessionVersion(customer.Id));
+        Assert.Null(users.Get(customer.Id, 0));
+        Assert.NotNull(users.Get(customer.Id, 1));
 
         Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateOrganization(organization.Id, new("Lifewood Publishing", false), out _).Outcome);
         Assert.Equal("Lifewood Publishing", users.Get(customer.Id)?.Organization?.Name);
@@ -315,6 +352,20 @@ public sealed class PersistenceIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void SubmissionSnapshotMigrationUpgradesExistingProjectDatabaseTransactionally()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        Execute("ALTER TABLE projects DROP COLUMN submission_snapshot_json;");
+        Execute("DELETE FROM schema_migrations WHERE version = 5;");
+
+        projects.Initialize();
+
+        Assert.True(HasColumn("projects", "submission_snapshot_json"));
+        Assert.Equal(1L, ScalarLong("SELECT COUNT(*) FROM schema_migrations WHERE version = 5;"));
+    }
+
+    [Fact]
     public void AvatarInitializationCleansOrphansAndRemovalWorksDuringAnActiveRead()
     {
         new ProjectRepository(ConnectionString).Initialize();
@@ -407,6 +458,7 @@ public sealed class PersistenceIntegrationTests : IDisposable
 
         var deliveries = new DeliveryRepository(ConnectionString);
         deliveries.Initialize();
+        Execute("DROP INDEX ux_project_deliveries_one_active;");
         Execute("ALTER TABLE project_deliveries DROP COLUMN revoked_at;");
         deliveries.Initialize();
         Assert.True(HasColumn("project_deliveries", "revoked_at"));
@@ -423,6 +475,71 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Null(deliveries.Find(draft.Id, "delivery-1"));
         Assert.NotNull(Assert.Single(deliveries.ListForAdmin(draft.Id)).RevokedAt);
         Assert.Equal("in_production", Scalar("SELECT workflow_status FROM projects WHERE id = $id;", ("$id", draft.Id)));
+    }
+
+    [Fact]
+    public async Task FinalDeliveryAllowsOnlyOneActiveRecordAcrossSequentialAndConcurrentPublishes()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+        var admin = new AdminRepository(ConnectionString);
+        admin.Initialize();
+        var owner = Assert.IsType<Lifewood.PlatformApi.Contracts.CurrentUserDto>(
+            users.CreateOwner("Owner", "owner@example.test", "initial-password-123").User);
+        var draft = projects.Create(owner.Id);
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'in_production' WHERE id = $id;", ("$id", draft.Id));
+        var deliveries = new DeliveryRepository(ConnectionString);
+        deliveries.Initialize();
+
+        using var gate = new ManualResetEventSlim(false);
+        var attempts = Enumerable.Range(1, 2).Select(index => Task.Run(() =>
+        {
+            gate.Wait();
+            return new DeliveryRepository(ConnectionString).Publish(
+                $"delivery-{index}", draft.Id, owner.Id, $"final-{index}.mp4", "video/mp4", 42, null, out _).Outcome;
+        })).ToArray();
+        gate.Set();
+        var outcomes = await Task.WhenAll(attempts);
+
+        Assert.Single(outcomes, outcome => outcome == AdminWriteOutcome.Saved);
+        Assert.Single(outcomes, outcome => outcome == AdminWriteOutcome.Conflict);
+        var active = Assert.Single(deliveries.List(draft.Id));
+        var sequential = deliveries.Publish("delivery-3", draft.Id, owner.Id, "final-3.mp4", "video/mp4", 42, null, out _);
+        Assert.Equal(AdminWriteOutcome.Conflict, sequential.Outcome);
+        Assert.Equal("activeDelivery", sequential.Field);
+        Assert.Equal(AdminWriteOutcome.Saved, deliveries.Revoke(draft.Id, active.Id).Outcome);
+        Assert.Equal(AdminWriteOutcome.Saved, deliveries.Publish("delivery-4", draft.Id, owner.Id, "final-4.mp4", "video/mp4", 42, null, out _).Outcome);
+        Assert.Equal("delivery-4", Assert.Single(deliveries.List(draft.Id)).Id);
+    }
+
+    [Fact]
+    public void FinalDeliveryInitializationMigratesLegacyDuplicateActiveRecords()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+        var admin = new AdminRepository(ConnectionString);
+        admin.Initialize();
+        var owner = Assert.IsType<Lifewood.PlatformApi.Contracts.CurrentUserDto>(
+            users.CreateOwner("Owner", "owner@example.test", "initial-password-123").User);
+        var draft = projects.Create(owner.Id);
+        Execute("UPDATE projects SET status = 'submitted' WHERE id = $id;", ("$id", draft.Id));
+        var deliveries = new DeliveryRepository(ConnectionString);
+        deliveries.Initialize();
+        Execute("DROP INDEX ux_project_deliveries_one_active;");
+        Execute("INSERT INTO project_deliveries(id, project_id, uploader_user_id, file_name, content_type, size_bytes, published_at) VALUES ('legacy-old', $projectId, $userId, 'old.mp4', 'video/mp4', 1, '2026-01-01T00:00:00+00:00');", ("$projectId", draft.Id), ("$userId", owner.Id));
+        Execute("INSERT INTO project_deliveries(id, project_id, uploader_user_id, file_name, content_type, size_bytes, published_at) VALUES ('legacy-new', $projectId, $userId, 'new.mp4', 'video/mp4', 1, '2026-01-02T00:00:00+00:00');", ("$projectId", draft.Id), ("$userId", owner.Id));
+
+        deliveries.Initialize();
+
+        Assert.Equal("legacy-new", Assert.Single(deliveries.List(draft.Id)).Id);
+        var history = deliveries.ListForAdmin(draft.Id);
+        Assert.Equal(2, history.Length);
+        Assert.NotNull(history.Single(item => item.Id == "legacy-old").RevokedAt);
+        Assert.Null(history.Single(item => item.Id == "legacy-new").RevokedAt);
     }
 
     [Fact]
@@ -646,6 +763,20 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Contains(
             VoiceAndReferencesValidator.Validate(new SaveVoiceAndReferencesRequest(voiceLegacy.Version, voiceLegacy.VoiceAndReferences, false), new HashSet<string>(), options, fileCategories, baseline),
             error => error.Field == "voiceAndReferences.voiceover.narrationToneId" && error.Code == "unknown_option");
+
+        var disabledSelectedVoice = baseline with
+        {
+            VoiceAndReferences = baseline.VoiceAndReferences with
+            {
+                Voiceover = baseline.VoiceAndReferences.Voiceover with { SelectedVoiceIds = ["disabled-voice"] }
+            }
+        };
+        Assert.DoesNotContain(
+            VoiceAndReferencesValidator.Validate(new SaveVoiceAndReferencesRequest(disabledSelectedVoice.Version, disabledSelectedVoice.VoiceAndReferences, false), new HashSet<string>(), options, fileCategories, disabledSelectedVoice),
+            error => error.Field == "voiceAndReferences.voiceover.selectedVoiceIds");
+        Assert.Contains(
+            VoiceAndReferencesValidator.Validate(new SaveVoiceAndReferencesRequest(disabledSelectedVoice.Version, disabledSelectedVoice.VoiceAndReferences, false), new HashSet<string>(), options, fileCategories, baseline),
+            error => error.Field == "voiceAndReferences.voiceover.selectedVoiceIds" && error.Code == "unknown_option");
 
 
         var contentLanguage = options.ListAdmin(FormOptionGroups.ContentLanguages).Single(value => value.Id == "zh-CN");

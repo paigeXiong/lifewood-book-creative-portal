@@ -38,7 +38,9 @@ internal static class VoiceAndReferencesValidator
             Max(errors, "voiceAndReferences.voiceover.customVoiceDescription", voice.CustomVoiceDescription, 300);
             if (voice.SelectedVoiceIds is null) errors.Add(Error("voiceAndReferences.voiceover.selectedVoiceIds", "required"));
             var selectedVoiceIds = voice.SelectedVoiceIds ?? [];
-            Options(errors, "voiceAndReferences.voiceover.selectedVoiceIds", selectedVoiceIds, enabledVoiceIds, FormOptionCatalog.MaxSelectedVoices);
+            var allowedVoiceIds = new HashSet<string>(enabledVoiceIds, StringComparer.Ordinal);
+            if (previous?.SelectedVoiceIds is not null) allowedVoiceIds.UnionWith(previous.SelectedVoiceIds);
+            Options(errors, "voiceAndReferences.voiceover.selectedVoiceIds", selectedVoiceIds, allowedVoiceIds, FormOptionCatalog.MaxSelectedVoices);
             if (!string.IsNullOrWhiteSpace(voice.PreferredVoiceId) && !selectedVoiceIds.Contains(voice.PreferredVoiceId, StringComparer.Ordinal))
                 errors.Add(Error("voiceAndReferences.voiceover.preferredVoiceId", "invalid"));
         }

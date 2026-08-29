@@ -19,6 +19,7 @@ i18n.addResourceBundle(
       delivery: {
         file: "请选择不超过 500 MB 的 MP4 或 MOV 视频。",
         note: "交付说明不能超过 2000 个字符。",
+        activeExists: "请先撤回当前最终成品，再上传新的成品。",
       },
       project: { notSubmitted: "只有客户已提交的项目才能交付最终成品。", workflowConflict: "其他管理员刚刚更新了跟进信息。请重新载入后再试。" },
     },
@@ -389,6 +390,7 @@ i18n.addResourceBundle(
       delivery: {
         file: "Choose an MP4 or MOV video up to 500 MB.",
         note: "Use no more than 2,000 characters for the delivery note.",
+        activeExists: "Withdraw the current final delivery before uploading a new one.",
       },
       project: {
         notSubmitted:

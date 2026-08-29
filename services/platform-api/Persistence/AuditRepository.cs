@@ -68,7 +68,7 @@ internal sealed class AuditRepository(string connectionString, string dataDirect
             command.ExecuteNonQuery();
             return true;
         }
-        catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+        catch (SqliteException)
         {
             return false;
         }

@@ -20,6 +20,7 @@ const requiredKeys = [
   "admin.delivery.title",
   "admin.delivery.draftHint",
   "errors.delivery.file",
+  "errors.delivery.activeExists",
   "errors.project.notSubmitted",
   "errors.admin.emailExists",
   "errors.admin.selfDeactivate",

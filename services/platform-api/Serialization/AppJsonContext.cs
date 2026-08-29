@@ -42,6 +42,7 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSerializable(typeof(AdminFileCategoryDto))]
 [JsonSerializable(typeof(AdminFileCategoryDto[]))]
 [JsonSerializable(typeof(UpsertFileCategoryRequest))]
+[JsonSerializable(typeof(SubmissionConfigurationSnapshotDto))]
 
 
 [JsonSerializable(typeof(FormOptionsDto))]

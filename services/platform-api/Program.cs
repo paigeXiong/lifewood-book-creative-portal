@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using System.Threading.RateLimiting;
 using Lifewood.PlatformApi.Contracts;
 using Lifewood.PlatformApi.Features;
@@ -62,6 +63,7 @@ var projectWriteLocks = new AsyncKeyedLock();
 Directory.CreateDirectory(dataDirectory);
 var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
 using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+CleanupInterruptedUploads(dataDirectory);
 Directory.CreateDirectory(voiceSampleDirectory);
 CleanupOrphanedVoiceUploads(voiceSampleDirectory);
 var bundledSampleDirectory = Path.Combine(AppContext.BaseDirectory, "assets", "voice-samples");
@@ -189,6 +191,7 @@ RecoverDraftUploadTombstones(dataDirectory, repository, app.Logger);
 RecoverDeletedReferenceFiles(dataDirectory, repository, app.Logger);
 foreach (var (projectId, deliveryId) in deliveries.ListRevokedFileKeys())
     DeliveryEndpoints.DeleteDeliveryFiles(dataDirectory, projectId, deliveryId, app.Logger);
+RecoverPendingFileOperations(dataDirectory, repository, deliveries, app.Logger);
 app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
@@ -294,7 +297,24 @@ app.Use(async (context, next) =>
             try { auditEvents.Record(actor, action, context.TraceIdentifier); }
             catch (Exception exception)
             {
-                app.Logger.LogCritical(exception, "Failed to persist audit event {RequestId}; the business operation already committed and its response will be preserved.", context.TraceIdentifier);
+                app.Logger.LogCritical(exception, "Failed to persist audit event {RequestId}; the business operation may already be committed and will not be acknowledged as successful.", context.TraceIdentifier);
+                bufferedBody.SetLength(0);
+                bufferedBody.Position = 0;
+                context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                context.Response.ContentType = "application/json; charset=utf-8";
+                context.Response.ContentLength = null;
+                context.Response.Headers.Remove("Location");
+                await JsonSerializer.SerializeAsync(
+                    bufferedBody,
+                    new ApiErrorDto(
+                        "audit.persistence_failed",
+                        "errors.system.unexpected",
+                        "The operation may have completed, but its audit record could not be persisted. Use the request ID before retrying.",
+                        null,
+                        false,
+                        context.TraceIdentifier),
+                    AppJsonContext.Default.ApiErrorDto,
+                    context.RequestAborted);
             }
         }
         bufferedBody.Position = 0;
@@ -583,7 +603,7 @@ api.MapGet("/admin/projects/{id}/files/{fileId}", (string id, string fileId, Htt
     var asset = detail is null ? null : AllProjectAssets(detail.Project).FirstOrDefault(item => item.Id == fileId);
     if (detail is null || asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     var folder = Path.Combine(dataDirectory, "uploads", detail.OwnerId, id);
-    var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
+    var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").Where(IsStoredFile).SingleOrDefault() : null;
     if (path is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     return asset.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
         ? Results.File(path, asset.ContentType, enableRangeProcessing: true)
@@ -865,6 +885,17 @@ api.MapPost("/projects", async (HttpContext context, ProjectRepository projects,
     }
 });
 
+api.MapGet("/admin/projects/{id}/submission-snapshot", (string id, HttpContext context, ProjectRepository projects) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var snapshot = projects.GetSubmissionSnapshotForAdmin(id);
+    return snapshot is null
+        ? Error(context, 404, "submission.snapshot_not_found", "errors.http.notFound", "The submission configuration snapshot was not found.", false)
+        : Results.Ok(snapshot);
+});
+
 api.MapGet("/admin/organizations", (HttpContext context, AdminRepository admin, string? search, int page = 1, int pageSize = 20) =>
 {
     var user = CurrentUser(context);
@@ -957,6 +988,17 @@ api.MapDelete("/projects/{id}", async (string id, int version, HttpContext conte
     return Results.NoContent();
     }
 });
+
+api.MapGet("/projects/{id}/submission-snapshot", (string id, HttpContext context, ProjectRepository projects) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
+    var snapshot = projects.GetSubmissionSnapshot(user.Id, id);
+    return snapshot is null
+        ? Error(context, 404, "submission.snapshot_not_found", "errors.http.notFound", "The submission configuration snapshot was not found.", false)
+        : Results.Ok(snapshot);
+});
 api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
     var user = CurrentUser(context);
@@ -1003,39 +1045,11 @@ api.MapPut("/projects/{id}/creative", async (string id, SaveCreativeRequest? req
             .Where(character => !retainedCharacterIds.Contains(character.Id))
             .SelectMany(character => character.ReferenceImages ?? [])
             .ToArray();
-        var stagedFiles = new List<(string Original, string Staged)>();
-        try
-        {
-            foreach (var asset in removedAssets)
-            {
-                var staged = StageReferenceFileDeletion(dataDirectory, user.Id, id, asset.Id);
-                if (staged is { } pending) stagedFiles.Add(pending);
-            }
-        }
-        catch (Exception exception)
-        {
-            foreach (var pending in stagedFiles) RestoreReferenceFileDeletion(pending, app.Logger);
-            app.Logger.LogError(exception, "Could not stage character reference files before deleting a character");
-            return Error(context, 500, "system.unexpected", "errors.system.unexpected", "The character could not be safely deleted. Try again.", true);
-        }
+        if (removedAssets.Length > 0)
+            return Error(context, 400, "validation.assets", "errors.validation.invalid", "Delete the character reference images before deleting the character.", false,
+                [new FieldErrorDto("creative.characters", "invalid", "errors.validation.invalid")]);
 
-        SaveResult result;
-        try
-        {
-            result = projects.SaveCreative(user.Id, id, request);
-        }
-        catch (Exception exception)
-        {
-            foreach (var pending in stagedFiles) RestoreReferenceFileDeletion(pending, app.Logger);
-            app.Logger.LogError(exception, "Could not save creative data after staging character reference files");
-            return Error(context, 500, "system.unexpected", "errors.system.unexpected", "The character could not be safely deleted. Try again.", true);
-        }
-        if (result.Outcome != SaveOutcome.Saved)
-            foreach (var pending in stagedFiles) RestoreReferenceFileDeletion(pending, app.Logger);
-        else
-            foreach (var removed in stagedFiles)
-                try { File.Delete(removed.Staged); }
-                catch (Exception exception) { app.Logger.LogWarning(exception, "Staged character reference file will be cleaned on restart"); }
+        var result = projects.SaveCreative(user.Id, id, request);
 
         return result.Outcome switch
         {
@@ -1097,7 +1111,7 @@ api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, 
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
     if (current.Status == "submitted")
     {
-        var replay = projects.Submit(user.Id, id, request.Version, request.IdempotencyKey);
+        var replay = projects.Submit(user.Id, id, request.Version, request.IdempotencyKey, null);
         return replay.Outcome == SaveOutcome.Saved
             ? Results.Ok(replay.Draft)
             : Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: replay.CurrentVersion);
@@ -1107,7 +1121,8 @@ api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, 
     var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds(), options, fileCategories);
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The application is incomplete.", false, fieldErrors);
-    var result = projects.Submit(user.Id, id, request.Version, request.IdempotencyKey);
+    var snapshot = CaptureSubmissionConfiguration(current, options, voices, fileCategories);
+    var result = projects.Submit(user.Id, id, request.Version, request.IdempotencyKey, snapshot);
     return result.Outcome switch
     {
         SaveOutcome.Saved => Results.Ok(result.Draft),
@@ -1183,17 +1198,28 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     var folder = Path.Combine(dataDirectory, "uploads", user.Id, id);
     Directory.CreateDirectory(folder);
     var path = Path.Combine(folder, $"{fileId}_{safeName}");
+    var temporary = path + "." + Guid.NewGuid().ToString("N") + ".upload";
+    var pendingMarker = path + ".pending";
     try
     {
-        await using (var output = File.Create(path))
+        await using (var output = File.Create(temporary))
         {
             await file.CopyToAsync(output, context.RequestAborted);
+            output.Flush(flushToDisk: true);
         }
         context.RequestAborted.ThrowIfCancellationRequested();
+        CreatePendingMarker(pendingMarker);
+        File.Move(temporary, path);
         var asset = new ReferenceAssetDto(fileId, categoryId, safeName, contentType, file.Length, $"/api/projects/{id}/files/{fileId}");
         var result = projects.AddAsset(user.Id, id, version, asset, target, string.IsNullOrWhiteSpace(characterId) ? null : characterId);
-        if (result.Outcome == SaveOutcome.Saved) return Results.Ok(new UploadReferenceResultDto(result.Draft!, asset));
+        if (result.Outcome == SaveOutcome.Saved)
+        {
+            try { File.Delete(pendingMarker); }
+            catch (Exception exception) { app.Logger.LogWarning(exception, "Pending upload marker {Path} will be reconciled on restart", pendingMarker); }
+            return Results.Ok(new UploadReferenceResultDto(result.Draft!, asset));
+        }
         File.Delete(path);
+        File.Delete(pendingMarker);
         return result.Outcome switch
         {
             SaveOutcome.NotFound => Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false),
@@ -1203,7 +1229,9 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     }
     catch
     {
+        if (File.Exists(temporary)) File.Delete(temporary);
         if (File.Exists(path)) File.Delete(path);
+        if (File.Exists(pendingMarker)) File.Delete(pendingMarker);
         throw;
     }
     }
@@ -1218,7 +1246,7 @@ api.MapGet("/projects/{id}/files/{fileId}", (string id, string fileId, HttpConte
     var asset = project is null ? null : AllProjectAssets(project).FirstOrDefault(item => item.Id == fileId);
     if (asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     var folder = Path.Combine(dataDirectory, "uploads", user.Id, id);
-    var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
+    var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").Where(IsStoredFile).SingleOrDefault() : null;
     if (path is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     return asset.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
         ? Results.File(path, asset.ContentType, enableRangeProcessing: true)
@@ -1263,6 +1291,11 @@ api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, 
             try { File.Delete(removed.Staged); }
             catch (Exception exception) { app.Logger.LogWarning(exception, "Staged reference file {FileId} will be cleaned on restart", fileId); }
         }
+        var uploadFolder = Path.Combine(dataDirectory, "uploads", user.Id, id);
+        if (Directory.Exists(uploadFolder))
+            foreach (var marker in Directory.EnumerateFiles(uploadFolder, $"{fileId}_*.pending"))
+                try { File.Delete(marker); }
+                catch (Exception exception) { app.Logger.LogWarning(exception, "Pending reference marker {Path} will be reconciled on restart", marker); }
         return Results.Ok(result.Draft);
     }
 });
@@ -1317,13 +1350,75 @@ static bool IsLoopbackRequest(HttpContext context)
     if (context.Request.Headers.ContainsKey("Forwarded") ||
         context.Request.Headers.ContainsKey("X-Forwarded-For") ||
         context.Request.Headers.ContainsKey("X-Original-For")) return false;
+
     var address = context.Connection.RemoteIpAddress;
-    return address is not null && System.Net.IPAddress.IsLoopback(address);
+    if (address is null || !System.Net.IPAddress.IsLoopback(address)) return false;
+
+    var host = context.Request.Host.Host;
+    if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+    return System.Net.IPAddress.TryParse(host, out var hostAddress) && System.Net.IPAddress.IsLoopback(hostAddress);
 }
 static string Locale(HttpContext context)
 {
     var value = context.Request.Headers.AcceptLanguage.ToString();
     return value.StartsWith("en-US", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN";
+}
+static SubmissionConfigurationSnapshotDto CaptureSubmissionConfiguration(
+    TaskDraftDto project,
+    FormOptionRepository options,
+    VoiceReferenceRepository voices,
+    FileCategoryRepository fileCategories)
+{
+    var selected = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+    void Add(string group, params IEnumerable<string?>[] values)
+    {
+        if (!selected.TryGetValue(group, out var ids)) selected[group] = ids = new(StringComparer.Ordinal);
+        foreach (var value in values.SelectMany(items => items))
+            if (!string.IsNullOrWhiteSpace(value)) ids.Add(value);
+    }
+
+    Add(FormOptionGroups.Brands, [project.Project.BrandId]);
+    Add(FormOptionGroups.VideoGoals, [project.Project.VideoGoalId]);
+    Add(FormOptionGroups.Audiences, project.Project.AudienceIds);
+    Add(FormOptionGroups.Genres, [project.Book.GenreId]);
+    Add(FormOptionGroups.ContentLanguages, [project.Book.ContentLanguageId, project.VoiceAndReferences.Voiceover.ContentLanguageId]);
+    Add(FormOptionGroups.VideoDurations, [project.Book.VideoDurationId]);
+    Add(FormOptionGroups.PublishingPlatforms, project.Book.PublishingPlatformIds);
+    Add(FormOptionGroups.RoleTypes, project.Creative.Characters.Select(character => character.RoleTypeId));
+    Add(FormOptionGroups.AgeRanges, project.Creative.Characters.Select(character => character.AgeRangeId));
+    Add(FormOptionGroups.Genders, project.Creative.Characters.Select(character => character.GenderId));
+    Add(FormOptionGroups.VisualStyles, [project.Creative.VisualStyleId]);
+    Add(FormOptionGroups.MoodTags, project.Creative.MoodTagIds);
+    Add(FormOptionGroups.ImageStyleTags, project.Creative.ImageStyleTagIds);
+    Add(FormOptionGroups.PaceTags, project.Creative.PaceTagIds);
+    Add(FormOptionGroups.NarrationTones, [project.VoiceAndReferences.Voiceover.NarrationToneId]);
+    Add(FormOptionGroups.SpeechRates, [project.VoiceAndReferences.Voiceover.SpeechRateId]);
+    Add(FormOptionGroups.VoiceGenders, [project.VoiceAndReferences.Voiceover.VoiceGenderId]);
+    Add(FormOptionGroups.VoiceAges, [project.VoiceAndReferences.Voiceover.VoiceAgeId]);
+    Add(FormOptionGroups.Accents, [project.VoiceAndReferences.Voiceover.AccentId]);
+    Add(FormOptionGroups.VoiceEmotions, [project.VoiceAndReferences.Voiceover.EmotionStyleId]);
+
+    var selectedVoiceIds = project.VoiceAndReferences.Voiceover.SelectedVoiceIds.ToHashSet(StringComparer.Ordinal);
+    var voiceSnapshots = voices.ListAdmin().Where(voice => selectedVoiceIds.Contains(voice.Id)).ToArray();
+    Add(FormOptionGroups.VoiceTags, voiceSnapshots.SelectMany(voice => voice.TagIds));
+    var formSnapshots = selected
+        .OrderBy(item => item.Key, StringComparer.Ordinal)
+        .SelectMany(item => options.ListAdmin(item.Key).Where(option => item.Value.Contains(option.Id)))
+        .ToArray();
+
+    var selectedCategoryIds = (project.Book.SourceAssets ?? [])
+        .Concat(project.Creative.StyleReferenceImages ?? [])
+        .Concat(project.Creative.Characters.SelectMany(character => character.ReferenceImages ?? []))
+        .Concat(project.VoiceAndReferences.Assets)
+        .Select(asset => asset.CategoryId)
+        .ToHashSet(StringComparer.Ordinal);
+    var categorySnapshots = FileCategoryScopes.All
+        .OrderBy(scope => scope, StringComparer.Ordinal)
+        .SelectMany(fileCategories.ListAdmin)
+        .Where(category => selectedCategoryIds.Contains(category.Id))
+        .ToArray();
+
+    return new(1, DateTimeOffset.UtcNow, formSnapshots, voiceSnapshots, categorySnapshots);
 }
 
 static string NormalizeContentType(string contentType, string fileName)
@@ -1532,7 +1627,7 @@ static uint PngCrc(ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
 static (string Original, string Staged)? StageReferenceFileDeletion(string dataDirectory, string ownerId, string projectId, string fileId)
 {
     var folder = Path.Combine(dataDirectory, "uploads", ownerId, projectId);
-    var original = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").SingleOrDefault() : null;
+    var original = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").Where(IsStoredFile).SingleOrDefault() : null;
     if (original is null) return null;
     var stagingFolder = Path.Combine(dataDirectory, "uploads", ".deleted-files", ownerId, projectId);
     Directory.CreateDirectory(stagingFolder);
@@ -1671,6 +1766,82 @@ static void CleanupOrphanedVoiceUploads(string sampleDirectory)
 {
     foreach (var path in Directory.EnumerateFiles(sampleDirectory, "*.upload"))
         File.Delete(path);
+}
+static void CleanupInterruptedUploads(string dataDirectory)
+{
+    foreach (var directoryName in new[] { "uploads", "deliveries" })
+    {
+        var directory = Path.Combine(dataDirectory, directoryName);
+        foreach (var path in EnumerateFilesWithoutReparse(directory, ".upload")) File.Delete(path);
+    }
+}
+static bool IsStoredFile(string path) =>
+    !path.EndsWith(".pending", StringComparison.OrdinalIgnoreCase) &&
+    !path.EndsWith(".upload", StringComparison.OrdinalIgnoreCase);
+static IEnumerable<string> EnumerateFilesWithoutReparse(string root, string suffix)
+{
+    if (!Directory.Exists(root)) yield break;
+    var pending = new Stack<string>();
+    pending.Push(root);
+    while (pending.Count > 0)
+    {
+        var current = pending.Pop();
+        var item = new DirectoryInfo(current);
+        if ((item.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+        foreach (var child in item.EnumerateFileSystemInfos())
+        {
+            if ((child.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            if (child is DirectoryInfo childDirectory) pending.Push(childDirectory.FullName);
+            else if (child.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) yield return child.FullName;
+        }
+    }
+}
+static void CreatePendingMarker(string path)
+{
+    using var marker = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+    marker.Flush(flushToDisk: true);
+}
+static void RecoverPendingFileOperations(string dataDirectory, ProjectRepository projects, DeliveryRepository deliveries, ILogger logger)
+{
+    Recover(Path.Combine(dataDirectory, "uploads"), 3, (parts, fileId) =>
+    {
+        var project = projects.Get(parts[0], parts[1]);
+        return project is not null && AllProjectAssets(project).Any(asset => asset.Id == fileId);
+    });
+    Recover(Path.Combine(dataDirectory, "deliveries"), 2, (parts, fileId) => deliveries.Find(parts[0], fileId) is not null);
+
+    void Recover(string root, int expectedParts, Func<string[], string, bool> isReferenced)
+    {
+        foreach (var marker in EnumerateFilesWithoutReparse(root, ".pending"))
+        {
+            try
+            {
+                var relative = Path.GetRelativePath(root, marker);
+                var parts = relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+                var finalPath = marker[..^".pending".Length];
+                var finalName = Path.GetFileName(finalPath);
+                var separator = finalName.IndexOf('_');
+                if (parts.Length != expectedParts || separator <= 0 || !Guid.TryParseExact(finalName[..separator], "N", out _))
+                {
+                    logger.LogWarning("Skipped malformed pending file marker {Path}", marker);
+                    continue;
+                }
+                var fileId = finalName[..separator];
+                var referenced = isReferenced(parts, fileId);
+                if (referenced && !File.Exists(finalPath))
+                {
+                    logger.LogError("Pending file marker {Path} references a missing stored file", marker);
+                    continue;
+                }
+                if (!referenced && File.Exists(finalPath)) File.Delete(finalPath);
+                File.Delete(marker);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Could not recover pending file operation {Path}", marker);
+            }
+        }
+    }
 }
 static List<(string Original, string Backup)> StageVoiceSamples(string sampleDirectory, string id)
 {

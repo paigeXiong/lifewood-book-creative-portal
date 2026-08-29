@@ -64,6 +64,20 @@ foreach ($candidate in $PackagePath) {
     $pathLockSequence = @(Read-MsiRows $database "SELECT Condition, Sequence FROM InstallExecuteSequence WHERE Action='SetDATAFOLDER'")
     Assert-True ($pathLockSequence.Count -eq 1 -and $pathLockSequence[0][0] -eq 'EXISTINGINSTALL AND PREVIOUSDATAFOLDER') "Upgrade data-path lock is not sequenced safely in $resolved"
 
+    $validatorBinary = @(Read-MsiRows $database "SELECT Name FROM Binary WHERE Name='InstallerActions'")
+    Assert-True ($validatorBinary.Count -eq 1) "Native data-directory validator is missing in $resolved"
+    $validator = @(Read-MsiRows $database "SELECT Type, Source, Target FROM CustomAction WHERE Action='ValidateDataDirectory'")
+    Assert-True ($validator.Count -eq 1 -and $validator[0][1] -eq 'InstallerActions' -and $validator[0][2] -eq 'ValidateDataDirectory') "Data-directory validation custom action is missing in $resolved"
+    $validatorType = [int]$validator[0][0]
+    Assert-True (($validatorType -band 1024) -eq 1024 -and ($validatorType -band 2048) -eq 2048 -and ($validatorType -band 8192) -eq 8192) "Data-directory validator is not elevated, deferred, and target-hidden in $resolved"
+    $validatorSequence = @(Read-MsiRows $database "SELECT Condition, Sequence FROM InstallExecuteSequence WHERE Action='ValidateDataDirectory'")
+    $validatorDataSequence = @(Read-MsiRows $database "SELECT Condition, Sequence FROM InstallExecuteSequence WHERE Action='SetValidateDataDirectory'")
+    $createFoldersSequence = @(Read-MsiRows $database "SELECT Sequence FROM InstallExecuteSequence WHERE Action='CreateFolders'")
+    $secureObjectsSequence = @(Read-MsiRows $database "SELECT Sequence FROM InstallExecuteSequence WHERE Action='Wix4SchedSecureObjects_X64'")
+    Assert-True ($validatorSequence.Count -eq 1 -and $validatorSequence[0][0] -eq 'NOT REMOVE~="ALL"' -and $validatorDataSequence.Count -eq 1 -and $validatorDataSequence[0][0] -eq 'NOT REMOVE~="ALL"' -and [int]$validatorDataSequence[0][1] -lt [int]$validatorSequence[0][1] -and $createFoldersSequence.Count -eq 1 -and [int]$validatorSequence[0][1] -lt [int]$createFoldersSequence[0][0] -and $secureObjectsSequence.Count -eq 1 -and [int]$validatorSequence[0][1] -lt [int]$secureObjectsSequence[0][0]) "Data-directory validator input or execution is not sequenced before directory creation and ACL changes in $resolved"
+    $validatorData = @(Read-MsiRows $database "SELECT Target FROM CustomAction WHERE Action='SetValidateDataDirectory'")
+    Assert-True ($validatorData.Count -eq 1 -and $validatorData[0][0].Contains('[DATAFOLDER]') -and $validatorData[0][0].Contains('[INSTALLFOLDER]') -and $validatorData[0][0].Contains('[WindowsFolder]')) "Data-directory validator input is incomplete in $resolved"
+
     $secureProperties = @(Read-MsiRows $database "SELECT Value FROM Property WHERE Property='SecureCustomProperties'")
     Assert-True ($secureProperties.Count -eq 1 -and $secureProperties[0][0].Contains('DATAFOLDER') -and $secureProperties[0][0].Contains('PREVIOUSDATAFOLDER')) "Persistent path properties are not secured for elevated install in $resolved"
 

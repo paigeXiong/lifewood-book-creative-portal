@@ -27,6 +27,21 @@ internal sealed class DeliveryRepository(string connectionString)
             """;
         command.ExecuteNonQuery();
         if (!HasColumn(connection, "project_deliveries", "revoked_at")) Execute(connection, "ALTER TABLE project_deliveries ADD COLUMN revoked_at TEXT NULL;");
+        Execute(connection, """
+            UPDATE project_deliveries AS older
+            SET revoked_at = older.published_at
+            WHERE older.revoked_at IS NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM project_deliveries AS newer
+                  WHERE newer.project_id = older.project_id
+                    AND newer.revoked_at IS NULL
+                    AND (newer.published_at > older.published_at
+                         OR (newer.published_at = older.published_at AND newer.id > older.id))
+              );
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_project_deliveries_one_active
+                ON project_deliveries(project_id) WHERE revoked_at IS NULL;
+            """);
     }
 
     public FinalDeliveryDto[] List(string projectId)
@@ -101,6 +116,12 @@ internal sealed class DeliveryRepository(string connectionString)
         if (submissionStatus is null) return new(AdminWriteOutcome.NotFound);
         if (!submissionStatus.Equals("submitted", StringComparison.Ordinal)) return new(AdminWriteOutcome.Conflict, "projectStatus");
 
+        using var activeDelivery = connection.CreateCommand();
+        activeDelivery.Transaction = transaction;
+        activeDelivery.CommandText = "SELECT EXISTS(SELECT 1 FROM project_deliveries WHERE project_id = $projectId AND revoked_at IS NULL);";
+        activeDelivery.Parameters.AddWithValue("$projectId", projectId);
+        if (Convert.ToInt32(activeDelivery.ExecuteScalar()) == 1) return new(AdminWriteOutcome.Conflict, "activeDelivery");
+
         using var uploader = connection.CreateCommand();
         uploader.Transaction = transaction;
         uploader.CommandText = "SELECT display_name FROM users WHERE id = $id AND is_active = 1;";
@@ -123,7 +144,11 @@ internal sealed class DeliveryRepository(string connectionString)
         insert.Parameters.AddWithValue("$sizeBytes", sizeBytes);
         insert.Parameters.AddWithValue("$note", (object?)normalizedNote ?? DBNull.Value);
         insert.Parameters.AddWithValue("$publishedAt", now.ToString("O"));
-        insert.ExecuteNonQuery();
+        try { insert.ExecuteNonQuery(); }
+        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == 2067)
+        {
+            return new(AdminWriteOutcome.Conflict, "activeDelivery");
+        }
 
         using var update = connection.CreateCommand();
         update.Transaction = transaction;

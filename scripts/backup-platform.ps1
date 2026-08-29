@@ -18,6 +18,21 @@ if (-not (Test-Path -LiteralPath $dataDirectory)) {
 $dataItem = Get-Item -LiteralPath $dataDirectory -Force
 if (($dataItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "The data directory cannot be a junction or symbolic link." }
 
+function Assert-NoReparsePoints([string]$Path) {
+    $pending = [Collections.Generic.Stack[string]]::new()
+    $pending.Push($Path)
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        $item = Get-Item -LiteralPath $current -Force
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "The data directory contains a junction or symbolic link: $($item.FullName)"
+        }
+        if ($item.PSIsContainer) {
+            foreach ($child in Get-ChildItem -LiteralPath $item.FullName -Force) { $pending.Push($child.FullName) }
+        }
+    }
+}
+
 
 $lockPath = Join-Path $dataDirectory "platform.lock"
 try {
@@ -28,6 +43,7 @@ catch {
 }
 
 try {
+Assert-NoReparsePoints $dataDirectory
 $resolvedBackupRoot = [System.IO.Path]::GetFullPath($backupRoot)
 $resolvedDataDirectory = (Resolve-Path -LiteralPath $dataDirectory).Path.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
 if ($resolvedBackupRoot.Equals($resolvedDataDirectory, [StringComparison]::OrdinalIgnoreCase) -or
@@ -39,7 +55,7 @@ New-Item -ItemType Directory -Path $resolvedBackupRoot -Force | Out-Null
 $archive = Join-Path $resolvedBackupRoot "lifewood-platform-data-$stamp.zip"
 $sourceItems = @(Get-ChildItem -LiteralPath $dataDirectory -Force | Where-Object { $_.Name -ne "platform.lock" } | Select-Object -ExpandProperty FullName)
 if ($sourceItems.Count -eq 0) { throw "Platform data directory is empty." }
-Compress-Archive -Path $sourceItems -DestinationPath $archive -CompressionLevel Optimal
+Compress-Archive -LiteralPath $sourceItems -DestinationPath $archive -CompressionLevel Optimal
 
 $result = Get-Item -LiteralPath $archive
 if ($result.Length -le 0) { throw "Backup archive is empty." }

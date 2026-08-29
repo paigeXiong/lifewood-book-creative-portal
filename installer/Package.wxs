@@ -22,6 +22,7 @@
       <RegistrySearch Id="PreviousDataDirectory" Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="DataDirectory" Type="raw" Bitness="always64" />
     </Property>
     <Property Id="DATAFOLDER" Secure="yes" />
+    <Property Id="UNSAFEDATAPATHMESSAGE" Value="!(loc.UnsafeDataPathMessage)" Hidden="yes" />
     <Property Id="ARPNOMODIFY" Value="1" />
     <Launch Condition="PORT &gt;= 1024 AND PORT &lt;= 65535" Message="!(loc.InvalidPortMessage)" />
     <Launch Condition="REMOVE OR NOT (Installed OR WIX_UPGRADE_DETECTED) OR (EXISTINGINSTALL AND PREVIOUSDATAFOLDER)" Message="!(loc.MissingUpgradeDataPathMessage)" />
@@ -86,6 +87,23 @@
       <ComponentRef Id="PersistentDataDirectory" />
       <ComponentRef Id="StartMenuShortcuts" />
     </Feature>
+
+    <Binary Id="InstallerActions" SourceFile="$(InstallerActionsDir)\Lifewood.InstallerActions.dll" />
+    <CustomAction Id="ValidateDataDirectory"
+                  BinaryRef="InstallerActions"
+                  DllEntry="ValidateDataDirectory"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"
+                  HideTarget="yes" />
+    <SetProperty Id="ValidateDataDirectory"
+                 Value="[DATAFOLDER]&#x9;[UNSAFEDATAPATHMESSAGE]&#x9;[INSTALLFOLDER]&#x9;[WindowsFolder]&#x9;[ProgramFiles64Folder]&#x9;[ProgramFilesFolder]&#x9;[%USERPROFILE]"
+                 Before="ValidateDataDirectory"
+                 Sequence="execute"
+                 Condition="NOT REMOVE~=&quot;ALL&quot;" />
+    <InstallExecuteSequence>
+      <Custom Action="ValidateDataDirectory" Before="CreateFolders" Condition="NOT REMOVE~=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
 
     <!-- A command-line DATAFOLDER must never redirect an upgrade away from its existing production data. -->
     <SetProperty Id="DATAFOLDER" Value="[PREVIOUSDATAFOLDER]" After="AppSearch" Condition="EXISTINGINSTALL AND PREVIOUSDATAFOLDER" />

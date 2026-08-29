@@ -35,6 +35,7 @@ internal sealed class ProjectRepository(string connectionString)
                 creative_json TEXT NOT NULL DEFAULT '{"characters":[],"moodTagIds":[],"imageStyleTagIds":[],"paceTagIds":[],"styleReferenceImageUrls":[]}',
                 voice_json TEXT NOT NULL DEFAULT '{"voiceover":{"selectedVoiceIds":[]},"assets":[],"competitorUrls":[],"creativeDirection":{"coreMessage":""}}',
                 submission_key TEXT NULL,
+                submission_snapshot_json TEXT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -93,6 +94,21 @@ internal sealed class ProjectRepository(string connectionString)
         {
             markMigration.Transaction = transaction;
             markMigration.CommandText = "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (4, $appliedAt);";
+            markMigration.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
+            markMigration.ExecuteNonQuery();
+        }
+
+        if (!HasColumn(connection, transaction, "projects", "submission_snapshot_json"))
+        {
+            using var migration = connection.CreateCommand();
+            migration.Transaction = transaction;
+            migration.CommandText = "ALTER TABLE projects ADD COLUMN submission_snapshot_json TEXT NULL;";
+            migration.ExecuteNonQuery();
+        }
+        using (var markMigration = connection.CreateCommand())
+        {
+            markMigration.Transaction = transaction;
+            markMigration.CommandText = "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (5, $appliedAt);";
             markMigration.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
             markMigration.ExecuteNonQuery();
         }
@@ -362,7 +378,7 @@ internal sealed class ProjectRepository(string connectionString)
         return SaveVoiceAndReferences(ownerId, id, new SaveVoiceAndReferencesRequest(version, updated));
     }
 
-    public SaveResult Submit(string ownerId, string id, int version, string idempotencyKey)
+    public SaveResult Submit(string ownerId, string id, int version, string idempotencyKey, SubmissionConfigurationSnapshotDto? snapshot)
     {
         var now = DateTimeOffset.UtcNow;
         var taskNumber = $"LW-{now:yyMMdd}-{id[..6].ToUpperInvariant()}";
@@ -371,7 +387,7 @@ internal sealed class ProjectRepository(string connectionString)
         command.CommandText = """
             UPDATE projects
             SET task_number = $taskNumber, status = 'submitted', submission_key = $idempotencyKey, version = version + 1,
-                updated_at = $updatedAt, workflow_status = 'new', priority = 'normal', assignee_user_id = NULL, workflow_updated_at = $updatedAt
+                submission_snapshot_json = $snapshot, updated_at = $updatedAt, workflow_status = 'new', priority = 'normal', assignee_user_id = NULL, workflow_updated_at = $updatedAt
             WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version
             RETURNING id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status;
             """;
@@ -381,6 +397,7 @@ internal sealed class ProjectRepository(string connectionString)
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$version", version);
         command.Parameters.AddWithValue("$idempotencyKey", idempotencyKey);
+        command.Parameters.AddWithValue("$snapshot", snapshot is null ? DBNull.Value : JsonSerializer.Serialize(snapshot, AppJsonContext.Default.SubmissionConfigurationSnapshotDto));
         using var reader = command.ExecuteReader();
         if (reader.Read())
         {
@@ -476,6 +493,24 @@ internal sealed class ProjectRepository(string connectionString)
             StyleReferenceImages = creative.StyleReferenceImages ?? [],
             Characters = creative.Characters.Select(character => character with { ReferenceImages = character.ReferenceImages ?? [] }).ToArray()
         };
+    }
+
+    public SubmissionConfigurationSnapshotDto? GetSubmissionSnapshot(string ownerId, string id) =>
+        ReadSubmissionSnapshot("SELECT submission_snapshot_json FROM projects WHERE owner_id = $ownerId AND id = $id AND status = 'submitted';", ownerId, id);
+
+    public SubmissionConfigurationSnapshotDto? GetSubmissionSnapshotForAdmin(string id) =>
+        ReadSubmissionSnapshot("SELECT submission_snapshot_json FROM projects WHERE id = $id AND status = 'submitted';", null, id);
+
+    private SubmissionConfigurationSnapshotDto? ReadSubmissionSnapshot(string sql, string? ownerId, string id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        if (ownerId is not null) command.Parameters.AddWithValue("$ownerId", ownerId);
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteScalar() is string json
+            ? JsonSerializer.Deserialize(json, AppJsonContext.Default.SubmissionConfigurationSnapshotDto)
+            : null;
     }
 
     private static BookInfoDto DeserializeBook(string json)

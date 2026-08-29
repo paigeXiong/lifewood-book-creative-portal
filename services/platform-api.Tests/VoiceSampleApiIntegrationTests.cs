@@ -1,8 +1,12 @@
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Lifewood.PlatformApi.Contracts;
+using Lifewood.PlatformApi.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -13,6 +17,8 @@ namespace Lifewood.PlatformApi.Tests;
 public sealed class VoiceSampleApiIntegrationTests : IDisposable
 {
     private const string VoiceId = "warm-storyteller";
+    private const string OrphanUploadId = "11111111111111111111111111111111";
+    private const string OrphanDeliveryId = "22222222222222222222222222222222";
     private readonly string root = Path.Combine(Path.GetTempPath(), "lifewood-platform-http-tests-" + Guid.NewGuid().ToString("N"));
     private readonly WebApplicationFactory<Program> factory;
     private readonly HttpClient ownerClient;
@@ -22,6 +28,18 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         var sampleDirectory = Path.Combine(root, "voice-samples");
         Directory.CreateDirectory(sampleDirectory);
         File.WriteAllText(Path.Combine(sampleDirectory, "interrupted.upload"), "orphan");
+        var interruptedUpload = Path.Combine(root, "uploads", "owner", "project", "interrupted.upload");
+        var interruptedDelivery = Path.Combine(root, "deliveries", "project", "interrupted.upload");
+        Directory.CreateDirectory(Path.GetDirectoryName(interruptedUpload)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(interruptedDelivery)!);
+        File.WriteAllText(interruptedUpload, "orphan");
+        File.WriteAllText(interruptedDelivery, "orphan");
+        var orphanUpload = Path.Combine(root, "uploads", "owner", "project", $"{OrphanUploadId}_orphan.png");
+        var orphanDelivery = Path.Combine(root, "deliveries", "project", $"{OrphanDeliveryId}_orphan.mp4");
+        File.WriteAllText(orphanUpload, "orphan");
+        File.WriteAllText(orphanUpload + ".pending", "");
+        File.WriteAllText(orphanDelivery, "orphan");
+        File.WriteAllText(orphanDelivery + ".pending", "");
         factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
@@ -62,9 +80,64 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task BootstrapRejectsNonLoopbackHostOnLoopbackConnection()
+    {
+        var csrf = await GetCsrf(ownerClient);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/bootstrap")
+        {
+            Content = JsonContent.Create(new { displayName = "Rebinding Owner", email = "rebinding@example.test", password = "rebinding-password-123" })
+        };
+        request.Headers.Host = "attacker.example";
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+
+        using var response = await ownerClient.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("auth.bootstrap_local_only", await ErrorCode(response));
+    }
+
+    [Fact]
+    public async Task AdminWriteReturnsNonRetryableFailureWhenAuditCannotBePersisted()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var create = await Send(ownerClient, HttpMethod.Post, "/api/admin/users", csrf,
+            JsonContent.Create(new { displayName = "Audit Target", email = "audit-target@example.test", password = "audit-target-password-123", role = "customer" }));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        using var created = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var userId = created.RootElement.GetProperty("id").GetString()!;
+
+        using (var connection = new SqliteConnection($"Data Source={Path.Combine(root, "platform.db")}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER fail_audit_insert BEFORE INSERT ON audit_events BEGIN SELECT RAISE(ABORT, 'simulated audit failure'); END;";
+            command.ExecuteNonQuery();
+        }
+        Directory.CreateDirectory(Path.Combine(root, "audit-pending.ndjson"));
+
+        using var update = await Send(ownerClient, HttpMethod.Put, $"/api/admin/users/{userId}", csrf,
+            JsonContent.Create(new { displayName = "Updated Despite Audit Failure", phone = (string?)null, role = "customer", active = true, organizationId = (string?)null }));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, update.StatusCode);
+        using var error = JsonDocument.Parse(await update.Content.ReadAsStringAsync());
+        Assert.Equal("audit.persistence_failed", error.RootElement.GetProperty("code").GetString());
+        Assert.Equal("errors.system.unexpected", error.RootElement.GetProperty("messageKey").GetString());
+        Assert.False(error.RootElement.GetProperty("retryable").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(error.RootElement.GetProperty("requestId").GetString()));
+
+        using var users = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/admin/users?search=Updated%20Despite%20Audit%20Failure&page=1&pageSize=30"));
+        Assert.Equal(userId, Assert.Single(users.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetString());
+    }
+
+    [Fact]
     public async Task VoiceSampleEndpointsEnforceSecurityAndManageRealFiles()
     {
         Assert.False(File.Exists(Path.Combine(root, "voice-samples", "interrupted.upload")));
+        Assert.False(Directory.EnumerateFiles(Path.Combine(root, "uploads"), "*.upload", SearchOption.AllDirectories).Any());
+        Assert.False(Directory.EnumerateFiles(Path.Combine(root, "deliveries"), "*.upload", SearchOption.AllDirectories).Any());
+        Assert.DoesNotContain(Directory.EnumerateFiles(Path.Combine(root, "uploads"), "*", SearchOption.AllDirectories), path => Path.GetFileName(path).Contains(OrphanUploadId, StringComparison.Ordinal));
+        Assert.DoesNotContain(Directory.EnumerateFiles(Path.Combine(root, "deliveries"), "*", SearchOption.AllDirectories), path => Path.GetFileName(path).Contains(OrphanDeliveryId, StringComparison.Ordinal));
         await BootstrapOwner();
         var ownerCsrf = await GetCsrf(ownerClient);
 
@@ -229,6 +302,132 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         using var customerClient = await CreateCustomerClient(csrf);
         using var forbidden = await customerClient.GetAsync("/api/admin/overview");
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+
+    [Fact]
+    public async Task FinalDeliveryUploadUsesValidatedFileAndLeavesNoPendingArtifacts()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var create = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        using var created = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var projectId = created.RootElement.GetProperty("id").GetString()!;
+        using (var connection = new SqliteConnection($"Data Source={Path.Combine(root, "platform.db")}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE projects SET status = 'submitted', workflow_status = 'new', workflow_updated_at = updated_at WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", projectId);
+            command.ExecuteNonQuery();
+        }
+
+        using var content = new MultipartFormDataContent();
+        var video = new ByteArrayContent(MinimalMp4());
+        video.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
+        content.Add(video, "file", "final.mp4");
+        content.Add(new StringContent("Ready for customer review."), "note");
+        using var publish = await Send(ownerClient, HttpMethod.Post, $"/api/admin/projects/{projectId}/deliveries", csrf, content);
+
+        Assert.Equal(HttpStatusCode.OK, publish.StatusCode);
+        using var published = JsonDocument.Parse(await publish.Content.ReadAsStringAsync());
+        var deliveryId = published.RootElement.GetProperty("id").GetString()!;
+        var deliveryFolder = Path.Combine(root, "deliveries", projectId);
+        var storedDelivery = Assert.Single(Directory.EnumerateFiles(deliveryFolder, $"{deliveryId}_*"));
+        Assert.Empty(Directory.EnumerateFiles(deliveryFolder, "*.upload"));
+        Assert.Empty(Directory.EnumerateFiles(deliveryFolder, "*.pending"));
+
+        using var duplicateContent = new MultipartFormDataContent();
+        var duplicateVideo = new ByteArrayContent(MinimalMp4());
+        duplicateVideo.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
+        duplicateContent.Add(duplicateVideo, "file", "replacement.mp4");
+        using var duplicate = await Send(ownerClient, HttpMethod.Post, $"/api/admin/projects/{projectId}/deliveries", csrf, duplicateContent);
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        using var duplicateError = JsonDocument.Parse(await duplicate.Content.ReadAsStringAsync());
+        Assert.Equal("delivery.active_exists", duplicateError.RootElement.GetProperty("code").GetString());
+        Assert.Single(Directory.EnumerateFiles(deliveryFolder), path => !path.EndsWith(".upload", StringComparison.Ordinal) && !path.EndsWith(".pending", StringComparison.Ordinal));
+
+        File.WriteAllText(storedDelivery + ".pending", "");
+
+        using var download = await ownerClient.GetAsync($"/api/admin/projects/{projectId}/deliveries/{deliveryId}/file");
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("video/mp4", download.Content.Headers.ContentType?.MediaType);
+        using var revoke = await Send(ownerClient, HttpMethod.Delete, $"/api/admin/projects/{projectId}/deliveries/{deliveryId}", csrf);
+        Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+        Assert.DoesNotContain(Directory.EnumerateFiles(deliveryFolder), path => Path.GetFileName(path).StartsWith(deliveryId, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SubmissionSnapshotPreservesBilingualLabelsAndProjectIsolation()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var me = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/me"));
+        var ownerId = me.RootElement.GetProperty("id").GetString()!;
+        using var create = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        using var created = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var projectId = created.RootElement.GetProperty("id").GetString()!;
+        var version = created.RootElement.GetProperty("version").GetInt32();
+        var snapshot = new SubmissionConfigurationSnapshotDto(
+            1,
+            DateTimeOffset.UtcNow,
+            [new AdminFormOptionDto("brands", "brand-a", "品牌 A", "Brand A", null, null, null, null, false, true, 0, DateTimeOffset.UtcNow)],
+            [],
+            []);
+        var repository = new ProjectRepository($"Data Source={Path.Combine(root, "platform.db")}");
+        Assert.Equal(SaveOutcome.Saved, repository.Submit(ownerId, projectId, version, Guid.NewGuid().ToString("N"), snapshot).Outcome);
+
+        using var customerSnapshot = await ownerClient.GetAsync($"/api/projects/{projectId}/submission-snapshot");
+        Assert.Equal(HttpStatusCode.OK, customerSnapshot.StatusCode);
+        using var customerDocument = JsonDocument.Parse(await customerSnapshot.Content.ReadAsStringAsync());
+        var option = Assert.Single(customerDocument.RootElement.GetProperty("formOptions").EnumerateArray());
+        Assert.Equal("品牌 A", option.GetProperty("labelZhCn").GetString());
+        Assert.Equal("Brand A", option.GetProperty("labelEnUs").GetString());
+
+        using var adminSnapshot = await ownerClient.GetAsync($"/api/admin/projects/{projectId}/submission-snapshot");
+        Assert.Equal(HttpStatusCode.OK, adminSnapshot.StatusCode);
+
+        using var changeLiveOption = await Send(ownerClient, HttpMethod.Put, "/api/admin/form-options/brands/brand-a", csrf,
+            JsonContent.Create(new
+            {
+                labelZhCn = "品牌 A（已改名）",
+                labelEnUs = "Brand A Renamed",
+                descriptionZhCn = (string?)null,
+                descriptionEnUs = (string?)null,
+                tone = (string?)null,
+                previewColor = (string?)null,
+                enabled = false,
+                sortOrder = 0,
+                expectedUpdatedAt = (string?)null,
+                allowsCustomValue = false
+            }));
+        Assert.Equal(HttpStatusCode.OK, changeLiveOption.StatusCode);
+        using var unchangedSnapshot = JsonDocument.Parse(await ownerClient.GetStringAsync($"/api/projects/{projectId}/submission-snapshot"));
+        Assert.Equal("品牌 A", Assert.Single(unchangedSnapshot.RootElement.GetProperty("formOptions").EnumerateArray()).GetProperty("labelZhCn").GetString());
+
+        using var createLegacy = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, createLegacy.StatusCode);
+        using var legacyDocument = JsonDocument.Parse(await createLegacy.Content.ReadAsStringAsync());
+        var legacyProjectId = legacyDocument.RootElement.GetProperty("id").GetString()!;
+        using (var connection = new SqliteConnection($"Data Source={Path.Combine(root, "platform.db")}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE projects SET status = 'submitted', submission_snapshot_json = NULL WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", legacyProjectId);
+            command.ExecuteNonQuery();
+        }
+        using var legacyCustomerSnapshot = await ownerClient.GetAsync($"/api/projects/{legacyProjectId}/submission-snapshot");
+        Assert.Equal(HttpStatusCode.NotFound, legacyCustomerSnapshot.StatusCode);
+        using var legacyAdminSnapshot = await ownerClient.GetAsync($"/api/admin/projects/{legacyProjectId}/submission-snapshot");
+        Assert.Equal(HttpStatusCode.NotFound, legacyAdminSnapshot.StatusCode);
+
+        using var otherCustomer = await CreateCustomerClient(csrf);
+        using var isolated = await otherCustomer.GetAsync($"/api/projects/{projectId}/submission-snapshot");
+        Assert.Equal(HttpStatusCode.NotFound, isolated.StatusCode);
+        using var forbiddenAdmin = await otherCustomer.GetAsync($"/api/admin/projects/{projectId}/submission-snapshot");
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenAdmin.StatusCode);
     }
 
     [Fact]
@@ -461,6 +660,8 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     {
         await BootstrapOwner();
         var csrf = await GetCsrf(ownerClient);
+        using var me = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/me"));
+        var ownerId = me.RootElement.GetProperty("id").GetString()!;
         using var create = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
         Assert.Equal(HttpStatusCode.OK, create.StatusCode);
         var draft = JsonNode.Parse(await create.Content.ReadAsStringAsync())!.AsObject();
@@ -493,6 +694,12 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         using var download = await ownerClient.GetAsync($"/api/projects/{id}/files/{fileId}");
         Assert.Equal(HttpStatusCode.OK, download.StatusCode);
         Assert.Equal("image/png", download.Content.Headers.ContentType?.MediaType);
+        var storedCharacterFile = Assert.Single(
+            Directory.EnumerateFiles(Path.Combine(root, "uploads", ownerId, id), $"{fileId}_*"),
+            path => !path.EndsWith(".pending", StringComparison.OrdinalIgnoreCase));
+        File.WriteAllText(storedCharacterFile + ".pending", "");
+        using var downloadWithPendingMarker = await ownerClient.GetAsync($"/api/projects/{id}/files/{fileId}");
+        Assert.Equal(HttpStatusCode.OK, downloadWithPendingMarker.StatusCode);
 
         var webp = "RIFF"u8.ToArray().Concat(new byte[4]).Concat("WEBP"u8.ToArray()).ToArray();
         using var styleUpload = ReferenceRequest(webp, "style.webp", "image/webp", version, "style-reference");
@@ -505,8 +712,20 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         creativeWithoutCharacter["characters"] = new JsonArray();
         using var removeCharacter = await Send(ownerClient, HttpMethod.Put, $"/api/projects/{id}/creative", csrf,
             JsonContent.Create(new { version = styleDraft["version"]!.GetValue<int>(), creative = creativeWithoutCharacter }));
-        Assert.Equal(HttpStatusCode.OK, removeCharacter.StatusCode);
-        var removedDraft = JsonNode.Parse(await removeCharacter.Content.ReadAsStringAsync())!.AsObject();
+        Assert.Equal(HttpStatusCode.BadRequest, removeCharacter.StatusCode);
+        Assert.Equal("validation.assets", await ErrorCode(removeCharacter));
+        using var retainedDownload = await ownerClient.GetAsync($"/api/projects/{id}/files/{fileId}");
+        Assert.Equal(HttpStatusCode.OK, retainedDownload.StatusCode);
+
+        using var deleteCharacterReference = await Send(ownerClient, HttpMethod.Delete, $"/api/projects/{id}/files/{fileId}?version={styleDraft["version"]!.GetValue<int>()}", csrf);
+        Assert.Equal(HttpStatusCode.OK, deleteCharacterReference.StatusCode);
+        var referenceRemovedDraft = JsonNode.Parse(await deleteCharacterReference.Content.ReadAsStringAsync())!.AsObject();
+        var creativeAfterReferenceRemoval = referenceRemovedDraft["creative"]!.DeepClone().AsObject();
+        creativeAfterReferenceRemoval["characters"] = new JsonArray();
+        using var removeCharacterAfterReference = await Send(ownerClient, HttpMethod.Put, $"/api/projects/{id}/creative", csrf,
+            JsonContent.Create(new { version = referenceRemovedDraft["version"]!.GetValue<int>(), creative = creativeAfterReferenceRemoval }));
+        Assert.Equal(HttpStatusCode.OK, removeCharacterAfterReference.StatusCode);
+        var removedDraft = JsonNode.Parse(await removeCharacterAfterReference.Content.ReadAsStringAsync())!.AsObject();
         Assert.Empty(removedDraft["creative"]!["characters"]!.AsArray());
         using var removedDownload = await ownerClient.GetAsync($"/api/projects/{id}/files/{fileId}");
         Assert.Equal(HttpStatusCode.NotFound, removedDownload.StatusCode);
@@ -590,6 +809,43 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         content.Add(file, "file", fileName);
         return content;
+    }
+
+    private static byte[] MinimalMp4()
+    {
+        var ftyp = Box("ftyp", "isom"u8.ToArray(), new byte[4], "isom"u8.ToArray());
+        var mdat = Box("mdat", [1]);
+        var handler = Box("hdlr", new byte[8], "vide"u8.ToArray());
+        var sampleDescription = Box("stsd", new byte[4], BigEndian(1), Box("avc1"));
+        var sampleSizes = Box("stsz", new byte[4], BigEndian(1), BigEndian(1));
+        var sampleTable = Box("stbl", sampleDescription, sampleSizes);
+        var mediaInfo = Box("minf", sampleTable);
+        var media = Box("mdia", handler, mediaInfo);
+        var track = Box("trak", media);
+        var movie = Box("moov", track);
+        return [.. ftyp, .. mdat, .. movie];
+    }
+
+    private static byte[] Box(string type, params byte[][] payloads)
+    {
+        var payloadLength = payloads.Sum(payload => payload.Length);
+        var result = new byte[8 + payloadLength];
+        BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(0, 4), (uint)result.Length);
+        Encoding.ASCII.GetBytes(type, result.AsSpan(4, 4));
+        var offset = 8;
+        foreach (var payload in payloads)
+        {
+            payload.CopyTo(result, offset);
+            offset += payload.Length;
+        }
+        return result;
+    }
+
+    private static byte[] BigEndian(uint value)
+    {
+        var result = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(result, value);
+        return result;
     }
 
     private static MultipartFormDataContent AvatarRequest(byte[] bytes, string fileName, string contentType)

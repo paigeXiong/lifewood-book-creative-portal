@@ -47,40 +47,59 @@ internal static class DeliveryEndpoints
             var folder = Path.Combine(dataDirectory, "deliveries", id);
             Directory.CreateDirectory(folder);
             var path = Path.Combine(folder, $"{deliveryId}_{safeName}");
+            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".upload";
+            var pendingMarker = path + ".pending";
             try
             {
-                await using (var output = File.Create(path))
+                await using (var output = File.Create(temporary))
                 {
                     await file.CopyToAsync(output, context.RequestAborted);
+                    output.Flush(flushToDisk: true);
                 }
                 context.RequestAborted.ThrowIfCancellationRequested();
             }
             catch
             {
+                if (File.Exists(temporary)) File.Delete(temporary);
                 if (File.Exists(path)) File.Delete(path);
                 throw;
             }
-            if (!IsoBmffVideoProbe.IsSupportedVideo(path))
+            if (!IsoBmffVideoProbe.IsSupportedVideo(temporary))
             {
-                File.Delete(path);
+                File.Delete(temporary);
                 return Error(context, 400, "delivery.file", "errors.delivery.file", "Choose a valid MP4 or MOV file containing a video track.");
             }
             try
             {
+                CreatePendingMarker(pendingMarker);
+                File.Move(temporary, path);
                 var result = deliveries.Publish(deliveryId, id, user.Id, safeName, contentType, file.Length, note, out var delivery);
                 if (result.Outcome == AdminWriteOutcome.Saved)
                 {
+                    try { File.Delete(pendingMarker); }
+                    catch (Exception exception)
+                    {
+                        context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("DeliveryRecovery")
+                            .LogWarning(exception, "Pending delivery marker {Path} will be reconciled on restart", pendingMarker);
+                    }
                     context.Items[AuditActionCatalog.TargetIdItemKey] = delivery!.Id;
                     return Results.Ok(delivery);
                 }
                 File.Delete(path);
-                return result.Outcome == AdminWriteOutcome.Conflict
-                    ? Error(context, 409, "project.not_submitted", "errors.project.notSubmitted", "Only submitted projects can receive a final delivery.")
-                    : Error(context, 400, "validation.failed", "errors.validation.failed", "The final delivery could not be published.");
+                File.Delete(pendingMarker);
+                if (result.Outcome == AdminWriteOutcome.Conflict)
+                {
+                    return result.Field == "activeDelivery"
+                        ? Error(context, 409, "delivery.active_exists", "errors.delivery.activeExists", "Withdraw the current final delivery before publishing another one.")
+                        : Error(context, 409, "project.not_submitted", "errors.project.notSubmitted", "Only submitted projects can receive a final delivery.");
+                }
+                return Error(context, 400, "validation.failed", "errors.validation.failed", "The final delivery could not be published.");
             }
             catch
             {
+                if (File.Exists(temporary)) File.Delete(temporary);
                 if (File.Exists(path)) File.Delete(path);
+                if (File.Exists(pendingMarker)) File.Delete(pendingMarker);
                 throw;
             }
         }).DisableAntiforgery();
@@ -133,7 +152,7 @@ internal static class DeliveryEndpoints
         var delivery = deliveries.Find(projectId, deliveryId);
         if (delivery is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.");
         var folder = Path.Combine(dataDirectory, "deliveries", projectId);
-        var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{delivery.Id}_*").SingleOrDefault() : null;
+        var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{delivery.Id}_*").Where(IsStoredFile).SingleOrDefault() : null;
         return path is null
             ? Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.")
             : Results.File(path, delivery.ContentType, delivery.FileName, enableRangeProcessing: true);
@@ -191,4 +210,14 @@ internal static class DeliveryEndpoints
         var maxStemLength = Math.Max(1, 120 - extension.Length);
         return $"{stem[..Math.Min(stem.Length, maxStemLength)]}{extension}";
     }
+
+    private static void CreatePendingMarker(string path)
+    {
+        using var marker = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        marker.Flush(flushToDisk: true);
+    }
+
+    private static bool IsStoredFile(string path) =>
+        !path.EndsWith(".pending", StringComparison.OrdinalIgnoreCase) &&
+        !path.EndsWith(".upload", StringComparison.OrdinalIgnoreCase);
 }

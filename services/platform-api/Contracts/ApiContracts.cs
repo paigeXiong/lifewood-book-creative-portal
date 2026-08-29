@@ -116,6 +116,13 @@ public sealed record AdminFileCategoryDto(
     int SortOrder,
     DateTimeOffset UpdatedAt);
 
+public sealed record SubmissionConfigurationSnapshotDto(
+    int SchemaVersion,
+    DateTimeOffset CapturedAt,
+    AdminFormOptionDto[] FormOptions,
+    AdminVoiceReferenceDto[] Voices,
+    AdminFileCategoryDto[] FileCategories);
+
 public sealed record UpsertFileCategoryRequest(
     string LabelZhCn,
     string LabelEnUs,
