@@ -33,6 +33,7 @@ import type {
 import { Field } from "../components/Field";
 import { ChoiceField } from "../components/ChoiceField";
 import { StepProgress } from "../components/StepProgress";
+import { ScreenError } from "../components/ScreenError";
 import {
   createCreativeDraftSchema,
   createCreativeStepSchema,
@@ -500,11 +501,7 @@ export function CreativeFormPage() {
     !draftQuery.data ||
     !optionsQuery.data
   )
-    return (
-      <div className="screen-status" role="alert">
-        {localizedApiError(draftQuery.error ?? optionsQuery.error, t)}
-      </div>
-    );
+    return <ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} />;
   if (draftQuery.data.status !== "draft")
     return (
       <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />

@@ -96,12 +96,15 @@ a:focus-visible {
   border-radius: 0.4rem;
   transform: translateY(-160%);
 }
-.skip-link:focus {
+.skip-link:focus-visible {
   transform: translateY(0);
 }
 .workspace-main {
+  min-width: 0;
   min-height: 0;
-  display: contents;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
 }
 .admin-shell {
   height: 100vh;
@@ -476,7 +479,7 @@ a:focus-visible {
   height: calc(100% - 3.65rem);
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(22rem, 40%) minmax(28rem, 1fr);
+  grid-template-columns: clamp(22rem, 27vw, 28rem) minmax(28rem, 1fr);
   gap: 0.65rem;
 }
 .project-pane,
@@ -493,8 +496,13 @@ a:focus-visible {
   overflow: hidden;
 }
 .project-rows {
+  display: grid;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 .project-row {
   width: 100%;
@@ -510,8 +518,8 @@ a:focus-visible {
   padding: 0.65rem 0.75rem;
 }
 .project-row.selected {
-  background: #edf7f2;
-  box-shadow: inset 3px 0 #008763;
+  background: #e4f3ec;
+  box-shadow: inset 4px 0 #008763;
 }
 .project-row img,
 .cover-placeholder {
@@ -583,6 +591,8 @@ a:focus-visible {
 }
 .detail-pane {
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 0.8rem;
 }
 .detail-pane.empty {
@@ -618,12 +628,16 @@ a:focus-visible {
 }
 .workflow-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(7rem, 1fr)) auto;
+  grid-template-columns: repeat(3, minmax(8rem, 1fr)) minmax(4.5rem, auto);
   gap: 0.5rem;
   align-items: end;
-  padding: 0.65rem;
+  padding: 0.6rem;
   background: #f1f6f3;
   border-radius: 0.55rem;
+}
+.workflow-form > button {
+  min-width: 4.5rem;
+  white-space: nowrap;
 }
 label {
   display: grid;
@@ -636,8 +650,8 @@ label > small {
   font-weight: 400;
 }
 .detail-section {
-  margin-top: 0.75rem;
-  padding: 0.7rem;
+  margin-top: 0.6rem;
+  padding: 0.62rem;
   border-radius: 0.55rem;
   background: #f6f8f7;
 }
@@ -1052,7 +1066,7 @@ td {
 .check-row input {
   width: auto;
 }
-@media (max-width: 960px) {
+@media (max-width: 1120px) {
   .overview-stats {
     grid-template-columns: repeat(2, minmax(9rem, 1fr));
   }

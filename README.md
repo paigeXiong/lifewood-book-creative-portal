@@ -36,7 +36,7 @@ Lifewood Book Creative Portal 是面向客户的书籍视频项目资料提交�
 - 客户修改、删除、撤回或重新提交已冻结的资料包
 - 站内通知、邮件通知、支付或订阅
 
-完整范围与验收标准见[产品需求](docs/product-requirements.md)和[管理中心需求](docs/admin-center-requirements.md)。
+当前范围与验收优先级见[产品需求基线](docs/scope-registration-platform.md)。字段细节见[客户详细需求](docs/product-requirements.md)和[管理中心需求](docs/admin-center-requirements.md)。
 
 ## 查看系统架构
 
@@ -157,7 +157,8 @@ Windows 可以使用：
 ## 阅读项目文档
 
 - [文档索引](docs/README.md)：本地启动、设计资料和开发基线
-- [产品需求](docs/product-requirements.md)：客户流程、字段、状态和验收标准
+- [产品需求基线](docs/scope-registration-platform.md)：当前范围、角色、流程、配置、交付和验收标准
+- [客户详细需求](docs/product-requirements.md)：客户流程、字段和历史决策细节
 - [管理中心需求](docs/admin-center-requirements.md)：账号、组织、项目跟进和系统配置
 - [UI 设计规范](docs/ui-design-specification.md)：紧凑布局、品牌样式、响应式和国际化
 - [技术架构](docs/technical-architecture.md)：服务边界、Native AOT 和数据访问规则

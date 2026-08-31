@@ -1,11 +1,13 @@
 {
   "name": "@lifewood/ui",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "exports": {
     "./tokens.css": "./src/tokens.css",
     "./avatar-editor": "./src/AvatarEditor.tsx",
-    "./avatar-editor.css": "./src/avatar-editor.css"
+    "./avatar-editor.css": "./src/avatar-editor.css",
+    "./error-boundary": "./src/AppErrorBoundary.tsx",
+    "./error-boundary.css": "./src/error-boundary.css"
   }
 }

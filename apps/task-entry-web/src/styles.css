@@ -157,6 +157,8 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .sticky-actions > div { display: flex; gap: 8px; }
 .screen-status { min-height: 60vh; display: grid; place-items: center; color: var(--lw-text-secondary); }
 .screen-status.compact { min-height: 96px; }
+.screen-error-content { max-width: min(32rem, calc(100vw - 2rem)); display: grid; justify-items: center; gap: 12px; text-align: center; }
+.screen-error-content p { margin: 0; line-height: 1.6; }
 .inline-error { margin: 12px; padding: 10px 12px; border-radius: var(--lw-radius-control); background: var(--lw-error-bg); color: var(--lw-error); font-size: 12px; }
 .compact-empty { padding: 12px; border-radius: var(--lw-radius-control); background: var(--lw-sea-salt); color: var(--lw-text-secondary); font-size: 12px; }
 .upcoming-panel { margin-top: 12px; min-height: 280px; padding: 28px; display: grid; place-content: center; justify-items: start; background: var(--lw-white); border-radius: var(--lw-radius-panel); }

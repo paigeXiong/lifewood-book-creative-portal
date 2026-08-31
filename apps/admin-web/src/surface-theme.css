@@ -42,7 +42,6 @@ a:focus-visible {
 }
 
 .project-rows {
-  display: grid;
   gap: 2px;
   background: #eef2ef;
 }

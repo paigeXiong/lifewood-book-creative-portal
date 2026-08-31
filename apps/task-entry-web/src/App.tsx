@@ -2,10 +2,11 @@ import { lazy, Suspense, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { authService, ApiError, localizedApiError } from "@lifewood/api-client";
+import { authService, ApiError } from "@lifewood/api-client";
 import { i18n, isSupportedLocale, localizedPath, setLocale } from "@lifewood/i18n";
 import type { SupportedLocale } from "@lifewood/domain";
 import { AppShell } from "./components/AppShell";
+import { ScreenError } from "./components/ScreenError";
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
 const VoiceAndReferencesPage = lazy(() => import("./pages/VoiceAndReferencesPage").then((module) => ({ default: module.VoiceAndReferencesPage })));
 const TaskListPage = lazy(() => import("./pages/TaskListPage").then((module) => ({ default: module.TaskListPage })));
@@ -48,7 +49,6 @@ function LocaleLayout() {
 function ProtectedLayout() {
   const { locale } = useParams();
   const location = useLocation();
-  const { t } = useTranslation();
   const userQuery = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
 
   if (!isSupportedLocale(locale)) return null;
@@ -57,7 +57,7 @@ function ProtectedLayout() {
     return <Navigate replace state={{ from: location.pathname }} to={localizedPath(locale, "/login")} />;
   }
   if (userQuery.isError || !userQuery.data) {
-    return <div className="screen-status" role="alert">{localizedApiError(userQuery.error, t)}</div>;
+    return <ScreenError error={userQuery.error} onRetry={() => userQuery.refetch()} />;
   }
 
   return <AppShell user={userQuery.data}><Suspense fallback={<ScreenLoading />}><Outlet context={{ locale, user: userQuery.data }} /></Suspense></AppShell>;

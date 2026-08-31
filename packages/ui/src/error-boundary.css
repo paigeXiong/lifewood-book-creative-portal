@@ -1,0 +1,56 @@
+.app-error-boundary {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  color: #17372c;
+  background: #f3f6f4;
+}
+
+.app-error-boundary > section {
+  width: min(100%, 32rem);
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 16px 44px -32px rgba(15, 52, 39, 0.72);
+}
+
+.app-error-boundary span {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #8d1f16;
+  background: #fff0ee;
+  font-weight: 800;
+}
+
+.app-error-boundary h1 {
+  margin: 0.9rem 0 0;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  text-wrap: balance;
+}
+
+.app-error-boundary p {
+  margin: 0.55rem 0 1.1rem;
+  color: #52675e;
+  line-height: 1.6;
+}
+
+.app-error-boundary button {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: #fff;
+  background: #174c3a;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.app-error-boundary button:hover { background: #0e6247; }
+.app-error-boundary button:focus-visible { outline: 3px solid rgba(0, 135, 99, 0.3); outline-offset: 3px; }

@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { localizedApiError, optionService, projectService } from "@lifewood/api-client";
+import { optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+import { ScreenError } from "../components/ScreenError";
 
 export function SubmissionSuccessPage() {
   const { t } = useTranslation();
@@ -13,7 +14,7 @@ export function SubmissionSuccessPage() {
 
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (project.isPending || options.isPending) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
-  if (project.isError || options.isError || !project.data || !options.data) return <div className="screen-status" role="alert">{localizedApiError(project.error ?? options.error, t)}</div>;
+  if (project.isError || options.isError || !project.data || !options.data) return <ScreenError error={project.error ?? options.error} onRetry={() => Promise.all([project.refetch(), options.refetch()])} />;
   if (project.data.status === "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/review`)} />;
   if (project.data.status !== "submitted") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
 

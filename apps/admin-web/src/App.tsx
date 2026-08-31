@@ -22,6 +22,7 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   adminService,
+  ApiError,
   authService,
   localizedApiError,
   optionService,
@@ -734,6 +735,7 @@ function ProjectRow({
     <button
       type="button"
       className={selected ? "project-row selected" : "project-row"}
+      aria-current={selected ? "true" : undefined}
       onClick={onSelect}
     >
       {item.coverUrl ? (
@@ -1632,6 +1634,17 @@ function AdminRoot() {
   };
   if (me.isPending || (me.isError && authStatus.isPending))
     return <main className="center-state">{t("common.loading")}</main>;
+  const signedOut = me.error instanceof ApiError && me.error.details.code === "auth.unauthorized";
+  if (!me.data && (!signedOut || authStatus.isError))
+    return (
+      <main className="center-state" role="alert">
+        <div>
+          <h1>{t("common.fatalErrorTitle")}</h1>
+          <p>{localizedApiError(authStatus.error ?? me.error, t)}</p>
+          <button type="button" onClick={() => { void me.refetch(); void authStatus.refetch(); }}>{t("common.retry")}</button>
+        </div>
+      </main>
+    );
   if (!me.data)
     return (
       <IdentityGate

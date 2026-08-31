@@ -42,7 +42,7 @@ i18n.addResourceBundle(
       },
       documentTitle: "Lifewood 管理中心",
       productName: "项目管理中心",
-      internalWorkspace: "内部项目跟进",
+      internalWorkspace: "项目跟进",
       nav: {
         home: "返回主页",
         overview: "统计概览",
@@ -418,7 +418,7 @@ i18n.addResourceBundle(
       },
       documentTitle: "Lifewood Admin Center",
       productName: "Project management",
-      internalWorkspace: "Internal project follow-up",
+      internalWorkspace: "Project follow-up",
       nav: {
         home: "Back to home",
         overview: "Overview",

@@ -11,6 +11,7 @@ import {
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { StepProgress } from "../components/StepProgress";
 import { ReferenceLinks } from "../components/ReferenceLinks";
+import { ScreenError } from "../components/ScreenError";
 import { isCreativeComplete } from "./creativeFormSchema";
 import { isVoiceStepComplete } from "./voiceFormSchema";
 import { isProjectStepComplete } from "./projectFormSchema";
@@ -83,11 +84,7 @@ export function UpcomingStepPage() {
     !project.data ||
     !options.data
   )
-    return (
-      <div className="screen-status" role="alert">
-        {localizedApiError(project.error ?? options.error ?? voices.error, t)}
-      </div>
-    );
+    return <ScreenError error={project.error ?? options.error ?? voices.error} onRetry={() => Promise.all([project.refetch(), options.refetch(), voices.refetch()])} />;
   if (project.data.status !== "draft")
     return <Navigate replace to={localizedPath(locale, `/tasks/${taskId}`)} />;
   if (!isProjectStepComplete(project.data))

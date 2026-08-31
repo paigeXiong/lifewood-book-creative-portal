@@ -9,6 +9,7 @@ import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { ReferenceCategory, TaskDraft, VoiceReference } from "@lifewood/domain";
 import { Field } from "../components/Field";
 import { StepProgress } from "../components/StepProgress";
+import { ScreenError } from "../components/ScreenError";
 import { createVoiceDraftSchema, createVoiceStepSchema, type VoiceFormValues } from "./voiceFormSchema";
 import { reconcileVoiceSelection } from "../voice-selection";
 import { isCreativeComplete } from "./creativeFormSchema";
@@ -154,7 +155,7 @@ export function VoiceAndReferencesPage() {
   }, [autosaveValues, form.formState.isDirty, save.isPending, uploadCategory, draftSchema]);
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (draftQuery.isPending || optionsQuery.isPending || voicesQuery.isPending) return <div className="screen-status" aria-busy="true">{t("common.loading")}</div>;
-  if (draftQuery.isError || optionsQuery.isError || voicesQuery.isError || !draftQuery.data || !optionsQuery.data || !voicesQuery.data) return <div className="screen-status" role="alert">{localizedApiError(draftQuery.error ?? optionsQuery.error ?? voicesQuery.error, t)}</div>;
+  if (draftQuery.isError || optionsQuery.isError || voicesQuery.isError || !draftQuery.data || !optionsQuery.data || !voicesQuery.data) return <ScreenError error={draftQuery.error ?? optionsQuery.error ?? voicesQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch(), voicesQuery.refetch()])} />;
   if (draftQuery.data.status !== "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
   if (!isCreativeComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} />;
 

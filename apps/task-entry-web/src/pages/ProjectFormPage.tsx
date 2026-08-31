@@ -11,6 +11,7 @@ import { Field } from "../components/Field";
 import { ChoiceField } from "../components/ChoiceField";
 import { EditableSelect, preserveEditableSelection } from "../components/EditableSelect";
 import { StepProgress } from "../components/StepProgress";
+import { ScreenError } from "../components/ScreenError";
 import { createDraftSchema, createStepSchema, type ProjectFormValues } from "./projectFormSchema";
 import { mergeLegacyOptions, type DisplayConfigOption } from "../legacy-options";
 import { mergeLegacyCategories, type DisplayReferenceCategory } from "../legacy-categories";
@@ -212,7 +213,7 @@ export function ProjectFormPage() {
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
   if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) {
-    return <div className="screen-status" role="alert">{localizedApiError(draftQuery.error ?? optionsQuery.error, t)}</div>;
+    return <ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} />;
   }
   if (draftQuery.data.status !== "draft") {
     return <Navigate replace to={localizedPath(validLocale, `/tasks/${draftQuery.data.id}`)} />;

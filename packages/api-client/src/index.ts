@@ -33,10 +33,40 @@ export class ApiError extends Error {
 }
 
 export function localizedApiError(error: unknown, t: (key: string, options?: Record<string, unknown>) => string): string {
-  if (!(error instanceof ApiError)) return error instanceof Error ? error.message : t("errors.system.unexpected");
+  if (!(error instanceof ApiError)) return t("errors.system.unexpected");
   const translated = error.details.messageKey ? t(error.details.messageKey) : "";
-  const message = translated && translated !== error.details.messageKey ? translated : (error.details.fallbackMessage ?? t("errors.system.unexpected"));
+  const message = translated && translated !== error.details.messageKey ? translated : t("errors.system.unexpected");
   return error.details.requestId ? `${message} · ${t("errors.requestId", { id: error.details.requestId })}` : message;
+}
+
+function httpErrorFallback(status: number): AppErrorShape {
+  if (status === 401) {
+    return { code: "auth.unauthorized", messageKey: "errors.auth.unauthorized", retryable: false };
+  }
+  if (status === 403) {
+    return { code: "auth.forbidden", messageKey: "errors.auth.forbidden", retryable: false };
+  }
+  if (status === 429) {
+    return { code: "http.429", messageKey: "errors.rateLimit.exceeded", retryable: true };
+  }
+  return { code: `http.${status}`, messageKey: "errors.system.unexpected", retryable: status >= 500 };
+}
+
+function normalizeErrorPayload(value: unknown, fallback: AppErrorShape): AppErrorShape {
+  if (!value || typeof value !== "object") return fallback;
+  const candidate = value as Partial<AppErrorShape>;
+  if (typeof candidate.code !== "string" || !candidate.code.trim()) return fallback;
+  const fieldErrors = Array.isArray(candidate.fieldErrors)
+    ? candidate.fieldErrors.filter((entry) => entry && typeof entry.field === "string" && typeof entry.code === "string")
+    : undefined;
+  return {
+    code: candidate.code,
+    messageKey: typeof candidate.messageKey === "string" && candidate.messageKey ? candidate.messageKey : fallback.messageKey,
+    fieldErrors,
+    retryable: typeof candidate.retryable === "boolean" ? candidate.retryable : fallback.retryable,
+    requestId: typeof candidate.requestId === "string" ? candidate.requestId : undefined,
+    currentVersion: typeof candidate.currentVersion === "number" && Number.isFinite(candidate.currentVersion) ? candidate.currentVersion : undefined,
+  };
 }
 
 interface RequestOptions extends RequestInit {
@@ -47,6 +77,33 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 
 let csrfToken: string | undefined;
 let csrfRequest: Promise<string> | undefined;
 
+async function fetchResponse(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiError({
+      code: "network.unavailable",
+      messageKey: "errors.network.unavailable",
+      fallbackMessage: "The server could not be reached. Check your connection and try again.",
+      retryable: true,
+    });
+  }
+}
+
+async function readJson<T>(response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new ApiError({
+      code: "network.invalidResponse",
+      messageKey: "errors.network.invalidResponse",
+      fallbackMessage: "The server returned an invalid response.",
+      retryable: true,
+    });
+  }
+}
+
 function clearCsrfToken() {
   csrfToken = undefined;
   csrfRequest = undefined;
@@ -55,9 +112,13 @@ function clearCsrfToken() {
 async function getCsrfToken(): Promise<string> {
   if (csrfToken) return csrfToken;
   csrfRequest ??= (async () => {
-    const response = await fetch(`${apiBaseUrl}/auth/csrf`, { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" });
+    const response = await fetchResponse(`${apiBaseUrl}/auth/csrf`, { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" });
     if (!response.ok) throw new ApiError({ code: "auth.csrf", messageKey: "errors.auth.csrf", fallbackMessage: "The secure session could not be initialized.", retryable: true });
-    csrfToken = ((await response.json()) as { token: string }).token;
+    const payload = await readJson<{ token?: unknown }>(response);
+    if (typeof payload.token !== "string" || !payload.token) {
+      throw new ApiError({ code: "network.invalidResponse", messageKey: "errors.network.invalidResponse", fallbackMessage: "The server returned an invalid response.", retryable: true });
+    }
+    csrfToken = payload.token;
     return csrfToken;
   })();
   try { return await csrfRequest; }
@@ -78,20 +139,17 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
     headers.set("X-CSRF-TOKEN", await getCsrfToken());
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetchResponse(`${apiBaseUrl}${path}`, {
     ...options,
     headers,
     credentials: "include",
   });
 
   if (!response.ok) {
-    let details: AppErrorShape = {
-      code: `http.${response.status}`,
-      fallbackMessage: response.statusText,
-      retryable: response.status >= 500,
-    };
+    const fallback = httpErrorFallback(response.status);
+    let details = fallback;
     try {
-      details = (await response.json()) as AppErrorShape;
+      details = normalizeErrorPayload(await response.json(), fallback);
     } catch {
       // Keep the safe HTTP fallback when the response is not JSON.
     }
@@ -105,7 +163,7 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
   if (response.status === 204) {
     return undefined as T;
   }
-  return (await response.json()) as T;
+  return readJson<T>(response);
 }
 
 export interface LoginCredentials { email: string; password: string; rememberMe: boolean }
@@ -281,8 +339,9 @@ async function upload<T>(path: string, body: FormData, options: UploadOptions = 
         catch { reject(new ApiError({ code: "network.invalidResponse", messageKey: "errors.network.invalidResponse", fallbackMessage: "The server returned an invalid response.", retryable: true })); }
         return;
       }
-      let details: AppErrorShape = { code: `http.${xhr.status}`, fallbackMessage: xhr.statusText, retryable: xhr.status >= 500 };
-      try { details = JSON.parse(xhr.responseText) as AppErrorShape; } catch { /* Keep the safe HTTP fallback. */ }
+      const fallback = httpErrorFallback(xhr.status);
+      let details = fallback;
+      try { details = normalizeErrorPayload(JSON.parse(xhr.responseText) as unknown, fallback); } catch { /* Keep the safe HTTP fallback. */ }
       if (details.code === "auth.csrf" && retryCsrf) {
         clearCsrfToken();
         void upload<T>(path, body, options, false).then(resolve, reject);

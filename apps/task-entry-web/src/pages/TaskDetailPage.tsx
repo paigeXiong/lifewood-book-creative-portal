@@ -2,14 +2,11 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, useParams } from "react-router-dom";
-import {
-  localizedApiError,
-  optionService,
-  projectService,
-} from "@lifewood/api-client";
+import { optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { FinalDeliverySection } from "../components/FinalDeliverySection";
 import { ReferenceLinks } from "../components/ReferenceLinks";
+import { ScreenError } from "../components/ScreenError";
 
 export function TaskDetailPage() {
   const { t } = useTranslation();
@@ -46,11 +43,7 @@ export function TaskDetailPage() {
       </div>
     );
   if (task.isError || options.isError || voices.isError || !task.data)
-    return (
-      <div className="screen-status" role="alert">
-        {localizedApiError(task.error ?? options.error ?? voices.error, t)}
-      </div>
-    );
+    return <ScreenError error={task.error ?? options.error ?? voices.error} onRetry={() => Promise.all([task.refetch(), options.refetch(), voices.refetch()])} />;
   if (task.data.status === "draft")
     return (
       <Navigate

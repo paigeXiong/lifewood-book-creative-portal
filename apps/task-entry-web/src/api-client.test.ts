@@ -1,9 +1,38 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authService, optionService, projectService } from "@lifewood/api-client";
+import { authService, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("API client", () => {
+  it("does not expose unexpected runtime error details to users", () => {
+    const t = (key: string) => key === "errors.system.unexpected" ? "Safe fallback" : key;
+    expect(localizedApiError(new Error("database-password=secret"), t)).toBe("Safe fallback");
+  });
+
+  it("normalizes connection failures as retryable API errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+    await expect(optionService.getFormOptions("zh-CN")).rejects.toMatchObject({
+      details: { code: "network.unavailable", retryable: true },
+    });
+  });
+
+  it("normalizes invalid success responses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not-json", { status: 200 })));
+
+    await expect(optionService.getFormOptions("zh-CN")).rejects.toMatchObject({
+      details: { code: "network.invalidResponse", retryable: true },
+    });
+  });
+
+  it("classifies a non-JSON 401 response as an expired login", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
+
+    await expect(optionService.getFormOptions("zh-CN")).rejects.toMatchObject({
+      details: { code: "auth.unauthorized", messageKey: "errors.auth.unauthorized", retryable: false },
+    });
+  });
+
   it("sends locale and credentials for dynamic options", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ taskStatuses: [] }), {
       status: 200,

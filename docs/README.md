@@ -26,12 +26,14 @@ npm run stop:local
 
 ## 开始开发前必读
 
-1. [产品需求](./product-requirements.md)：范围、用户、字段、流程、状态和验收标准。
-2. [技术架构](./technical-architecture.md)：React 前端、API 适配层、正式平台服务及 Native AOT 限制。
-3. [UI 设计规范](./ui-design-specification.md)：品牌化项目资料提交体验、紧凑布局、组件和 i18n 规则。
-4. [当前实现与继续开发基线](./development-readiness.md)：已交付范围、仓库结构、工程约束和继续开发优先级。
-5. [正式部署与数据备份](./deployment-and-backup.md)：同域路由、Native AOT 发布、数据目录、备份和恢复要求。
-6. [验证并发布平台](./release-readiness.md)：Windows 与 Linux 验证、Native AOT 发布包和上线前人工检查。
+1. [产品需求基线](./scope-registration-platform.md)：当前范围、角色、流程、配置、交付和验收优先级。
+2. [客户详细需求](./product-requirements.md)：客户字段、页面和历史决策细节。
+3. [管理中心需求](./admin-center-requirements.md)：用户、组织、项目跟进、最终交付和系统配置。
+4. [技术架构](./technical-architecture.md)：React 前端、服务端及 Native AOT 限制。
+5. [UI 设计规范](./ui-design-specification.md)：品牌化项目资料提交体验、紧凑布局、组件和 i18n 规则。
+6. [当前实现与继续开发基线](./development-readiness.md)：已交付范围、仓库结构、工程约束和继续开发优先级。
+7. [正式部署与数据备份](./deployment-and-backup.md)：同域路由、Native AOT 发布、数据目录、备份和恢复要求。
+8. [验证并发布平台](./release-readiness.md)：Windows 与 Linux 验证、Native AOT 发布包和上线前人工检查。
 
 ## 设计研究与参考
 

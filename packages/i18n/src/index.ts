@@ -92,9 +92,17 @@ const resources = {
         previous: "上一页",
         next: "下一页",
         pageOf: "第 {{page}} 页，共 {{pages}} 页",
+        fatalErrorTitle: "页面暂时无法显示",
+        fatalErrorDescription: "页面遇到了意外问题。请重新载入后再试。",
+        reloadPage: "重新载入页面",
       },
       errors: {
         requestId: "请求编号：{{id}}",
+        network: {
+          unavailable: "无法连接服务器，请检查网络后重试。",
+          upload: "上传未能完成，请检查网络后重试。",
+          invalidResponse: "服务器返回了无效响应，请重试。",
+        },
         auth: {
           unauthorized: "请先登录。",
           forbidden: "当前账号没有此操作权限。",
@@ -540,9 +548,17 @@ const resources = {
         previous: "Previous",
         next: "Next",
         pageOf: "Page {{page}} of {{pages}}",
+        fatalErrorTitle: "This page cannot be displayed",
+        fatalErrorDescription: "The page encountered an unexpected problem. Reload it and try again.",
+        reloadPage: "Reload page",
       },
       errors: {
         requestId: "Request ID: {{id}}",
+        network: {
+          unavailable: "The server could not be reached. Check your connection and try again.",
+          upload: "The upload could not be completed. Check your connection and try again.",
+          invalidResponse: "The server returned an invalid response. Try again.",
+        },
         auth: {
           unauthorized: "Sign in to continue.",
           forbidden: "Your account does not have permission for this action.",
