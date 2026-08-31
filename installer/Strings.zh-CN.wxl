@@ -19,6 +19,8 @@
   <String Id="UpgradeHint" Value="已检测到现有生产数据目录。覆盖安装时目录已锁定，避免意外丢失数据。" />
   <String Id="InvalidPortTitle" Value="端口无效" />
   <String Id="InvalidPortMessage" Value="请输入 1024 到 65535 之间的可用端口。" />
+  <String Id="MissingDataPathTitle" Value="生产数据目录为空" />
+  <String Id="MissingDataPathMessage" Value="请选择或输入生产数据目录，然后再继续。" />
   <String Id="MissingUpgradeDataPathMessage" Value="已检测到旧版本，但无法确认其生产数据目录。安装程序已停止，不会修改现有程序或数据。请恢复 Lifewood 注册表配置或联系管理员后再升级。" />
   <String Id="UnsafeDataPathMessage" Value="生产数据目录不安全。请选择专用的本地目录，不能使用磁盘根目录、系统或程序目录、用户目录根、网络共享、符号链接、目录联接或无关的非空目录。" />
   <String Id="BackButton" Value="上一步(&amp;B)" />

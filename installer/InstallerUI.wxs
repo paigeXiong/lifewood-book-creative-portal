@@ -25,7 +25,7 @@
         <Control Id="Title" Type="Text" X="20" Y="18" Width="330" Height="24" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}!(loc.ConfigTitle)" />
         <Control Id="Description" Type="Text" X="20" Y="44" Width="330" Height="30" Transparent="yes" NoPrefix="yes" Text="!(loc.ConfigDescription)" />
         <Control Id="PortLabel" Type="Text" X="20" Y="87" Width="120" Height="16" Text="!(loc.PortLabel)" />
-        <Control Id="Port" Type="MaskedEdit" X="20" Y="104" Width="100" Height="18" Property="PORT" Text="#####" />
+        <Control Id="Port" Type="Edit" X="20" Y="104" Width="100" Height="18" Property="PORT" />
         <Control Id="PortHint" Type="Text" X="132" Y="106" Width="205" Height="18" Text="!(loc.PortHint)" />
         <Control Id="DataLabel" Type="Text" X="20" Y="137" Width="250" Height="16" Text="!(loc.DataLabel)" />
         <Control Id="DataPath" Type="PathEdit" X="20" Y="154" Width="330" Height="18" Property="DATAFOLDER" DisableCondition="EXISTINGINSTALL" />
@@ -35,8 +35,9 @@
           <Publish Event="NewDialog" Value="WelcomeDlg" />
         </Control>
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.NextButton)">
-          <Publish Event="SpawnDialog" Value="InvalidPortDlg" Order="1" Condition="PORT &lt; 1024 OR PORT &gt; 65535" />
-          <Publish Event="NewDialog" Value="VerifyReadyDlg" Order="2" Condition="PORT &gt;= 1024 AND PORT &lt;= 65535 AND DATAFOLDER" />
+          <Publish Event="SpawnDialog" Value="InvalidPortDlg" Order="1" Condition="NOT (PORT &gt;= 1024 AND PORT &lt;= 65535)" />
+          <Publish Event="SpawnDialog" Value="MissingDataPathDlg" Order="2" Condition="PORT &gt;= 1024 AND PORT &lt;= 65535 AND NOT DATAFOLDER" />
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Order="3" Condition="PORT &gt;= 1024 AND PORT &lt;= 65535 AND DATAFOLDER" />
         </Control>
         <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.CancelButton)">
           <Publish Event="SpawnDialog" Value="CancelDlg" />
@@ -45,6 +46,13 @@
 
       <Dialog Id="InvalidPortDlg" Width="260" Height="92" Title="!(loc.InvalidPortTitle)">
         <Control Id="Message" Type="Text" X="20" Y="18" Width="220" Height="36" Text="!(loc.InvalidPortMessage)" />
+        <Control Id="OK" Type="PushButton" X="102" Y="61" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.OkButton)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+      </Dialog>
+
+      <Dialog Id="MissingDataPathDlg" Width="260" Height="92" Title="!(loc.MissingDataPathTitle)">
+        <Control Id="Message" Type="Text" X="20" Y="18" Width="220" Height="36" Text="!(loc.MissingDataPathMessage)" />
         <Control Id="OK" Type="PushButton" X="102" Y="61" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.OkButton)">
           <Publish Event="EndDialog" Value="Return" />
         </Control>

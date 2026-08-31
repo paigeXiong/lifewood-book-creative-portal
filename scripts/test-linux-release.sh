@@ -43,7 +43,6 @@ mkdir -p -- "$temp_root/smoke-data"
 ASPNETCORE_URLS="http://127.0.0.1:$port" \
 Lifewood__DataDirectory="$temp_root/smoke-data" \
 Lifewood__WebRoot="$temp_root/server/web" \
-Lifewood__AllowInsecureHttp=true \
   "$temp_root/server/Lifewood.BookPortal.Server" >"$temp_root/server.log" 2>&1 &
 server_pid="$!"
 
@@ -65,6 +64,15 @@ fi
 
 curl --fail --silent --max-time 2 "http://127.0.0.1:$port/zh-CN/tasks" >/dev/null
 curl --fail --silent --max-time 2 "http://127.0.0.1:$port/admin/zh-CN/overview" >/dev/null
+cookie_jar="$temp_root/cookies.txt"
+csrf_payload="$(curl --fail --silent --max-time 2 -c "$cookie_jar" "http://127.0.0.1:$port/api/auth/csrf")"
+csrf_token="$(printf '%s' "$csrf_payload" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+[[ -n "$csrf_token" ]] || { printf 'Production loopback CSRF token is missing.\n' >&2; exit 1; }
+bootstrap_body='{"displayName":"Linux Smoke Owner","email":"linux-smoke@example.test","password":"linux-smoke-password-123"}'
+curl --fail --silent --max-time 5 -b "$cookie_jar" -c "$cookie_jar" \
+  -H "X-CSRF-TOKEN: $csrf_token" -H 'Content-Type: application/json' \
+  --data "$bootstrap_body" "http://127.0.0.1:$port/api/auth/bootstrap" >/dev/null
+curl --fail --silent --max-time 2 -b "$cookie_jar" "http://127.0.0.1:$port/api/me" | grep -q 'linux-smoke@example.test'
 stop_server
 
 [[ -f "$temp_root/smoke-data/platform.db" ]] || { printf 'Smoke run did not create the platform database.\n' >&2; exit 1; }

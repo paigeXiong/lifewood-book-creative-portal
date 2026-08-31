@@ -33,21 +33,29 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddOpenApi();
-var trustedProxyAddresses = builder.Configuration.GetSection("Network:TrustedProxies")
-    .GetChildren().Select(item => item.Value).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
+var trustedProxyAddresses = new HashSet<IPAddress>();
+foreach (var value in builder.Configuration.GetSection("Network:TrustedProxies")
+             .GetChildren().Select(item => item.Value).Where(value => !string.IsNullOrWhiteSpace(value)))
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.ForwardLimit = 1;
-    options.KnownProxies.Clear();
-    options.KnownIPNetworks.Clear();
-    foreach (var value in trustedProxyAddresses)
-        if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
-});
-
-var allowInsecureHttp = builder.Configuration.GetValue<bool>("Lifewood:AllowInsecureHttp");
-if (allowInsecureHttp && !UsesLoopbackOnly(builder.Configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
-    throw new InvalidOperationException("Lifewood:AllowInsecureHttp can only be used with a loopback-only listener.");
+    if (!IPAddress.TryParse(value, out var address))
+        throw new InvalidOperationException("Network:TrustedProxies entries must be valid IP addresses.");
+    trustedProxyAddresses.Add(address);
+    if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        trustedProxyAddresses.Add(address.MapToIPv6());
+    else if (address.IsIPv4MappedToIPv6)
+        trustedProxyAddresses.Add(address.MapToIPv4());
+}
+if (trustedProxyAddresses.Count > 0)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = 1;
+        options.KnownProxies.Clear();
+        options.KnownIPNetworks.Clear();
+        foreach (var address in trustedProxyAddresses) options.KnownProxies.Add(address);
+    });
+}
 
 var configuredDataDirectory = builder.Configuration["Lifewood:DataDirectory"];
 var platformLimits = PlatformLimits.FromConfiguration(builder.Configuration);
@@ -92,7 +100,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.HttpOnly = true;
         options.Cookie.IsEssential = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() || allowInsecureHttp ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
         options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
@@ -106,7 +114,7 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
     options.Cookie.SameSite = SameSiteMode.Strict;
-    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment() || allowInsecureHttp ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 builder.Services.AddRateLimiter(options =>
 {
@@ -192,7 +200,28 @@ RecoverDeletedReferenceFiles(dataDirectory, repository, app.Logger);
 foreach (var (projectId, deliveryId) in deliveries.ListRevokedFileKeys())
     DeliveryEndpoints.DeleteDeliveryFiles(dataDirectory, projectId, deliveryId, app.Logger);
 RecoverPendingFileOperations(dataDirectory, repository, deliveries, app.Logger);
-app.UseForwardedHeaders();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Headers.ContainsKey("Forwarded") ||
+        context.Request.Headers.ContainsKey("X-Forwarded-For") ||
+        context.Request.Headers.ContainsKey("X-Forwarded-Proto") ||
+        context.Request.Headers.ContainsKey("X-Forwarded-Host"))
+        context.Items["Lifewood.ProxyHeadersPresent"] = true;
+    await next();
+});
+if (trustedProxyAddresses.Count > 0) app.UseForwardedHeaders();
+app.Use(async (context, next) =>
+{
+    if (!app.Environment.IsDevelopment() && !context.Request.IsHttps && !IsLoopbackRequest(context))
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(
+            new ApiErrorDto("security.https_required", "errors.http.httpsRequired", "HTTPS is required for non-loopback access.", null, false, context.TraceIdentifier),
+            AppJsonContext.Default.ApiErrorDto);
+        return;
+    }
+    await next();
+});
 app.Use(async (context, next) =>
 {
     context.Response.Headers.XContentTypeOptions = "nosniff";
@@ -1347,9 +1376,14 @@ static bool Can(CurrentUserDto user, string permission) => user.Permissions.Cont
 
 static bool IsLoopbackRequest(HttpContext context)
 {
-    if (context.Request.Headers.ContainsKey("Forwarded") ||
+    if (context.Items.ContainsKey("Lifewood.ProxyHeadersPresent") ||
+        context.Request.Headers.ContainsKey("Forwarded") ||
         context.Request.Headers.ContainsKey("X-Forwarded-For") ||
-        context.Request.Headers.ContainsKey("X-Original-For")) return false;
+        context.Request.Headers.ContainsKey("X-Forwarded-Proto") ||
+        context.Request.Headers.ContainsKey("X-Forwarded-Host") ||
+        context.Request.Headers.ContainsKey("X-Original-For") ||
+        context.Request.Headers.ContainsKey("X-Original-Proto") ||
+        context.Request.Headers.ContainsKey("X-Original-Host")) return false;
 
     var address = context.Connection.RemoteIpAddress;
     if (address is null || !System.Net.IPAddress.IsLoopback(address)) return false;
@@ -1634,18 +1668,6 @@ static (string Original, string Staged)? StageReferenceFileDeletion(string dataD
     var staged = Path.Combine(stagingFolder, $"{fileId}_{Guid.NewGuid():N}_{Path.GetFileName(original)}");
     File.Move(original, staged);
     return (original, staged);
-}
-
-static bool UsesLoopbackOnly(string? urls)
-{
-    if (string.IsNullOrWhiteSpace(urls)) return true;
-    foreach (var value in urls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-    {
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)) return false;
-        if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) continue;
-        if (!IPAddress.TryParse(uri.Host, out var address) || !IPAddress.IsLoopback(address)) return false;
-    }
-    return true;
 }
 
 static void RestoreReferenceFileDeletion((string Original, string Staged) pending, ILogger logger)

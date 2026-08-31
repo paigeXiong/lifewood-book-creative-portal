@@ -25,7 +25,7 @@ curl.exe --silent --fail --max-time 2 "%LIFEWOOD_URL%/api/health" >nul 2>&1
 if not errorlevel 1 goto already_running
 
 >"%LIFEWOOD_LOG%" echo [Lifewood] Server log / 服务端日志
-start "Lifewood Book Creative Portal Server" /b "%LIFEWOOD_SERVER%" --urls "%LIFEWOOD_URL%" --Lifewood:DataDirectory "%LIFEWOOD_DATA%" --Lifewood:AllowInsecureHttp true 1>>"%LIFEWOOD_LOG%" 2>&1
+start "Lifewood Book Creative Portal Server" /b "%LIFEWOOD_SERVER%" --urls "%LIFEWOOD_URL%" --Lifewood:DataDirectory "%LIFEWOOD_DATA%" 1>>"%LIFEWOOD_LOG%" 2>&1
 
 echo [Lifewood] Waiting for the web server... / 正在等待网页服务端...
 for /l %%I in (1,1,30) do (

@@ -522,7 +522,6 @@ trap cleanup EXIT
   printf 'ASPNETCORE_URLS=http://127.0.0.1:%s\n' "$port"
   printf 'Lifewood__DataDirectory=%s\n' "$data_dir"
   printf 'Lifewood__WebRoot=%s/server/web\n' "$install_dir"
-  printf 'Lifewood__AllowInsecureHttp=true\n'
   printf 'Network__TrustedProxies__0=%s\n' "$trusted_proxy"
 } > "$env_temp"
 chmod 0600 "$env_temp"

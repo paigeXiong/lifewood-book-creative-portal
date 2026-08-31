@@ -48,6 +48,7 @@ foreach ($candidate in $PackagePath) {
 
     $service = @(Read-MsiRows $database "SELECT Arguments FROM ServiceInstall WHERE Name='LifewoodBookCreativePortal'")
     Assert-True ($service.Count -eq 1 -and $service[0][0].Contains('--Lifewood:DataDirectory "[DATAFOLDER]."')) "Service does not use a quote-safe persistent data property in $resolved"
+    Assert-True (-not $service[0][0].Contains('AllowInsecureHttp')) "Service still depends on the obsolete insecure-HTTP compatibility flag in $resolved"
 
     $serviceAccount = @(Read-MsiRows $database "SELECT StartName FROM ServiceInstall WHERE Name='LifewoodBookCreativePortal'")
     Assert-True ($serviceAccount.Count -eq 1 -and $serviceAccount[0][0] -eq 'NT SERVICE\LifewoodBookCreativePortal') "Service does not run under its dedicated virtual account in $resolved"

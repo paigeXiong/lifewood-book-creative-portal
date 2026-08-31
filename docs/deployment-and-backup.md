@@ -8,7 +8,7 @@
 - /admin/：管理中心；
 - /api/：页面使用的内部数据接口。
 
-客户门户、管理中心和内部数据接口都由同一个服务端进程通过 HTTP 提供，不需要另行启动 Vite、Node.js 或静态文件服务器。同域部署继续使用 SameSite=Strict、Secure、HttpOnly Cookie；反向代理应把整个站点转发到该服务端。
+客户门户、管理中心和内部数据接口都由同一个服务端进程提供，不需要另行启动 Vite、Node.js 或静态文件服务器。公网同域部署继续使用 SameSite=Strict、Secure、HttpOnly Cookie；反向代理应把整个站点转发到该服务端。正式服务端只允许真实回环连接与回环 Host 使用本机 HTTP，且不需要任何开发环境或不安全模式开关。其他 HTTP 请求会在进入网页、CSRF 和认证处理前被拒绝；可信反向代理必须传递并由平台验证 HTTPS 协议信息。
 
 ## 构建
 
@@ -22,7 +22,7 @@
 
     npm run build:release
 
-Windows 用户也可以双击根目录的 build-release.bat。压缩包与 SHA256 校验文件输出到 artifacts/release/。便携包解压后双击 start-server.bat，即由同一个服务端进程提供客户门户和管理中心。GitHub CI 会在 main 推送和 Pull Request 上执行前后端测试、双前端生产构建、Native AOT 发布、真实 AOT 运行冒烟和发布包内容检查。
+Windows 用户也可以双击根目录的 build-release.bat。压缩包与 SHA256 校验文件输出到 artifacts/release/。便携包解压后双击 start-server.bat，即由同一个服务端进程提供客户门户和管理中心。直接运行 `server/Lifewood.BookPortal.Server.exe` 时默认监听 `http://localhost:5000`，同样可以完成登录和首次建号；启动器只负责选择 `5077`、指定便携数据目录并打开浏览器，不再改变认证安全策略。GitHub CI 会在 main 推送和 Pull Request 上执行前后端测试、双前端生产构建、Native AOT 发布、真实 AOT 运行冒烟和发布包内容检查。
 
 需要在单台 Windows 计算机上直接安装时，可以双击 `build-installer.bat`，或运行 `npm run build:msi`。中英文 MSI 与 SHA256 校验文件输出到 `artifacts/installer/`。安装界面可选择本机监听端口和生产数据目录；安装完成后平台作为 Windows 服务自动启动，并从开始菜单打开客户门户或管理中心。
 

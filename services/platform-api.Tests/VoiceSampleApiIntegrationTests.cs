@@ -80,6 +80,156 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ProductionDefaultLoopbackHttpBootstrapsWithoutCompatibilityFlag()
+    {
+        var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-loopback-" + Guid.NewGuid().ToString("N"));
+        WebApplicationFactory<Program>? productionFactory = null;
+        try
+        {
+            productionFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Lifewood:DataDirectory", productionRoot);
+                builder.UseSetting("Lifewood:RequireWebAssets", "false");
+                builder.ConfigureServices(services => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, LoopbackConnectionStartupFilter>(services));
+            });
+            using var client = productionFactory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+            var csrf = await GetCsrf(client);
+            using var bootstrap = await Send(client, HttpMethod.Post, "/api/auth/bootstrap", csrf,
+                JsonContent.Create(new { displayName = "Production Owner", email = "production@example.test", password = "production-password-123" }));
+            Assert.Equal(HttpStatusCode.OK, bootstrap.StatusCode);
+            using var me = await client.GetAsync("/api/me");
+            Assert.Equal(HttpStatusCode.OK, me.StatusCode);
+        }
+        finally
+        {
+            productionFactory?.Dispose();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("Kestrel:Endpoints:Public:Url", "http://0.0.0.0:5000")]
+    [InlineData("HTTP_PORTS", "5000")]
+    public async Task ProductionRejectsNonLoopbackHttpRegardlessOfListenerConfigurationSource(string setting, string value)
+    {
+        var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-nonloopback-" + Guid.NewGuid().ToString("N"));
+        WebApplicationFactory<Program>? productionFactory = null;
+        try
+        {
+            productionFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting(setting, value);
+                builder.UseSetting("Lifewood:DataDirectory", productionRoot);
+                builder.UseSetting("Lifewood:RequireWebAssets", "false");
+                builder.ConfigureServices(services => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, RemoteConnectionStartupFilter>(services));
+            });
+            using var client = productionFactory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+            using var response = await client.GetAsync("/api/auth/csrf");
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("security.https_required", await ErrorCode(response));
+        }
+        finally
+        {
+            productionFactory?.Dispose();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ProductionRemoteHttpCannotSpoofForwardedHttpsWithoutTrustedProxy()
+    {
+        var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-spoofed-proxy-" + Guid.NewGuid().ToString("N"));
+        WebApplicationFactory<Program>? productionFactory = null;
+        try
+        {
+            productionFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Lifewood:DataDirectory", productionRoot);
+                builder.UseSetting("Lifewood:RequireWebAssets", "false");
+                builder.ConfigureServices(services => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, RemoteConnectionStartupFilter>(services));
+            });
+            using var client = productionFactory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/csrf");
+            request.Headers.Add("X-Forwarded-Proto", "https");
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("security.https_required", await ErrorCode(response));
+        }
+        finally
+        {
+            productionFactory?.Dispose();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ProductionAcceptsForwardedHttpsOnlyFromExplicitTrustedProxy()
+    {
+        var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-trusted-proxy-" + Guid.NewGuid().ToString("N"));
+        WebApplicationFactory<Program>? productionFactory = null;
+        try
+        {
+            productionFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Network:TrustedProxies:0", "203.0.113.10");
+                builder.UseSetting("Lifewood:DataDirectory", productionRoot);
+                builder.UseSetting("Lifewood:RequireWebAssets", "false");
+                builder.ConfigureServices(services => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, MappedRemoteConnectionStartupFilter>(services));
+            });
+            using var client = productionFactory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/csrf");
+            request.Headers.Add("X-Forwarded-Proto", "https");
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains(response.Headers.GetValues("Set-Cookie"), value => value.Contains("; secure", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            productionFactory?.Dispose();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ProductionTrustedLoopbackProxyCannotForwardPlainHttpAsLocalTraffic()
+    {
+        var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-loopback-proxy-http-" + Guid.NewGuid().ToString("N"));
+        WebApplicationFactory<Program>? productionFactory = null;
+        try
+        {
+            productionFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Network:TrustedProxies:0", "127.0.0.1");
+                builder.UseSetting("Lifewood:DataDirectory", productionRoot);
+                builder.UseSetting("Lifewood:RequireWebAssets", "false");
+                builder.ConfigureServices(services => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, LoopbackConnectionStartupFilter>(services));
+            });
+            using var client = productionFactory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/csrf");
+            request.Headers.Host = "127.0.0.1";
+            request.Headers.Add("X-Forwarded-Proto", "http");
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("security.https_required", await ErrorCode(response));
+        }
+        finally
+        {
+            productionFactory?.Dispose();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task BootstrapRejectsNonLoopbackHostOnLoopbackConnection()
     {
         var csrf = await GetCsrf(ownerClient);
@@ -763,6 +913,19 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
             app.Use(nextMiddleware => async context =>
             {
                 context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.10");
+                await nextMiddleware(context);
+            });
+            next(app);
+        };
+    }
+
+    private sealed class MappedRemoteConnectionStartupFilter : Microsoft.AspNetCore.Hosting.IStartupFilter
+    {
+        public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) => app =>
+        {
+            app.Use(nextMiddleware => async context =>
+            {
+                context.Connection.RemoteIpAddress = IPAddress.Parse("::ffff:203.0.113.10");
                 await nextMiddleware(context);
             });
             next(app);

@@ -54,7 +54,7 @@ try {
     $start.RedirectStandardOutput = $false
     $start.RedirectStandardError = $false
     $start.Environment["ASPNETCORE_URLS"] = $baseUrl
-    $start.Environment["ASPNETCORE_ENVIRONMENT"] = "Development"
+    $start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production"
     $start.Environment["Lifewood__DataDirectory"] = $dataDirectory
     $start.Environment["Lifewood__RequireWebAssets"] = "false"
     $process = [Diagnostics.Process]::Start($start)

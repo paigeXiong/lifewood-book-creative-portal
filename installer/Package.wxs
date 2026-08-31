@@ -59,7 +59,7 @@
                       Start="auto"
                       ErrorControl="normal"
                       Account="NT SERVICE\LifewoodBookCreativePortal"
-                      Arguments='--urls http://127.0.0.1:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot; --Lifewood:AllowInsecureHttp true'>
+                      Arguments='--urls http://127.0.0.1:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot;'>
         <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="none" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
       </ServiceInstall>
       <ServiceControl Id="PlatformServiceControl" Name="LifewoodBookCreativePortal" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
