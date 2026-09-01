@@ -115,7 +115,7 @@ internal sealed class AdminRepository(string connectionString)
         var candidateEmail = request.Email?.Trim() ?? "";
         if (candidateEmail.Length is 0 or > 254 || !MailAddress.TryCreate(candidateEmail, out var address) || address is null) return new(AdminWriteOutcome.Invalid, "email");
         if (!address.Address.Equals(candidateEmail, StringComparison.OrdinalIgnoreCase)) return new(AdminWriteOutcome.Invalid, "email");
-        if (string.IsNullOrEmpty(request.Password) || request.Password.Length is < 12 or > 128) return new(AdminWriteOutcome.Invalid, "password");
+        if (string.IsNullOrEmpty(request.Password) || request.Password.Length is < 8 or > 128) return new(AdminWriteOutcome.Invalid, "password");
         if (!CreatableRoles.Contains(request.Role)) return new(AdminWriteOutcome.Invalid, "role");
         var id = Guid.NewGuid().ToString("N");
         var email = candidateEmail;

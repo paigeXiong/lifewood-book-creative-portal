@@ -9,7 +9,12 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Navigate,
   NavLink,
@@ -59,6 +64,26 @@ const AuditPage = lazy(() => import("./AuditPage").then((module) => ({ default: 
 const FormOptionConfigPage = lazy(() => import("./FormOptionConfigPage").then((module) => ({ default: module.FormOptionConfigPage })));
 const FileCategoryConfigPage = lazy(() => import("./FileCategoryConfigPage").then((module) => ({ default: module.FileCategoryConfigPage })));
 const VoiceConfigPage = lazy(() => import("./VoiceConfigPage").then((module) => ({ default: module.VoiceConfigPage })));
+const SystemRuntimePage = lazy(() => import("./SystemRuntimePage").then((module) => ({ default: module.SystemRuntimePage })));
+
+type AdminNavIconName = "home" | "overview" | "projects" | "users" | "organizations" | "audit" | "settings";
+
+function AdminNavIcon({ name }: { name: AdminNavIconName }) {
+  const paths: Record<AdminNavIconName, ReactNode> = {
+    home: <><path d="m10 6-6 6 6 6" /><path d="M5 12h15" /></>,
+    overview: <><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>,
+    projects: <><path d="M4 5h6l2 3h8v11H4V5Z" /><path d="M4 9h16M8 13h8m-8 3h5" /></>,
+    users: <><circle cx="9" cy="8" r="3" /><circle cx="17" cy="9" r="2.3" /><path d="M3 20c.5-4 2.5-6 6-6s5.5 2 6 6m0-5c3.4 0 5.3 1.7 5.8 5" /></>,
+    organizations: <><path d="M4 20V6l8-3 8 3v14" /><path d="M8 9h1m6 0h1M8 13h1m6 0h1M8 17h1m6 0h1M10 20v-4h4v4" /></>,
+    audit: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2M8 3.8 5.5 2.5" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19 13.5v-3l-2-.7a7 7 0 0 0-.7-1.7l.9-1.9-2.1-2.1-1.9.9a7 7 0 0 0-1.7-.7L10.5 2h-3l-.7 2a7 7 0 0 0-1.7.7l-1.9-.9-2.1 2.1.9 1.9a7 7 0 0 0-.7 1.7l-2 .7v3l2 .7a7 7 0 0 0 .7 1.7l-.9 1.9 2.1 2.1 1.9-.9a7 7 0 0 0 1.7.7l.7 2h3l.7-2a7 7 0 0 0 1.7-.7l1.9.9 2.1-2.1-.9-1.9a7 7 0 0 0 .7-1.7l2-.7Z" transform="translate(1.5 0) scale(.88)" /></>,
+  };
+  return (
+    <svg viewBox="0 0 24 24" focusable="false">
+      <g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</g>
+    </svg>
+  );
+}
 
 function formatDate(value: string, locale: SupportedLocale) {
   return new Intl.DateTimeFormat(locale, {
@@ -75,15 +100,14 @@ function adminAssetUrl(projectId: string, url: string) {
 }
 
 export function resolveProjectSelection(
-  currentId: string | undefined,
   requestedId: string | undefined,
   itemIds: readonly string[],
   hasLoaded: boolean,
 ): string | undefined {
-  if (!hasLoaded) return currentId;
+  if (!hasLoaded) return requestedId;
   if (requestedId) return requestedId;
   if (!itemIds.length) return undefined;
-  return currentId && itemIds.includes(currentId) ? currentId : itemIds[0];
+  return itemIds[0];
 }
 
 export function localizedAdminLocation(
@@ -204,7 +228,7 @@ function IdentityGate({
                 name="confirmPassword"
                 type="password"
                 autoComplete="new-password"
-                minLength={12}
+                minLength={8}
                 maxLength={128}
                 required
               />
@@ -327,49 +351,52 @@ function AdminShell({
             <small>{t("admin.productName")}</small>
           </div>
         </div>
-        <nav>
-          <a href={customerPortalUrl(locale)}>
+        <nav className="admin-navigation" aria-label={t("admin.navGroups.label")}>
+          <a className="nav-home" href={customerPortalUrl(locale)}>
             <span className="nav-icon" aria-hidden="true">
-              ←
+              <AdminNavIcon name="home" />
             </span>
-            {t("admin.nav.home")}
+            <span className="nav-label">{t("admin.nav.home")}</span>
           </a>
-          <NavLink to={localizedPath(locale, "/overview")}>
-            <span className="nav-icon" aria-hidden="true">
-              ◫
-            </span>
-            {t("admin.nav.overview")}
-          </NavLink>
-          <NavLink to={localizedPath(locale, "/projects")}>
-            <span className="nav-icon" aria-hidden="true">
-              ▤
-            </span>
-            {t("admin.nav.projects")}
-          </NavLink>
-          <NavLink to={localizedPath(locale, "/users")}>
-            <span className="nav-icon" aria-hidden="true">
-              ◎
-            </span>
-            {t("admin.nav.users")}
-          </NavLink>
-          <NavLink to={localizedPath(locale, "/organizations")}>
-            <span className="nav-icon" aria-hidden="true">
-              ◉
-            </span>
-            {t("admin.nav.organizations")}
-          </NavLink>
-          <NavLink to={localizedPath(locale, "/audit")}>
-            <span className="nav-icon" aria-hidden="true">
-              ◷
-            </span>
-            {t("admin.nav.audit")}
-          </NavLink>
-          <NavLink to={localizedPath(locale, "/settings")}>
-            <span className="nav-icon" aria-hidden="true">
-              ⚙
-            </span>
-            {t("admin.nav.settings")}
-          </NavLink>
+          <section className="nav-group" aria-labelledby="nav-group-operations">
+            <h2 id="nav-group-operations">{t("admin.navGroups.operations")}</h2>
+            <div className="nav-grid">
+              <NavLink to={localizedPath(locale, "/overview")}>
+                <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="overview" /></span>
+                <span className="nav-label">{t("admin.nav.overview")}</span>
+              </NavLink>
+              <NavLink to={localizedPath(locale, "/projects")}>
+                <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="projects" /></span>
+                <span className="nav-label">{t("admin.nav.projects")}</span>
+              </NavLink>
+            </div>
+          </section>
+          <section className="nav-group" aria-labelledby="nav-group-directory">
+            <h2 id="nav-group-directory">{t("admin.navGroups.directory")}</h2>
+            <div className="nav-grid">
+              <NavLink to={localizedPath(locale, "/users")}>
+                <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="users" /></span>
+                <span className="nav-label">{t("admin.nav.users")}</span>
+              </NavLink>
+              <NavLink to={localizedPath(locale, "/organizations")}>
+                <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="organizations" /></span>
+                <span className="nav-label">{t("admin.nav.organizations")}</span>
+              </NavLink>
+            </div>
+          </section>
+          <section className="nav-group" aria-labelledby="nav-group-governance">
+            <h2 id="nav-group-governance">{t("admin.navGroups.governance")}</h2>
+            <div className="nav-grid">
+              <NavLink to={localizedPath(locale, "/audit")}>
+                <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="audit" /></span>
+                <span className="nav-label">{t("admin.nav.audit")}</span>
+              </NavLink>
+              <NavLink to={localizedPath(locale, "/settings")}>
+                <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="settings" /></span>
+                <span className="nav-label">{t("admin.nav.settings")}</span>
+              </NavLink>
+            </div>
+          </section>
         </nav>
       </aside>
       <div className="workspace">
@@ -488,9 +515,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
   const [page, setPage] = useState(() =>
     Math.max(1, Number(searchParams.get("page")) || 1),
   );
-  const [selectedId, setSelectedId] = useState<string | undefined>(
-    () => searchParams.get("project") ?? undefined,
-  );
+  const requestedProjectId = searchParams.get("project") ?? undefined;
   const projects = useQuery({
     queryKey: ["admin-projects", workflow, priority, search, page],
     queryFn: () =>
@@ -502,10 +527,17 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
         pageSize: 20,
       }),
   });
+  const selectedId = resolveProjectSelection(
+    requestedProjectId,
+    projects.data?.items.map((item) => item.id) ?? [],
+    Boolean(projects.data),
+  );
   const detail = useQuery({
     queryKey: ["admin-project", selectedId],
     queryFn: () => adminService.getProject(selectedId!),
     enabled: Boolean(selectedId),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
   });
   const staff = useQuery({
     queryKey: ["admin-assignees"],
@@ -525,7 +557,6 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
     () => new Map(workflowOptions.map((item) => [item.id, item.label])),
     [workflowOptions],
   );
-  const requestedProjectId = searchParams.get("project") ?? undefined;
   const updateUrl = (changes: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams);
     Object.entries(changes).forEach(([key, value]) =>
@@ -533,15 +564,6 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
     );
     setSearchParams(next, { replace: true });
   };
-  useEffect(() => {
-    const nextId = resolveProjectSelection(
-      selectedId,
-      requestedProjectId,
-      projects.data?.items.map((item) => item.id) ?? [],
-      Boolean(projects.data),
-    );
-    if (nextId !== selectedId) setSelectedId(nextId);
-  }, [projects.data, requestedProjectId, selectedId]);
   const assignees = useMemo(() => staff.data ?? [], [staff.data]);
   const pages = Math.max(1, Math.ceil((projects.data?.total ?? 0) / 20));
   const submitSearch = (event: FormEvent) => {
@@ -646,7 +668,6 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
                   workflowLabels.get(item.workflowStatus) ?? item.workflowStatus
                 }
                 onSelect={() => {
-                  setSelectedId(item.id);
                   updateUrl({ project: item.id });
                 }}
               />
@@ -683,6 +704,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
         </section>
         <ProjectDetail
           detail={detail.data}
+          switching={detail.isPlaceholderData && detail.isFetching}
           loading={
             (detail.isPending && Boolean(selectedId)) || options.isPending || voices.isPending
           }
@@ -693,6 +715,7 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
           formOptions={options.data}
           voiceReferences={voices.data ?? []}
           busy={
+            detail.isFetching ||
             updateWorkflow.isPending ||
             addNote.isPending ||
             options.isPending ||
@@ -768,6 +791,7 @@ function ProjectRow({
 
 function ProjectDetail({
   detail,
+  switching,
   loading,
   locale,
   assignees,
@@ -781,6 +805,7 @@ function ProjectDetail({
   onNote,
 }: {
   detail?: AdminProjectDetail;
+  switching: boolean;
   loading: boolean;
   locale: SupportedLocale;
   assignees: AdminUser[];
@@ -816,6 +841,7 @@ function ProjectDetail({
       .find((category) => category.id === categoryId)?.label ?? categoryId;
   const saveWorkflow = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (busy) return;
     const data = new FormData(event.currentTarget);
     onWorkflow({
       workflowStatus: String(data.get("workflowStatus")) as WorkflowStatus,
@@ -825,12 +851,16 @@ function ProjectDetail({
   };
   const saveNote = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (busy) return;
     const form = event.currentTarget;
     const body = String(new FormData(form).get("body") ?? "").trim();
     if (body) void onNote(body).then(() => form.reset());
   };
   return (
-    <aside className="detail-pane">
+    <aside
+      className={switching ? "detail-pane switching" : "detail-pane"}
+      aria-busy={switching}
+    >
       <div className="detail-title">
         <div>
           <span className="eyebrow">
@@ -1045,6 +1075,24 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
   const voice = task.voiceAndReferences.voiceover;
   const direction = task.voiceAndReferences.creativeDirection;
   const selectedVoices = voice.selectedVoiceIds.map((id) => voiceNames.get(id) ?? id);
+  const characterPanelId = useId();
+  const [characterSelection, setCharacterSelection] = useState<{
+    projectId: string;
+    characterId: string;
+  }>();
+  const requestedCharacterId =
+    characterSelection?.projectId === task.id
+      ? characterSelection.characterId
+      : undefined;
+  const selectedCharacter =
+    creative.characters.find(
+      (character) => character.id === requestedCharacterId,
+    ) ?? creative.characters[0];
+  const selectedCharacterIndex = selectedCharacter
+    ? creative.characters.findIndex(
+        (character) => character.id === selectedCharacter.id,
+      )
+    : -1;
 
   return (
     <div className="submission-sections">
@@ -1078,25 +1126,100 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
       </section>
       <section className="detail-section">
         <h3>{t("admin.projects.characters", { count: creative.characters.length })}</h3>
-        {creative.characters.length ? <div className="character-submissions">
-          {creative.characters.map((character, index) => (
-            <article key={character.id}>
-              <h4>{character.name || t("admin.projects.characterNumber", { number: index + 1 })}</h4>
-              <FactGrid facts={[
-                { label: t("creative.fields.roleType"), value: label("roleTypes", character.roleTypeId) },
-                { label: t("creative.fields.storyRole"), value: character.storyRole },
-                { label: t("creative.fields.ageRange"), value: label("ageRanges", character.ageRangeId) },
-                { label: t("creative.fields.gender"), value: label("genders", character.genderId) },
-                { label: t("creative.fields.personality"), value: character.personality, wide: true },
-                { label: t("creative.fields.appearance"), value: character.appearance, wide: true },
-                { label: t("creative.fields.clothing"), value: character.clothing },
-                { label: t("creative.fields.emotion"), value: character.emotion },
-                { label: t("creative.fields.voiceHint"), value: character.voiceHint, wide: true },
-                { label: t("admin.projects.referenceImages"), value: <ReferenceFiles projectId={task.id} assets={character.referenceImages ?? []} legacyUrls={character.referenceImageUrls} />, wide: true },
-              ]} />
-            </article>
-          ))}
-        </div> : <p className="muted">{t("admin.projects.noCharacters")}</p>}
+        {selectedCharacter ? (
+          <>
+            <div
+              className="character-tabs"
+              role="tablist"
+              aria-label={t("admin.projects.characters", {
+                count: creative.characters.length,
+              })}
+            >
+              {creative.characters.map((character, index) => {
+                const selected = character.id === selectedCharacter.id;
+                return (
+                  <button
+                    id={`${characterPanelId}-tab-${index}`}
+                    key={character.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    aria-controls={characterPanelId}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() =>
+                      setCharacterSelection({
+                        projectId: task.id,
+                        characterId: character.id,
+                      })
+                    }
+                    onKeyDown={(event) => {
+                      let nextIndex: number | undefined;
+                      if (event.key === "ArrowRight") {
+                        nextIndex = (index + 1) % creative.characters.length;
+                      } else if (event.key === "ArrowLeft") {
+                        nextIndex =
+                          (index - 1 + creative.characters.length) %
+                          creative.characters.length;
+                      } else if (event.key === "Home") {
+                        nextIndex = 0;
+                      } else if (event.key === "End") {
+                        nextIndex = creative.characters.length - 1;
+                      }
+
+                      if (nextIndex === undefined) return;
+                      event.preventDefault();
+                      const nextCharacter = creative.characters[nextIndex];
+                      setCharacterSelection({
+                        projectId: task.id,
+                        characterId: nextCharacter.id,
+                      });
+                      requestAnimationFrame(() => {
+                        document
+                          .getElementById(
+                            `${characterPanelId}-tab-${nextIndex}`,
+                          )
+                          ?.focus();
+                      });
+                    }}
+                  >
+                    {character.name ||
+                      t("admin.projects.characterNumber", {
+                        number: index + 1,
+                      })}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="character-submissions">
+              <article
+                id={characterPanelId}
+                role="tabpanel"
+                aria-labelledby={`${characterPanelId}-tab-${selectedCharacterIndex}`}
+              >
+                <h4>
+                  {selectedCharacter.name ||
+                    t("admin.projects.characterNumber", {
+                      number: selectedCharacterIndex + 1,
+                    })}
+                </h4>
+                <FactGrid facts={[
+                  { label: t("creative.fields.roleType"), value: label("roleTypes", selectedCharacter.roleTypeId) },
+                  { label: t("creative.fields.storyRole"), value: selectedCharacter.storyRole },
+                  { label: t("creative.fields.ageRange"), value: label("ageRanges", selectedCharacter.ageRangeId) },
+                  { label: t("creative.fields.gender"), value: label("genders", selectedCharacter.genderId) },
+                  { label: t("creative.fields.personality"), value: selectedCharacter.personality, wide: true },
+                  { label: t("creative.fields.appearance"), value: selectedCharacter.appearance, wide: true },
+                  { label: t("creative.fields.clothing"), value: selectedCharacter.clothing },
+                  { label: t("creative.fields.emotion"), value: selectedCharacter.emotion },
+                  { label: t("creative.fields.voiceHint"), value: selectedCharacter.voiceHint, wide: true },
+                  { label: t("admin.projects.referenceImages"), value: <ReferenceFiles projectId={task.id} assets={selectedCharacter.referenceImages ?? []} legacyUrls={selectedCharacter.referenceImageUrls} />, wide: true },
+                ]} />
+              </article>
+            </div>
+          </>
+        ) : (
+          <p className="muted">{t("admin.projects.noCharacters")}</p>
+        )}
       </section>
       <section className="detail-section">
         <h3>{t("admin.projects.visualInfo")}</h3>
@@ -1490,7 +1613,7 @@ function CreateUserDialog({
             name="password"
             type="password"
             autoComplete="new-password"
-            minLength={12}
+            minLength={8}
             maxLength={128}
             required
           />
@@ -1693,6 +1816,10 @@ function AdminRoot() {
         <Route
           path="settings/voices"
           element={<VoiceConfigPage locale={locale} />}
+        />
+        <Route
+          path="settings/runtime"
+          element={<SystemRuntimePage locale={locale} />}
         />
         <Route
           path="voices"

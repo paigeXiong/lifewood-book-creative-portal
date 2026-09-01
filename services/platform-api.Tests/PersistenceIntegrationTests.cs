@@ -58,6 +58,67 @@ public sealed class PersistenceIntegrationTests : IDisposable
 
         Assert.Equal(1, projects.CountDrafts("owner-id"));
     }
+
+    [Fact]
+    public void ProjectStatsAreScopedToOwnerAndUseWorkflowState()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        new UserRepository(ConnectionString, root).Initialize();
+        new AdminRepository(ConnectionString).Initialize();
+        projects.Create("owner-id");
+        var active = projects.Create("owner-id");
+        var completed = projects.Create("owner-id");
+        projects.Create("other-owner");
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'in_production' WHERE id = $id;", ("$id", active.Id));
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'completed' WHERE id = $id;", ("$id", completed.Id));
+
+        var stats = projects.GetStats("owner-id");
+
+        Assert.Equal(3, stats.Total);
+        Assert.Equal(1, stats.Drafts);
+        Assert.Equal(1, stats.Active);
+        Assert.Equal(1, stats.Completed);
+    }
+
+    [Fact]
+    public void ProjectListSortsServerSideBeforePagination()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+
+        TaskDraftDto Add(string title, string author, string updatedAt)
+        {
+            var draft = projects.Create("owner-id");
+            var saved = projects.Save("owner-id", draft.Id, new SaveDraftRequest(
+                draft.Version,
+                draft.Project with { ProjectName = title + " campaign" },
+                draft.Book with { Title = title, AuthorName = author }));
+            Assert.Equal(SaveOutcome.Saved, saved.Outcome);
+            Execute("UPDATE projects SET updated_at = $updatedAt WHERE id = $id;", ("$updatedAt", updatedAt), ("$id", draft.Id));
+            return Assert.IsType<TaskDraftDto>(saved.Draft);
+        }
+
+        var beta = Add("Beta", "Alice", "2026-01-02T00:00:00+00:00");
+        var alpha = Add("Alpha", "Charlie", "2026-01-03T00:00:00+00:00");
+        var gamma = Add("Gamma", "Bob", "2026-01-01T00:00:00+00:00");
+        var delta = Add("Delta", "Dora", "2026-01-04T00:00:00+00:00");
+        var epsilon = Add("Epsilon", "Eve", "2026-01-05T00:00:00+00:00");
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'completed' WHERE id = $id;", ("$id", beta.Id));
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'contacting' WHERE id = $id;", ("$id", gamma.Id));
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'confirmed' WHERE id = $id;", ("$id", delta.Id));
+        Execute("UPDATE projects SET status = 'submitted', workflow_status = 'awaiting_customer' WHERE id = $id;", ("$id", epsilon.Id));
+
+        var firstProjectPage = projects.List("owner-id", null, null, 1, 2, "project", "asc");
+        Assert.Equal([alpha.Id, beta.Id], firstProjectPage.Items.Select(item => item.Id).ToArray());
+        var authorDescending = projects.List("owner-id", null, null, 1, 10, "author", "desc");
+        Assert.Equal([epsilon.Id, delta.Id, alpha.Id, gamma.Id, beta.Id], authorDescending.Items.Select(item => item.Id).ToArray());
+        var newestFirst = projects.List("owner-id", null, null, 1, 10, "updated", "desc");
+        Assert.Equal([epsilon.Id, delta.Id, alpha.Id, beta.Id, gamma.Id], newestFirst.Items.Select(item => item.Id).ToArray());
+        var workflowAscending = projects.List("owner-id", null, null, 1, 10, "status", "asc");
+        Assert.Equal([alpha.Id, gamma.Id, delta.Id, epsilon.Id, beta.Id], workflowAscending.Items.Select(item => item.Id).ToArray());
+    }
+
     [Fact]
     public void AdminOverviewAggregatesProjectsUsersWorkflowAndPriority()
     {
@@ -332,8 +393,14 @@ public sealed class PersistenceIntegrationTests : IDisposable
         admin.Initialize();
 
         Execute("ALTER TABLE users DROP COLUMN session_version;");
+        Execute("ALTER TABLE users DROP COLUMN is_active;");
+        Execute("ALTER TABLE users DROP COLUMN locale;");
+        Execute("ALTER TABLE users DROP COLUMN client_name;");
         users.Initialize();
         Assert.True(HasColumn("users", "session_version"));
+        Assert.True(HasColumn("users", "is_active"));
+        Assert.True(HasColumn("users", "locale"));
+        Assert.True(HasColumn("users", "client_name"));
 
         var created = users.CreateOwner("Owner", "owner@example.test", "initial-password-123");
         Assert.Equal(AccountCreateOutcome.Created, created.Outcome);
@@ -349,6 +416,64 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Equal(PasswordUpdateOutcome.Updated, reset.Outcome);
         Assert.Null(users.Get(user.Id, 1));
         Assert.NotNull(users.Get(user.Id, 2));
+    }
+
+    [Fact]
+    public void PasswordsRequireEightToOneHundredTwentyEightCharacters()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+
+        var tooShort = users.CreateOwner("Short Password", "short@example.test", "1234567");
+        Assert.Equal(AccountCreateOutcome.Invalid, tooShort.Outcome);
+        Assert.Equal("password", tooShort.Field);
+
+        var created = users.CreateOwner("Eight Characters", "eight@example.test", "12345678");
+        Assert.Equal(AccountCreateOutcome.Created, created.Outcome);
+        var user = Assert.IsType<CurrentUserDto>(created.User);
+
+        Assert.Equal(PasswordUpdateOutcome.Invalid, users.ChangePassword(user.Id, "12345678", "7654321").Outcome);
+        Assert.Equal(PasswordUpdateOutcome.Updated, users.ChangePassword(user.Id, "12345678", "abcdefgh").Outcome);
+        Assert.Equal(PasswordUpdateOutcome.Invalid, users.ResetPassword(user.Id, "7654321").Outcome);
+        Assert.Equal(PasswordUpdateOutcome.Updated, users.ResetPassword(user.Id, "87654321").Outcome);
+    }
+
+    [Fact]
+    public void OwnerProfilePersistsContactAndOrganizationForNewDraftDefaults()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var users = new UserRepository(ConnectionString, root);
+        users.Initialize();
+
+        var created = users.CreateOwner("Owner Name", "owner@example.test", "initial-password-123", " 123 456 ", " Deseret Book ", "en-US");
+        var owner = Assert.IsType<CurrentUserDto>(created.User);
+        Assert.Equal("123 456", owner.Phone);
+        Assert.Equal("Deseret Book", owner.Organization?.Name);
+        Assert.Equal("Deseret Book", owner.ClientName);
+        Assert.Equal("en-US", owner.Locale);
+
+        var preference = users.UpdatePreferences(owner.Id, "zh-CN");
+        Assert.Equal(ProfileUpdateOutcome.Updated, preference.Outcome);
+        Assert.Equal("zh-CN", preference.User?.Locale);
+        Assert.Equal("zh-CN", users.Get(owner.Id)?.Locale);
+        Assert.Equal(ProfileUpdateOutcome.Invalid, users.UpdatePreferences(owner.Id, "fr-FR").Outcome);
+
+        var updated = users.UpdateProfile(owner.Id, " Updated Owner ", " 987 654 ", " Updated Client ");
+        Assert.Equal(ProfileUpdateOutcome.Updated, updated.Outcome);
+        var current = Assert.IsType<CurrentUserDto>(updated.User);
+        Assert.Equal("Updated Owner", current.DisplayName);
+        Assert.Equal("987 654", current.Phone);
+        Assert.Equal("Updated Client", current.ClientName);
+        Assert.Equal("Deseret Book", current.Organization?.Name);
+
+        var draft = projects.Create(current.Id, current.ClientName ?? current.Organization?.Name ?? current.DisplayName, current.DisplayName, current.Email ?? "", current.Phone);
+        Assert.Equal("Updated Client", draft.Project.ClientName);
+        Assert.Equal("Updated Owner", draft.Project.ContactName);
+        Assert.Equal("owner@example.test", draft.Project.Email);
+        Assert.Equal("987 654", draft.Project.Phone);
     }
 
     [Fact]

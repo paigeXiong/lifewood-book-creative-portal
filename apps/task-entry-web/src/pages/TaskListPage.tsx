@@ -4,30 +4,22 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+import { ProjectCoverImage } from "../components/ProjectCoverImage";
+import { buildPagination } from "../pagination";
 
 function presentValue(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized && normalized !== "—" ? normalized : undefined;
 }
 
-export function ProjectCover({ coverUrl, pendingLabel }: { coverUrl?: string | null; pendingLabel: string }) {
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const hasUsableCover = Boolean(coverUrl) && failedUrl !== coverUrl;
+const taskSortFields = ["project", "author", "status", "updated"] as const;
+type TaskSortField = typeof taskSortFields[number];
+type SortDirection = "asc" | "desc";
 
+export function ProjectCover({ coverUrl, pendingLabel }: { coverUrl?: string | null; pendingLabel: string }) {
   return (
     <span className="list-cover-slot">
-      {!hasUsableCover ? <span className="list-cover-pending" aria-hidden="true">{pendingLabel}</span> : null}
-      {hasUsableCover && coverUrl ? (
-        <img
-          className="list-cover"
-          src={coverUrl}
-          alt=""
-          width="40"
-          height="52"
-          loading="lazy"
-          onError={() => setFailedUrl(coverUrl)}
-        />
-      ) : null}
+      <ProjectCoverImage coverUrl={coverUrl} coverAlt="" placeholderAlt={pendingLabel} className="list-cover" width={40} height={52} loading="lazy" />
     </span>
   );
 }
@@ -42,6 +34,9 @@ export function TaskListPage() {
   const status = searchParams.get("status") ?? "";
   const parsedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
   const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const requestedSort = searchParams.get("sort");
+  const sort: TaskSortField = taskSortFields.includes(requestedSort as TaskSortField) ? requestedSort as TaskSortField : "updated";
+  const direction: SortDirection = searchParams.get("direction") === "asc" ? "asc" : "desc";
   const [searchInput, setSearchInput] = useState(search);
   const [showMobileCreate, setShowMobileCreate] = useState(false);
   const createButtonRef = useRef<HTMLButtonElement>(null);
@@ -49,27 +44,16 @@ export function TaskListPage() {
 
   const options = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
   const tasks = useQuery({
-    queryKey: ["projects", validLocale, status, search, page],
-    queryFn: () => projectService.listProjects({ locale: validLocale, status: status || undefined, search: search || undefined, page, pageSize: 10 }),
+    queryKey: ["projects", validLocale, status, search, sort, direction, page],
+    queryFn: () => projectService.listProjects({ locale: validLocale, status: status || undefined, search: search || undefined, sort, direction, page, pageSize: 10 }),
   });
-  const totalCount = useQuery({
-    queryKey: ["project-count", validLocale, "all"],
-    queryFn: () => projectService.listProjects({ locale: validLocale, page: 1, pageSize: 1 }),
-  });
-  const draftCount = useQuery({
-    queryKey: ["project-count", validLocale, "draft"],
-    queryFn: () => projectService.listProjects({ locale: validLocale, status: "draft", page: 1, pageSize: 1 }),
-  });
-  const submittedCount = useQuery({
-    queryKey: ["project-count", validLocale, "submitted"],
-    queryFn: () => projectService.listProjects({ locale: validLocale, status: "submitted", page: 1, pageSize: 1 }),
-  });
+  const stats = useQuery({ queryKey: ["project-stats"], queryFn: projectService.getStats });
   const createDraft = useMutation({
     mutationFn: () => projectService.createDraft(validLocale),
     onSuccess: async (draft) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["project-count"] }),
+        queryClient.invalidateQueries({ queryKey: ["project-stats"] }),
       ]);
       navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
     },
@@ -79,7 +63,7 @@ export function TaskListPage() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["project-count"] }),
+        queryClient.invalidateQueries({ queryKey: ["project-stats"] }),
       ]);
       if ((tasks.data?.items.length ?? 0) <= 1 && page > 1) {
         setSearchParams((current) => {
@@ -95,6 +79,14 @@ export function TaskListPage() {
   const formatter = useMemo(() => new Intl.DateTimeFormat(validLocale, { dateStyle: "medium", timeStyle: "short" }), [validLocale]);
 
   useEffect(() => setSearchInput(search), [search]);
+  useEffect(() => {
+    if (!tasks.isSuccess || page <= totalPages) return;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      totalPages > 1 ? next.set("page", String(totalPages)) : next.delete("page");
+      return next;
+    }, { replace: true });
+  }, [page, setSearchParams, tasks.isSuccess, totalPages]);
   useEffect(() => {
     const button = createButtonRef.current;
     if (!button || !("IntersectionObserver" in window)) return;
@@ -120,6 +112,30 @@ export function TaskListPage() {
     const query = next.toString();
     return query ? `?${query}` : "";
   };
+  const changeSort = (field: TaskSortField) => {
+    const nextDirection: SortDirection = sort === field ? (direction === "asc" ? "desc" : "asc") : (field === "updated" ? "desc" : "asc");
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (field === "updated" && nextDirection === "desc") {
+        next.delete("sort");
+        next.delete("direction");
+      } else {
+        next.set("sort", field);
+        next.set("direction", nextDirection);
+      }
+      next.delete("page");
+      return next;
+    });
+  };
+  const sortHeader = (field: TaskSortField, label: string) => {
+    const active = sort === field;
+    const nextDirection: SortDirection = active && direction === "asc" ? "desc" : "asc";
+    return <th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+      <button className={`table-sort${active ? " active" : ""}`} type="button" title={t("tasks.sort.change", { column: label, direction: t(`tasks.sort.${nextDirection}`) })} onClick={() => changeSort(field)}>
+        <span>{label}</span><span className="table-sort-icon" aria-hidden="true">{active ? (direction === "asc" ? "↑" : "↓") : "↕"}</span>
+      </button>
+    </th>;
+  };
 
   if (!isSupportedLocale(locale)) return null;
 
@@ -137,13 +153,13 @@ export function TaskListPage() {
       </div>
 
       <section className="reference-stat-row" aria-label={t("tasks.stats.label")}>
-        <div className="reference-stat-card"><span>{t("tasks.stats.total")}</span><strong>{totalCount.data?.total ?? "—"}</strong></div>
-        <div className="reference-stat-card"><span>{t("tasks.stats.drafts")}</span><strong>{draftCount.data?.total ?? "—"}</strong></div>
-        <div className="reference-stat-card"><span>{t("tasks.stats.submitted")}</span><strong>{submittedCount.data?.total ?? "—"}</strong></div>
-        <div className="reference-stat-card reference-stat-card-current-page"><span>{t("tasks.stats.pageRecords")}</span><strong>{tasks.data?.items.length ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.total")}</span><strong>{stats.data?.total ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.drafts")}</span><strong>{stats.data?.drafts ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.active")}</span><strong>{stats.data?.active ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.completed")}</span><strong>{stats.data?.completed ?? "—"}</strong></div>
       </section>
 
-      {(totalCount.isError || draftCount.isError || submittedCount.isError) && <div className="inline-error stat-error" role="alert">{localizedApiError(totalCount.error ?? draftCount.error ?? submittedCount.error, t)} <button className="button button-secondary" type="button" onClick={() => { void totalCount.refetch(); void draftCount.refetch(); void submittedCount.refetch(); }}>{t("common.retry")}</button></div>}
+      {stats.isError && <div className="inline-error stat-error" role="alert">{localizedApiError(stats.error, t)} <button className="button button-secondary" type="button" onClick={() => void stats.refetch()}>{t("common.retry")}</button></div>}
 
       <section className="list-toolbar reference-toolbar" aria-label={t("nav.tasks")}>
         <form className="search-form" role="search" onSubmit={(event) => { event.preventDefault(); updateFilters({ q: searchInput.trim(), page: 1 }); }}>
@@ -178,8 +194,8 @@ export function TaskListPage() {
           <div className="table-scroll">
             <table className="task-table data-table">
               <thead><tr>
-                <th>{t("tasks.columns.project")}</th><th>{t("tasks.columns.book")}</th><th>{t("tasks.columns.status")}</th>
-                <th>{t("tasks.columns.updated")}</th><th><span className="sr-only">{t("tasks.columns.action")}</span></th>
+                {sortHeader("project", t("tasks.columns.project"))}{sortHeader("author", t("tasks.columns.book"))}{sortHeader("status", t("tasks.columns.status"))}
+                {sortHeader("updated", t("tasks.columns.updated"))}<th><span className="sr-only">{t("tasks.columns.action")}</span></th>
               </tr></thead>
               <tbody>{tasks.data?.items.map((task) => {
                 const statusId = task.status === "draft" ? task.status : (task.workflowStatus ?? task.status);
@@ -204,10 +220,21 @@ export function TaskListPage() {
         )}
       </section>
 
-      {totalPages > 1 && <nav className="pagination" aria-label={t("common.pageOf", { page, pages: totalPages })}>
-        {page <= 1 ? <span className="button button-secondary disabled" aria-disabled="true">{t("common.previous")}</span> : <Link className="button button-secondary" to={pageHref(page - 1)}>{t("common.previous")}</Link>}
-        <span aria-current="page">{t("common.pageOf", { page, pages: totalPages })}</span>
-        {page >= totalPages ? <span className="button button-secondary disabled" aria-disabled="true">{t("common.next")}</span> : <Link className="button button-secondary" to={pageHref(page + 1)}>{t("common.next")}</Link>}
+      {totalPages > 1 && <nav className="pagination" aria-label={t("common.paginationLabel")}>
+        {page <= 1
+          ? <span className="pagination-control pagination-arrow disabled" aria-disabled="true"><span aria-hidden="true">‹</span><span className="sr-only">{t("common.previous")}</span></span>
+          : <Link className="pagination-control pagination-arrow" to={pageHref(page - 1)} rel="prev" aria-label={t("common.previous")}><span aria-hidden="true">‹</span></Link>}
+        <ol className="pagination-pages">
+          {buildPagination(page, totalPages).map((item) => typeof item === "number"
+            ? <li key={item}>{item === page
+              ? <span className="pagination-control current" aria-current="page" aria-label={t("common.currentPage", { page: item })}>{item}</span>
+              : <Link className="pagination-control" to={pageHref(item)} aria-label={t("common.goToPage", { page: item })}>{item}</Link>}</li>
+            : <li className="pagination-ellipsis" key={item} aria-hidden="true">…</li>)}
+        </ol>
+        {page >= totalPages
+          ? <span className="pagination-control pagination-arrow disabled" aria-disabled="true"><span aria-hidden="true">›</span><span className="sr-only">{t("common.next")}</span></span>
+          : <Link className="pagination-control pagination-arrow" to={pageHref(page + 1)} rel="next" aria-label={t("common.next")}><span aria-hidden="true">›</span></Link>}
+        <span className="sr-only" role="status">{t("common.pageOf", { page, pages: totalPages })}</span>
       </nav>}
       {showMobileCreate ? (
         <button

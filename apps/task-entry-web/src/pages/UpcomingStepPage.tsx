@@ -12,6 +12,7 @@ import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { StepProgress } from "../components/StepProgress";
 import { ReferenceLinks } from "../components/ReferenceLinks";
 import { ScreenError } from "../components/ScreenError";
+import { ProjectCoverImage } from "../components/ProjectCoverImage";
 import { isCreativeComplete } from "./creativeFormSchema";
 import { isVoiceStepComplete } from "./voiceFormSchema";
 import { isProjectStepComplete } from "./projectFormSchema";
@@ -64,7 +65,7 @@ export function UpcomingStepPage() {
       setValidationIssues([]);
       queryClient.setQueryData(["project", taskId], submitted);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["project-count"] });
+      void queryClient.invalidateQueries({ queryKey: ["project-stats"] });
       navigate(localizedPath(validLocale, `/tasks/${submitted.id}/submitted`), {
         replace: true,
       });
@@ -275,15 +276,7 @@ export function UpcomingStepPage() {
                 {t("review.edit")}
               </Link>
             </div>
-            {bookCover && (
-              <img
-                className="review-cover"
-                src={bookCover.url}
-                alt={t("sourceFiles.coverAlt", { title: draft.book.title })}
-                width="130"
-                height="170"
-              />
-            )}
+            <ProjectCoverImage coverUrl={bookCover?.url} coverAlt={t("sourceFiles.coverAlt", { title: draft.book.title })} placeholderAlt={t("sourceFiles.coverPendingAlt")} className="review-cover" width={130} height={170} />
             <dl className="data-grid">
               <div>
                 <dt>{t("wizard.fields.bookTitle")}</dt>
@@ -632,15 +625,7 @@ export function UpcomingStepPage() {
         <aside className="review-summary-rail">
           <div className="folio-card">
             <h3 className="summary-title">{t("wizard.summary.title")}</h3>
-            {bookCover && (
-              <img
-                className="summary-cover"
-                src={bookCover.url}
-                alt={t("sourceFiles.coverAlt", { title: draft.book.title })}
-                width="240"
-                height="180"
-              />
-            )}
+            <ProjectCoverImage coverUrl={bookCover?.url} coverAlt={t("sourceFiles.coverAlt", { title: draft.book.title })} placeholderAlt={t("sourceFiles.coverPendingAlt")} className="summary-cover" width={240} height={180} />
             <dl className="summary-meta">
               <div>
                 <dt>{t("wizard.fields.bookTitle")}</dt>

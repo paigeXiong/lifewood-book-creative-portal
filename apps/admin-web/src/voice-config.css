@@ -154,6 +154,36 @@
   height: 30px;
 }
 
+.runtime-grid { min-height: 0; display: grid; grid-template-columns: minmax(28rem, 1.35fr) minmax(22rem, .85fr); gap: .7rem; }
+.runtime-card { min-width: 0; padding: .9rem; border-radius: .7rem; background: var(--admin-surface, #fff); box-shadow: 0 2px 8px rgb(20 52 39 / 7%); }
+.runtime-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; margin-bottom: .85rem; }
+.runtime-card-heading h2 { margin: 0; font-size: .95rem; }
+.runtime-card-heading p { margin: .22rem 0 0; color: var(--muted); font-size: .76rem; line-height: 1.45; }
+.runtime-form { display: grid; grid-template-columns: minmax(14rem, 1fr) minmax(9rem, .45fr); gap: .75rem; }
+.runtime-form > label { min-width: 0; display: grid; align-content: start; gap: .3rem; font-size: .75rem; font-weight: 700; }
+.runtime-form > label small, .runtime-current small, .runtime-control-list small { color: var(--muted); font-size: .68rem; font-weight: 400; line-height: 1.4; }
+.runtime-current { grid-column: 1 / -1; display: grid; gap: .18rem; padding: .7rem; border-radius: .55rem; background: #f1f3ef; }
+.runtime-current > span { color: var(--muted); font-size: .68rem; font-weight: 700; }
+.runtime-current strong { font-size: .9rem; overflow-wrap: anywhere; }
+.runtime-wide { grid-column: 1 / -1; }
+.runtime-actions { display: flex; justify-content: flex-end; }
+.runtime-control-list { display: grid; gap: .5rem; }
+.runtime-control-list > div { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .7rem; border-radius: .55rem; background: #f1f3ef; }
+.runtime-control-list > div > div { min-width: 0; display: grid; gap: .18rem; }
+.runtime-control-list .danger-zone { background: #fbefec; }
+button.danger { color: #9b2c23; background: #f8ded9; box-shadow: none; }
+button.danger:hover:not(:disabled) { background: #f2cec7; }
+.runtime-inline-note { margin: .65rem 0 0; color: #785a12; font-size: .72rem; line-height: 1.45; }
+
+@media (max-width: 900px) {
+  .runtime-grid { grid-template-columns: 1fr; overflow: auto; }
+}
+
+@media (max-width: 560px) {
+  .runtime-form { grid-template-columns: 1fr; }
+  .runtime-control-list > div { align-items: flex-start; }
+}
+
 .voice-audio-actions {
   grid-column: 1 / -1;
   display: flex;

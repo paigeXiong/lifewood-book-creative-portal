@@ -8,15 +8,15 @@ describe("project deep-link selection", () => {
   ])("preserves the requested project while the list is loading: %s", (path) => {
     const requestedId = new URL(path, "http://localhost").searchParams.get("project") ?? undefined;
 
-    expect(resolveProjectSelection(requestedId, requestedId, [], false)).toBe("project-42");
+    expect(resolveProjectSelection(requestedId, [], false)).toBe("project-42");
   });
 
   it("keeps a requested project even when it is outside the current page", () => {
-    expect(resolveProjectSelection("project-42", "project-42", ["project-1", "project-2"], true)).toBe("project-42");
+    expect(resolveProjectSelection("project-42", ["project-1", "project-2"], true)).toBe("project-42");
   });
 
   it("selects the first row when no project was requested", () => {
-    expect(resolveProjectSelection(undefined, undefined, ["project-1", "project-2"], true)).toBe("project-1");
+    expect(resolveProjectSelection(undefined, ["project-1", "project-2"], true)).toBe("project-1");
   });
 });
 

@@ -31,6 +31,7 @@ import type {
   TaskDraft,
 } from "@lifewood/domain";
 import { Field } from "../components/Field";
+import { FieldIcon } from "../components/FieldIcon";
 import { ChoiceField } from "../components/ChoiceField";
 import { StepProgress } from "../components/StepProgress";
 import { ScreenError } from "../components/ScreenError";
@@ -955,6 +956,7 @@ export function CreativeFormPage() {
                     <div className="form-grid character-grid">
                       <Field
                         label={t("creative.fields.roleType")}
+                        icon={<FieldIcon name="role" />}
                         htmlFor={`roleType-${activeCharacter.id}`}
                         required
                         error={
@@ -975,6 +977,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.characterName")}
+                        icon={<FieldIcon name="person" />}
                         htmlFor={`characterName-${activeCharacter.id}`}
                         required
                         error={
@@ -992,6 +995,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.storyRole")}
+                        icon={<FieldIcon name="story" />}
                         htmlFor={`storyRole-${activeCharacter.id}`}
                         required
                         className="field-wide"
@@ -1012,6 +1016,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.personality")}
+                        icon={<FieldIcon name="personality" />}
                         htmlFor={`personality-${activeCharacter.id}`}
                         required
                         error={
@@ -1031,6 +1036,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.appearance")}
+                        icon={<FieldIcon name="appearance" />}
                         htmlFor={`appearance-${activeCharacter.id}`}
                         required
                         error={
@@ -1050,6 +1056,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.ageRange")}
+                        icon={<FieldIcon name="age" />}
                         htmlFor={`ageRange-${activeCharacter.id}`}
                       >
                         <select
@@ -1064,6 +1071,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.gender")}
+                        icon={<FieldIcon name="gender" />}
                         htmlFor={`gender-${activeCharacter.id}`}
                       >
                         <select
@@ -1078,6 +1086,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.clothing")}
+                        icon={<FieldIcon name="clothing" />}
                         htmlFor={`clothing-${activeCharacter.id}`}
                         error={
                           form.formState.errors.characters?.[
@@ -1095,6 +1104,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.emotion")}
+                        icon={<FieldIcon name="emotion" />}
                         htmlFor={`emotion-${activeCharacter.id}`}
                         error={
                           form.formState.errors.characters?.[
@@ -1112,6 +1122,7 @@ export function CreativeFormPage() {
                       </Field>
                       <Field
                         label={t("creative.fields.voiceHint")}
+                        icon={<FieldIcon name="voice" />}
                         htmlFor={`voiceHint-${activeCharacter.id}`}
                         className="field-wide"
                         error={
@@ -1176,10 +1187,13 @@ export function CreativeFormPage() {
                     : undefined
                 }
               >
-                <legend>
+                <legend className="field-label-with-icon">
+                  <span className="field-label-icon" aria-hidden="true"><FieldIcon name="style" /></span>
+                  <span>
                   {t("creative.fields.visualStyle")}
                   <span className="required" aria-hidden="true">
                     *
+                  </span>
                   </span>
                 </legend>
                 <div className="style-grid">
@@ -1216,6 +1230,7 @@ export function CreativeFormPage() {
               </fieldset>
               <ChoiceField
                 label={t("creative.fields.moodTags")}
+                icon={<FieldIcon name="emotion" />}
                 id="mood-tags"
                 error={form.formState.errors.moodTagIds?.message}
               >
@@ -1238,6 +1253,7 @@ export function CreativeFormPage() {
               </ChoiceField>
               <ChoiceField
                 label={t("creative.fields.imageTags")}
+                icon={<FieldIcon name="image" />}
                 id="image-tags"
                 error={form.formState.errors.imageStyleTagIds?.message}
               >
@@ -1260,6 +1276,7 @@ export function CreativeFormPage() {
               </ChoiceField>
               <ChoiceField
                 label={t("creative.fields.paceTags")}
+                icon={<FieldIcon name="pace" />}
                 id="pace-tags"
                 error={form.formState.errors.paceTagIds?.message}
               >
@@ -1318,14 +1335,14 @@ export function CreativeFormPage() {
           <p className="sticky-note">{t("wizard.footerNotes.characters")}</p>
           <div>
             <button
-              className="button button-secondary"
+              className="button button-quiet"
               type="button"
               disabled={saveCreative.isPending || Boolean(uploadTarget)}
               onClick={form.handleSubmit((values) =>
                 runSave(values, false, true),
               )}
             >
-              {saveCreative.isPending ? t("common.saving") : t("common.save")}
+              {saveCreative.isPending ? t("common.saving") : t("common.saveNow")}
             </button>
             {conflict && (
               <button

@@ -46,6 +46,35 @@ describe("API client", () => {
     expect(new Headers(init.headers).get("Accept-Language")).toBe("en-US");
   });
 
+  it("loads authenticated project statistics from the dedicated endpoint", async () => {
+    const payload = { total: 4, drafts: 1, active: 2, completed: 1 };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(projectService.getStats()).resolves.toEqual(payload);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/projects/stats");
+    expect(init.credentials).toBe("include");
+  });
+
+  it("sends project sort field and direction to the server", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 1, pageSize: 10, total: 0 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await projectService.listProjects({ locale: "zh-CN", sort: "author", direction: "asc", page: 2, pageSize: 10 });
+
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("page=2");
+    expect(url).toContain("sort=author");
+    expect(url).toContain("direction=asc");
+  });
+
   it("normalizes API error responses", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       code: "project.version_conflict", fallbackMessage: "Conflict", retryable: true,
@@ -105,6 +134,42 @@ describe("API client", () => {
     expect(options.method).toBe("POST");
     expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBeTruthy();
     expect(JSON.parse(String(options.body))).toEqual({ currentPassword: "old-password", newPassword: "new-password-123" });
+  });
+
+  it("updates the current user profile with CSRF protection", async () => {
+    const updatedUser = { id: "u1", displayName: "Updated User", clientName: "Updated Client", phone: "123456", roles: ["customer"], permissions: [] };
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-profile" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify(updatedUser), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(authService.updateProfile({ displayName: "Updated User", clientName: "Updated Client", phone: "123456" })).resolves.toEqual(updatedUser);
+
+    const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/me/profile");
+    expect(options.method).toBe("PUT");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-profile");
+    expect(JSON.parse(String(options.body))).toEqual({ displayName: "Updated User", clientName: "Updated Client", phone: "123456" });
+    await authService.logout();
+  });
+
+  it("persists the current user's language preference with CSRF protection", async () => {
+    const updatedUser = { id: "u1", displayName: "User", locale: "en-US", roles: ["customer"], permissions: [] };
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-preferences" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify(updatedUser), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(authService.updatePreferences({ locale: "en-US" })).resolves.toEqual(updatedUser);
+
+    const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/me/preferences");
+    expect(options.method).toBe("PUT");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-preferences");
+    expect(JSON.parse(String(options.body))).toEqual({ locale: "en-US" });
+    await authService.logout();
   });
 
   it("uploads and removes the real current-user avatar with CSRF protection", async () => {

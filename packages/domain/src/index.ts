@@ -7,6 +7,7 @@ export interface CurrentUser {
   avatarUrl?: string;
   email?: string;
   phone?: string;
+  clientName?: string;
   organization?: { id: string; name: string };
   roles: string[];
   permissions: string[];
@@ -86,6 +87,21 @@ export interface AdminFormOption {
   enabled: boolean;
   sortOrder: number;
   updatedAt?: string;
+}
+
+export interface RuntimeSettings {
+  listenAddress: string;
+  port: number;
+  activeListenAddress: string;
+  activePort: number;
+  restartRequired: boolean;
+  canRestart: boolean;
+  canShutdown: boolean;
+}
+
+export interface RuntimeAction {
+  action: "restart" | "shutdown";
+  requestedAt: string;
 }
 
 
@@ -354,6 +370,13 @@ export interface PagedResult<T> {
   page: number;
   pageSize: number;
   total: number;
+}
+
+export interface ProjectStats {
+  total: number;
+  drafts: number;
+  active: number;
+  completed: number;
 }
 
 export interface ProjectValidationResult {

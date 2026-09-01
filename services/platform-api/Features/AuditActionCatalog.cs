@@ -24,7 +24,10 @@ internal static class AuditActionCatalog
         new("form_option.upsert", "保存表单选项", "Saved form option"),
         new("voice.upsert", "保存参考音色", "Saved voice reference"),
         new("voice.sample_upload", "上传音色样本", "Uploaded voice sample"),
-        new("voice.sample_remove", "移除音色样本", "Removed voice sample")
+        new("voice.sample_remove", "移除音色样本", "Removed voice sample"),
+        new("runtime.settings_update", "更新运行设置", "Updated runtime settings"),
+        new("runtime.restart", "重启平台", "Restarted platform"),
+        new("runtime.shutdown", "关闭平台", "Shut down platform")
     ];
 
     public static ConfigOptionDto[] ForLocale(string locale) =>
@@ -65,6 +68,12 @@ internal static class AuditActionCatalog
             if (method == "POST") return new("voice.sample_upload", "voice", Value(3));
             if (method == "DELETE") return new("voice.sample_remove", "voice", Value(3));
         }
+        if (method == "PUT" && segments is ["api", "admin", "runtime-settings"])
+            return new("runtime.settings_update", "runtime_settings", "network");
+        if (method == "POST" && segments is ["api", "admin", "runtime-actions", "restart"])
+            return new("runtime.restart", "runtime", "platform");
+        if (method == "POST" && segments is ["api", "admin", "runtime-actions", "shutdown"])
+            return new("runtime.shutdown", "runtime", "platform");
         return null;
     }
 }

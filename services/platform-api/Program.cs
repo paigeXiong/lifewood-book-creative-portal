@@ -18,8 +18,10 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
 
+RestartWaiter.Wait(args);
 var serviceMode = OperatingSystem.IsWindows() && WindowsServiceHelpers.IsWindowsService();
 var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
 {
@@ -69,6 +71,11 @@ var voiceSampleDirectory = Path.Combine(dataDirectory, "voice-samples");
 var voiceSampleLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
 var projectWriteLocks = new AsyncKeyedLock();
 Directory.CreateDirectory(dataDirectory);
+var runtimeSettings = new RuntimeSettingsStore(dataDirectory, builder.Configuration["urls"]);
+builder.WebHost.UseUrls(runtimeSettings.ActiveUrl);
+builder.Services.AddSingleton(runtimeSettings);
+builder.Services.AddSingleton(serviceProvider =>
+    new RuntimeLifecycle(serviceProvider.GetRequiredService<IHostApplicationLifetime>(), serviceMode));
 var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
 using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 CleanupInterruptedUploads(dataDirectory);
@@ -369,7 +376,7 @@ api.MapPost("/auth/bootstrap", async (BootstrapAccountRequest? request, HttpCont
     if (!IsLoopbackRequest(context))
         return Error(context, 403, "auth.bootstrap_local_only", "errors.auth.bootstrapLocalOnly", "Initial setup must be completed from the server itself.", false);
     if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
-    var result = accounts.CreateOwner(request.DisplayName, request.Email, request.Password);
+    var result = accounts.CreateOwner(request.DisplayName, request.Email, request.Password, request.Phone, request.OrganizationName, request.Locale);
     if (result.Outcome == AccountCreateOutcome.AlreadyInitialized)
         return Error(context, 409, "auth.already_initialized", "errors.auth.alreadyInitialized", "The platform owner account already exists.", false);
     if (result.Outcome == AccountCreateOutcome.Invalid)
@@ -399,6 +406,35 @@ api.MapGet("/me", (HttpContext context) =>
     return user is null
         ? Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false)
         : Results.Ok(user);
+});
+api.MapPut("/me/profile", async (UpdateProfileRequest? request, HttpContext context, UserRepository accounts) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
+    var result = accounts.UpdateProfile(user.Id, request.DisplayName, request.Phone, request.ClientName);
+    if (result.Outcome == ProfileUpdateOutcome.NotFound)
+        return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (result.Outcome == ProfileUpdateOutcome.Invalid)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "The profile details are invalid.", false,
+            [new FieldErrorDto(result.Field ?? "request", "invalid", $"errors.auth.fields.{result.Field ?? "request"}")]);
+    if (result.User is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    var authentication = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    await SignIn(context, result.User, authentication.Properties?.IsPersistent == true);
+    return Results.Ok(result.User);
+});
+api.MapPut("/me/preferences", (UpdatePreferencesRequest? request, HttpContext context, UserRepository accounts) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
+    var result = accounts.UpdatePreferences(user.Id, request.Locale);
+    if (result.Outcome == ProfileUpdateOutcome.NotFound)
+        return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (result.Outcome == ProfileUpdateOutcome.Invalid)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "The preferences are invalid.", false,
+            [new FieldErrorDto(result.Field ?? "request", "invalid", $"errors.auth.fields.{result.Field ?? "request"}")]);
+    return Results.Ok(result.User);
 });
 api.MapGet("/me/avatar", (HttpContext context, UserRepository accounts) =>
 {
@@ -463,6 +499,44 @@ api.MapGet("/form-options", (HttpContext context, FormOptionRepository options, 
         SourceCategories = categories.ForLocale(FileCategoryScopes.Source, locale),
         ReferenceCategories = categories.ForLocale(FileCategoryScopes.Reference, locale)
     });
+});
+
+api.MapGet("/admin/runtime-settings", (HttpContext context, RuntimeSettingsStore settings, RuntimeLifecycle lifecycle) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    return Results.Ok(settings.Get(lifecycle.CanRestart, true));
+});
+
+api.MapPut("/admin/runtime-settings", (UpdateRuntimeSettingsRequest? request, HttpContext context, RuntimeSettingsStore settings, RuntimeLifecycle lifecycle) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
+    if (!settings.Save(request.ListenAddress, request.Port, out var field))
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "The listening settings are invalid.", false,
+            [new FieldErrorDto(field ?? "request", "invalid", "errors.validation.invalid")]);
+    return Results.Ok(settings.Get(lifecycle.CanRestart, true));
+});
+
+api.MapPost("/admin/runtime-actions/restart", (HttpContext context, RuntimeLifecycle lifecycle) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    if (!lifecycle.RequestRestart()) return Error(context, 409, "runtime.action_unavailable", "errors.admin.runtimeActionUnavailable", "The platform cannot restart itself in the current process mode, or another stop action is already running.", false);
+    return Results.Accepted(value: new RuntimeActionDto("restart", DateTimeOffset.UtcNow));
+});
+
+api.MapPost("/admin/runtime-actions/shutdown", (HttpContext context, RuntimeLifecycle lifecycle) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    if (!lifecycle.RequestShutdown()) return Error(context, 409, "runtime.action_unavailable", "errors.admin.runtimeActionUnavailable", "Another stop action is already running.", false);
+    return Results.Accepted(value: new RuntimeActionDto("shutdown", DateTimeOffset.UtcNow));
 });
 
 api.MapGet("/admin/overview", (HttpContext context, AdminRepository admin) =>
@@ -886,14 +960,22 @@ api.MapGet("/voices/{id}/sample", async (string id, HttpContext context, VoiceRe
     await using var sampleStream = snapshot.Value.Stream;
     await Results.Stream(sampleStream, snapshot.Value.ContentType, enableRangeProcessing: true).ExecuteAsync(context);
 });
-api.MapGet("/projects", (HttpContext context, ProjectRepository projects, string? status, string? search, int page = 1, int pageSize = 10) =>
+api.MapGet("/projects", (HttpContext context, ProjectRepository projects, string? status, string? search, string? sort, string? direction, int page = 1, int pageSize = 10) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
     page = Math.Max(1, page);
     pageSize = Math.Clamp(pageSize, 1, 100);
-    return Results.Ok(projects.List(user.Id, status, search, page, pageSize));
+    return Results.Ok(projects.List(user.Id, status, search, page, pageSize, sort, direction));
+});
+
+api.MapGet("/projects/stats", (HttpContext context, ProjectRepository projects) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
+    return Results.Ok(projects.GetStats(user.Id));
 });
 
 api.MapPost("/projects", async (HttpContext context, ProjectRepository projects, PlatformLimits limits) =>
@@ -907,7 +989,7 @@ api.MapPost("/projects", async (HttpContext context, ProjectRepository projects,
             return Error(context, 409, "project.draft_limit", "errors.project.draftLimit", "Finish or delete an existing draft before creating another one.", false);
         return Results.Ok(projects.Create(
             user.Id,
-            user.Organization?.Name ?? "",
+            user.ClientName ?? user.Organization?.Name ?? user.DisplayName,
             user.DisplayName,
             user.Email ?? "",
             user.Phone));

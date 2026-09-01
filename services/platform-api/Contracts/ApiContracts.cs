@@ -16,14 +16,28 @@ public sealed record CurrentUserDto(
     string? Locale,
     string? TimeZone,
     bool HasCustomAvatar = false,
-    string? Phone = null);
+    string? Phone = null,
+    string? ClientName = null);
 
 public sealed record AuthStatusDto(bool RequiresBootstrap);
 public sealed record CsrfTokenDto(string Token);
-public sealed record BootstrapAccountRequest(string DisplayName, string Email, string Password);
+public sealed record BootstrapAccountRequest(string DisplayName, string Email, string Password, string? Phone = null, string? OrganizationName = null, string? Locale = null);
 public sealed record LoginRequest(string Email, string Password, bool RememberMe);
+public sealed record UpdateProfileRequest(string DisplayName, string? Phone = null, string? ClientName = null);
+public sealed record UpdatePreferencesRequest(string Locale);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ResetPasswordRequest(string NewPassword);
+public sealed record RuntimeSettingsDocument(string ListenAddress, int Port);
+public sealed record RuntimeSettingsDto(
+    string ListenAddress,
+    int Port,
+    string ActiveListenAddress,
+    int ActivePort,
+    bool RestartRequired,
+    bool CanRestart,
+    bool CanShutdown);
+public sealed record UpdateRuntimeSettingsRequest(string ListenAddress, int Port);
+public sealed record RuntimeActionDto(string Action, DateTimeOffset RequestedAt);
 
 public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? Phone = null);
 public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int PageSize, int Total);
@@ -293,6 +307,12 @@ public sealed record PagedProjectsDto(
     int Page,
     int PageSize,
     int Total);
+
+public sealed record ProjectStatsDto(
+    int Total,
+    int Drafts,
+    int Active,
+    int Completed);
 
 public sealed record AdminProjectSummaryDto(
     string Id, string? TaskNumber, string ProjectName, string ClientName, string BookTitle, string AuthorName, string? CoverUrl,

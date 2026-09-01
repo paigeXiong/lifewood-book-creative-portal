@@ -9,6 +9,8 @@ internal enum AccountCreateOutcome { Created, AlreadyInitialized, Invalid }
 internal sealed record AccountCreateResult(AccountCreateOutcome Outcome, CurrentUserDto? User, string? Field = null);
 internal enum AccountLoginOutcome { Success, InvalidCredentials, Locked }
 internal sealed record AccountLoginResult(AccountLoginOutcome Outcome, CurrentUserDto? User, DateTimeOffset? LockedUntil = null);
+internal enum ProfileUpdateOutcome { Updated, Invalid, NotFound }
+internal sealed record ProfileUpdateResult(ProfileUpdateOutcome Outcome, CurrentUserDto? User = null, string? Field = null);
 internal enum PasswordUpdateOutcome { Updated, Invalid, NotFound }
 internal sealed record PasswordUpdateResult(PasswordUpdateOutcome Outcome, string? Field = null);
 internal sealed record StoredAvatar(FileStream Stream, string ContentType);
@@ -42,9 +44,12 @@ internal sealed class UserRepository
                 email TEXT NOT NULL,
                 normalized_email TEXT NOT NULL UNIQUE,
                 display_name TEXT NOT NULL,
+                client_name TEXT NULL,
                 phone TEXT NULL,
+                locale TEXT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
                 failed_attempts INTEGER NOT NULL DEFAULT 0,
                 locked_until TEXT NULL,
                 session_version INTEGER NOT NULL DEFAULT 0,
@@ -58,8 +63,11 @@ internal sealed class UserRepository
             """;
         command.ExecuteNonQuery();
         if (!HasColumn(connection, "users", "session_version")) Execute(connection, "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0;");
+        if (!HasColumn(connection, "users", "is_active")) Execute(connection, "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;");
         if (!HasColumn(connection, "users", "avatar_file_name")) Execute(connection, "ALTER TABLE users ADD COLUMN avatar_file_name TEXT NULL;");
         if (!HasColumn(connection, "users", "phone")) Execute(connection, "ALTER TABLE users ADD COLUMN phone TEXT NULL;");
+        if (!HasColumn(connection, "users", "client_name")) Execute(connection, "ALTER TABLE users ADD COLUMN client_name TEXT NULL;");
+        if (!HasColumn(connection, "users", "locale")) Execute(connection, "ALTER TABLE users ADD COLUMN locale TEXT NULL;");
         OrganizationSchema.Ensure(connection);
         CleanupAvatarDirectory(connection);
     }
@@ -72,16 +80,23 @@ internal sealed class UserRepository
         return Convert.ToInt32(command.ExecuteScalar()) == 1;
     }
 
-    public AccountCreateResult CreateOwner(string displayName, string email, string password)
+    public AccountCreateResult CreateOwner(string displayName, string email, string password, string? phone = null, string? organizationName = null, string? locale = null)
     {
         if (string.IsNullOrWhiteSpace(displayName)) return new(AccountCreateOutcome.Invalid, null, "displayName");
         if (string.IsNullOrWhiteSpace(email)) return new(AccountCreateOutcome.Invalid, null, "email");
         if (string.IsNullOrEmpty(password)) return new(AccountCreateOutcome.Invalid, null, "password");
         var normalizedDisplayName = displayName.Trim();
         var normalizedEmail = NormalizeEmail(email);
+        var normalizedPhone = NormalizePhone(phone);
+        var normalizedLocale = NormalizeLocale(locale);
+        var normalizedOrganizationName = string.IsNullOrWhiteSpace(organizationName) ? null : organizationName.Trim();
+        var normalizedClientName = normalizedOrganizationName ?? normalizedDisplayName;
         if (normalizedDisplayName.Length is < 2 or > 100) return new(AccountCreateOutcome.Invalid, null, "displayName");
         if (email.Length > 254 || !IsValidEmail(email)) return new(AccountCreateOutcome.Invalid, null, "email");
-        if (password.Length is < 12 or > 128) return new(AccountCreateOutcome.Invalid, null, "password");
+        if (password.Length is < 8 or > 128) return new(AccountCreateOutcome.Invalid, null, "password");
+        if (normalizedPhone is { Length: > 50 }) return new(AccountCreateOutcome.Invalid, null, "phone");
+        if (normalizedOrganizationName is { Length: < 2 or > 120 }) return new(AccountCreateOutcome.Invalid, null, "organizationName");
+        if (locale is not null && normalizedLocale is null) return new(AccountCreateOutcome.Invalid, null, "locale");
 
         using var connection = Open();
         using var transaction = connection.BeginTransaction(deferred: false);
@@ -93,24 +108,40 @@ internal sealed class UserRepository
         }
 
         var id = Guid.NewGuid().ToString("N");
+        var organizationId = normalizedOrganizationName is null ? null : Guid.NewGuid().ToString("N");
         var legacyOwners = LegacyOwners(connection, transaction, id);
         try
         {
             CopyLegacyUploads(legacyOwners, id);
             var now = DateTimeOffset.UtcNow;
             var target = new AccountPasswordTarget(id);
+            if (organizationId is not null)
+            {
+                using var organization = connection.CreateCommand();
+                organization.Transaction = transaction;
+                organization.CommandText = "INSERT INTO organizations(id, name, normalized_name, is_active, created_at, updated_at) VALUES ($id, $name, $normalizedName, 1, $now, $now);";
+                organization.Parameters.AddWithValue("$id", organizationId);
+                organization.Parameters.AddWithValue("$name", normalizedOrganizationName!);
+                organization.Parameters.AddWithValue("$normalizedName", normalizedOrganizationName!.ToUpperInvariant());
+                organization.Parameters.AddWithValue("$now", now.ToString("O"));
+                organization.ExecuteNonQuery();
+            }
             using (var insert = connection.CreateCommand())
             {
                 insert.Transaction = transaction;
                 insert.CommandText = """
-                    INSERT INTO users(id, email, normalized_email, display_name, password_hash, role, created_at, updated_at)
-                    VALUES ($id, $email, $normalizedEmail, $displayName, $passwordHash, 'owner', $now, $now);
+                    INSERT INTO users(id, email, normalized_email, display_name, client_name, phone, locale, password_hash, role, organization_id, created_at, updated_at)
+                    VALUES ($id, $email, $normalizedEmail, $displayName, $clientName, $phone, $locale, $passwordHash, 'owner', $organizationId, $now, $now);
                     """;
                 insert.Parameters.AddWithValue("$id", id);
                 insert.Parameters.AddWithValue("$email", email.Trim());
                 insert.Parameters.AddWithValue("$normalizedEmail", normalizedEmail);
                 insert.Parameters.AddWithValue("$displayName", normalizedDisplayName);
+                insert.Parameters.AddWithValue("$clientName", normalizedClientName);
+                insert.Parameters.AddWithValue("$phone", normalizedPhone is null ? DBNull.Value : normalizedPhone);
+                insert.Parameters.AddWithValue("$locale", normalizedLocale is null ? DBNull.Value : normalizedLocale);
                 insert.Parameters.AddWithValue("$passwordHash", passwordHasher.HashPassword(target, password));
+                insert.Parameters.AddWithValue("$organizationId", organizationId is null ? DBNull.Value : organizationId);
                 insert.Parameters.AddWithValue("$now", now.ToString("O"));
                 insert.ExecuteNonQuery();
             }
@@ -122,7 +153,7 @@ internal sealed class UserRepository
                 claim.ExecuteNonQuery();
             }
             transaction.Commit();
-            return new(AccountCreateOutcome.Created, ToCurrentUser(id, email.Trim(), normalizedDisplayName, "owner", null, null, null));
+            return new(AccountCreateOutcome.Created, ToCurrentUser(id, email.Trim(), normalizedDisplayName, "owner", null, organizationId, normalizedOrganizationName, normalizedPhone, normalizedLocale, normalizedClientName));
         }
         catch
         {
@@ -180,7 +211,7 @@ internal sealed class UserRepository
             : null;
         UpdateLoginState(connection, transaction, account.Id, 0, null, replacementHash);
         transaction.Commit();
-        return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role, account.AvatarFileName, account.OrganizationId, account.OrganizationName, account.Phone));
+        return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role, account.AvatarFileName, account.OrganizationId, account.OrganizationName, account.Phone, account.Locale, account.ClientName));
     }
 
     public CurrentUserDto? Get(string id, int? sessionVersion = null)
@@ -188,7 +219,7 @@ internal sealed class UserRepository
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT u.id, u.email, u.display_name, u.role, u.avatar_file_name, o.id, o.name, u.phone
+            SELECT u.id, u.email, u.display_name, u.role, u.avatar_file_name, o.id, o.name, u.phone, u.locale, u.client_name
             FROM users u
             LEFT JOIN organizations o ON o.id = u.organization_id
             WHERE u.id = $id AND u.is_active = 1 AND ($sessionVersion IS NULL OR u.session_version = $sessionVersion);
@@ -196,7 +227,45 @@ internal sealed class UserRepository
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$sessionVersion", sessionVersion is null ? DBNull.Value : sessionVersion.Value);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7)) : null;
+        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetString(9)) : null;
+    }
+
+    public ProfileUpdateResult UpdateProfile(string id, string displayName, string? phone, string? clientName = null)
+    {
+        if (string.IsNullOrWhiteSpace(displayName)) return new(ProfileUpdateOutcome.Invalid, Field: "displayName");
+        var normalizedDisplayName = displayName.Trim();
+        var normalizedPhone = NormalizePhone(phone);
+        var normalizedClientName = string.IsNullOrWhiteSpace(clientName) ? null : clientName.Trim();
+        if (normalizedDisplayName.Length is < 2 or > 100) return new(ProfileUpdateOutcome.Invalid, Field: "displayName");
+        if (normalizedPhone is { Length: > 50 }) return new(ProfileUpdateOutcome.Invalid, Field: "phone");
+        if (normalizedClientName is { Length: > 200 }) return new(ProfileUpdateOutcome.Invalid, Field: "clientName");
+
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE users SET display_name = $displayName, client_name = $clientName, phone = $phone, updated_at = $now WHERE id = $id AND is_active = 1;";
+        command.Parameters.AddWithValue("$displayName", normalizedDisplayName);
+        command.Parameters.AddWithValue("$clientName", normalizedClientName is null ? DBNull.Value : normalizedClientName);
+        command.Parameters.AddWithValue("$phone", normalizedPhone is null ? DBNull.Value : normalizedPhone);
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$id", id);
+        if (command.ExecuteNonQuery() == 0) return new(ProfileUpdateOutcome.NotFound);
+        var updated = Get(id);
+        return updated is null ? new(ProfileUpdateOutcome.NotFound) : new(ProfileUpdateOutcome.Updated, updated);
+    }
+
+    public ProfileUpdateResult UpdatePreferences(string id, string locale)
+    {
+        var normalizedLocale = NormalizeLocale(locale);
+        if (normalizedLocale is null) return new(ProfileUpdateOutcome.Invalid, Field: "locale");
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE users SET locale = $locale, updated_at = $now WHERE id = $id AND is_active = 1;";
+        command.Parameters.AddWithValue("$locale", normalizedLocale);
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$id", id);
+        if (command.ExecuteNonQuery() == 0) return new(ProfileUpdateOutcome.NotFound);
+        var updated = Get(id);
+        return updated is null ? new(ProfileUpdateOutcome.NotFound) : new(ProfileUpdateOutcome.Updated, updated);
     }
 
     public StoredAvatar? OpenAvatar(string id)
@@ -362,7 +431,7 @@ internal sealed class UserRepository
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.failed_attempts, u.locked_until, u.is_active, u.avatar_file_name, o.id, o.name, u.phone
+            SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.failed_attempts, u.locked_until, u.is_active, u.avatar_file_name, o.id, o.name, u.phone, u.locale, u.client_name
             FROM users u
             LEFT JOIN organizations o ON o.id = u.organization_id
             WHERE u.normalized_email = $email;
@@ -372,7 +441,8 @@ internal sealed class UserRepository
         if (!reader.Read()) return null;
         return new StoredAccount(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetInt32(5),
             reader.IsDBNull(6) ? null : DateTimeOffset.Parse(reader.GetString(6)), reader.GetInt32(7) == 1, reader.IsDBNull(8) ? null : reader.GetString(8),
-            reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11));
+            reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13));
     }
 
     private static void UpdateLoginState(SqliteConnection connection, SqliteTransaction transaction, string id, int attempts, DateTimeOffset? lockedUntil, string? passwordHash)
@@ -404,21 +474,27 @@ internal sealed class UserRepository
     }
 
     private static string NormalizeEmail(string value) => value.Trim().ToUpperInvariant();
+    private static string? NormalizePhone(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NormalizeLocale(string? value)
+    {
+        var normalized = value?.Trim();
+        return normalized is "zh-CN" or "en-US" ? normalized : null;
+    }
     private static bool IsValidEmail(string value) => MailAddress.TryCreate(value.Trim(), out var address) && address.Address.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase);
-    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role, string? avatarFileName, string? organizationId, string? organizationName, string? phone = null)
+    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role, string? avatarFileName, string? organizationId, string? organizationName, string? phone = null, string? locale = null, string? clientName = null)
     {
         var permissions = role switch
         {
-            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage" },
+            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage", "admin.runtime.manage" },
             "admin" => new[] { "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage" },
             _ => new[] { "tasks.read", "tasks.write", "tasks.submit" }
         };
         var avatarVersion = avatarFileName ?? id;
         var organization = organizationId is not null && organizationName is not null ? new OrganizationDto(organizationId, organizationName) : null;
-        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(avatarVersion)}", email, organization, [role], permissions, null, null, avatarFileName is not null, phone);
+        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(avatarVersion)}", email, organization, [role], permissions, locale, null, avatarFileName is not null, phone, clientName);
     }
 
-    private static bool ValidNewPassword(string password) => !string.IsNullOrEmpty(password) && password.Length is >= 12 and <= 128;
+    private static bool ValidNewPassword(string password) => !string.IsNullOrEmpty(password) && password.Length is >= 8 and <= 128;
 
     private void UpdatePassword(SqliteConnection connection, SqliteTransaction transaction, string id, string password)
     {
@@ -437,7 +513,7 @@ internal sealed class UserRepository
     private static void Execute(SqliteConnection connection, string sql)
     { using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
     private sealed record AccountPasswordTarget(string Id);
-    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active, string? AvatarFileName, string? OrganizationId, string? OrganizationName, string? Phone);
+    private sealed record StoredAccount(string Id, string Email, string DisplayName, string PasswordHash, string Role, int FailedAttempts, DateTimeOffset? LockedUntil, bool Active, string? AvatarFileName, string? OrganizationId, string? OrganizationName, string? Phone, string? Locale, string? ClientName);
     public PasswordUpdateResult ChangePassword(string id, string currentPassword, string newPassword)
     {
         if (string.IsNullOrEmpty(currentPassword) || currentPassword.Length > 128) return new(PasswordUpdateOutcome.Invalid, "currentPassword");

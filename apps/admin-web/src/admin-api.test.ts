@@ -13,6 +13,24 @@ describe("administrator API client", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/admin/overview");
   });
 
+  it("loads and saves runtime settings through protected administrator routes", async () => {
+    const payload = { listenAddress: "127.0.0.1", port: 5077, activeListenAddress: "127.0.0.1", activePort: 5077, restartRequired: false, canRestart: true, canShutdown: true };
+    const fetchMock = vi.fn().mockImplementation(async (input: string) =>
+      input.endsWith("/auth/csrf")
+        ? new Response(JSON.stringify({ token: "csrf-admin" }), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(adminService.getRuntimeSettings()).resolves.toEqual(payload);
+    await adminService.updateRuntimeSettings({ listenAddress: "0.0.0.0", port: 5088 });
+
+    const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe("/api/admin/runtime-settings");
+    expect(options.method).toBe("PUT");
+    expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-admin");
+    expect(JSON.parse(String(options.body))).toEqual({ listenAddress: "0.0.0.0", port: 5088 });
+  });
+
   it("loads localized audit actions and sends audit filters", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "user.create", label: "Created user" }]), { status: 200, headers: { "Content-Type": "application/json" } }))
@@ -47,7 +65,7 @@ describe("administrator API client", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ workflowStatus: "confirmed", priority: "urgent" }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     await adminService.updateWorkflow("project-1", "confirmed", "urgent", "2026-08-28T06:00:00.0000000+00:00", "admin-1");
-    const request = fetchMock.mock.calls[1];
+    const request = fetchMock.mock.calls.at(-1)!;
     const options = request[1] as RequestInit;
     expect(options.method).toBe("PUT");
     expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-admin");

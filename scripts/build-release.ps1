@@ -22,6 +22,9 @@ function Get-Sha256([string]$Path) {
 }
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+$package = Get-Content -LiteralPath (Join-Path $repositoryRoot "package.json") -Raw | ConvertFrom-Json
+$version = [string]$package.version
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Package version must use major.minor.patch." }
 $artifactsRoot = Join-Path $repositoryRoot "artifacts"
 $releaseRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { Join-Path $artifactsRoot "release" } else { [IO.Path]::GetFullPath($OutputDirectory) }
 $stagingRoot = Join-Path $artifactsRoot "release-staging"
@@ -178,6 +181,7 @@ try {
 
     $manifest = [ordered]@{
         product = "Lifewood Book Creative Portal"
+        version = $version
         revision = $revision
         sourceState = $sourceState
         contentId = $contentId

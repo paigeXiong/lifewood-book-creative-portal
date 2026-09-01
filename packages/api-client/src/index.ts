@@ -12,7 +12,10 @@ import type {
   WorkflowStatus,
   CurrentUser,
   FormOptions,
+  RuntimeAction,
+  RuntimeSettings,
   PagedResult,
+  ProjectStats,
   ProjectValidationResult,
   SupportedLocale,
   TaskDraft,
@@ -167,11 +170,15 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
 }
 
 export interface LoginCredentials { email: string; password: string; rememberMe: boolean }
-export interface BootstrapAccount { displayName: string; email: string; password: string }
+export interface BootstrapAccount { displayName: string; email: string; password: string; phone?: string; organizationName?: string; locale?: SupportedLocale }
 
 export const authService = {
   getStatus: () => request<{ requiresBootstrap: boolean }>("/auth/status"),
   getCurrentUser: () => request<CurrentUser>("/me"),
+  updateProfile: (profile: { displayName: string; phone?: string; clientName?: string }) =>
+    request<CurrentUser>("/me/profile", { method: "PUT", body: JSON.stringify(profile) }),
+  updatePreferences: (preferences: { locale: SupportedLocale }) =>
+    request<CurrentUser>("/me/preferences", { method: "PUT", body: JSON.stringify(preferences) }),
   login: async (credentials: LoginCredentials) => {
     const user = await request<CurrentUser>("/auth/login", { method: "POST", body: JSON.stringify(credentials) });
     clearCsrfToken();
@@ -204,15 +211,20 @@ export interface TaskListQuery {
   search?: string;
   page?: number;
   pageSize?: number;
+  sort?: "project" | "author" | "status" | "updated";
+  direction?: "asc" | "desc";
 }
 
 export const projectService = {
-  listProjects: ({ locale, status, search, page = 1, pageSize = 10 }: TaskListQuery) => {
+  listProjects: ({ locale, status, search, page = 1, pageSize = 10, sort = "updated", direction = "desc" }: TaskListQuery) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (status) query.set("status", status);
     if (search) query.set("search", search);
+    query.set("sort", sort);
+    query.set("direction", direction);
     return request<PagedResult<TaskSummary>>(`/projects?${query}`, { locale });
   },
+  getStats: () => request<ProjectStats>("/projects/stats"),
   createDraft: (locale: SupportedLocale) =>
     request<TaskDraft>("/projects", { method: "POST", locale, body: "{}" }),
   getProject: (projectId: string, locale: SupportedLocale) =>
@@ -372,6 +384,13 @@ export interface AuditEventListQuery {
 
 export const adminService = {
   getOverview: () => request<AdminOverview>("/admin/overview"),
+  getRuntimeSettings: () => request<RuntimeSettings>("/admin/runtime-settings"),
+  updateRuntimeSettings: (settings: { listenAddress: string; port: number }) =>
+    request<RuntimeSettings>("/admin/runtime-settings", { method: "PUT", body: JSON.stringify(settings) }),
+  restartPlatform: () =>
+    request<RuntimeAction>("/admin/runtime-actions/restart", { method: "POST", body: JSON.stringify({}) }),
+  shutdownPlatform: () =>
+    request<RuntimeAction>("/admin/runtime-actions/shutdown", { method: "POST", body: JSON.stringify({}) }),
   listAuditActions: (locale: SupportedLocale) => request<ConfigOption[]>("/admin/audit-actions", { locale }),
   listAuditEvents: ({ search, actionId, from, to, page = 1, pageSize = 30 }: AuditEventListQuery = {}) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });

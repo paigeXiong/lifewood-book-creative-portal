@@ -8,6 +8,8 @@ import { ApiError, localizedApiError, optionService, projectService } from "@lif
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { CurrentUser, ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
 import { Field } from "../components/Field";
+import { FieldIcon } from "../components/FieldIcon";
+import { ProjectCoverImage } from "../components/ProjectCoverImage";
 import { ChoiceField } from "../components/ChoiceField";
 import { EditableSelect, preserveEditableSelection } from "../components/EditableSelect";
 import { StepProgress } from "../components/StepProgress";
@@ -69,7 +71,14 @@ function ProjectSummaryRail({ control, cover, assets, genres, statusLabel, creat
   return <aside className="context-rail">
     <div className="folio-card">
       <h3 className="summary-title">{t("wizard.summary.title")}</h3>
-      {cover && <img className="summary-cover" src={cover.url} alt={t("sourceFiles.coverAlt", { title: title || cover.fileName })} width="240" height="180" />}
+      <ProjectCoverImage
+        coverUrl={cover?.url}
+        coverAlt={t("sourceFiles.coverAlt", { title: title || cover?.fileName || projectName })}
+        placeholderAlt={t("sourceFiles.coverPendingAlt")}
+        className="summary-cover"
+        width={240}
+        height={180}
+      />
       <dl className="summary-meta">
         <div><dt>{t("wizard.fields.bookTitle")}</dt><dd>{title || projectName || t("wizard.summary.untitled")}</dd></div>
         <div><dt>{t("wizard.fields.authorName")}</dt><dd>{authorName || "—"}</dd></div>
@@ -239,7 +248,8 @@ export function ProjectFormPage() {
   const continueStep = form.handleSubmit((values) => {
     if (options.sourceCategories.some((category) => category.required && !sourceAssets.some((asset) => asset.categoryId === category.id))) {
       setUploadError(t("sourceFiles.missingRequired"));
-      requestAnimationFrame(() => document.querySelector<HTMLElement>(".source-files-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(".source-files-panel")?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" }));
       return;
     }
     const checked = stepSchema.safeParse(values);
@@ -343,27 +353,27 @@ export function ProjectFormPage() {
               <h2><span>1.1</span>{t("wizard.sections.project")}</h2>
               <p className="section-hint reference-section-hint">{t("wizard.sectionHints.project")}</p>
               <div className="form-grid">
-                <Field label={t("wizard.fields.clientName")} htmlFor="clientName" required error={form.formState.errors.clientName?.message}>
+                <Field label={t("wizard.fields.clientName")} icon={<FieldIcon name="organization" />} htmlFor="clientName" required error={form.formState.errors.clientName?.message}>
                   <input id="clientName" className="input-medium" autoComplete="organization" {...form.register("clientName")} />
                 </Field>
-                <Field label={t("wizard.fields.contactName")} htmlFor="contactName" required error={form.formState.errors.contactName?.message}>
+                <Field label={t("wizard.fields.contactName")} icon={<FieldIcon name="person" />} htmlFor="contactName" required error={form.formState.errors.contactName?.message}>
                   <input id="contactName" className="input-medium" autoComplete="name" {...form.register("contactName")} />
                 </Field>
-                <Field label={t("wizard.fields.email")} htmlFor="email" required error={form.formState.errors.email?.message}>
+                <Field label={t("wizard.fields.email")} icon={<FieldIcon name="email" />} htmlFor="email" required error={form.formState.errors.email?.message}>
                   <input id="email" type="email" inputMode="email" spellCheck={false} autoComplete="email" className="input-medium" {...form.register("email")} />
                 </Field>
-                <Field label={t("wizard.fields.phone")} htmlFor="phone"><input id="phone" type="tel" inputMode="tel" autoComplete="tel" className="input-short" {...form.register("phone")} /></Field>
-                <Field label={t("wizard.fields.brand")} htmlFor="brandId">
+                <Field label={t("wizard.fields.phone")} icon={<FieldIcon name="phone" />} htmlFor="phone"><input id="phone" type="tel" inputMode="tel" autoComplete="tel" className="input-short" {...form.register("phone")} /></Field>
+                <Field label={t("wizard.fields.brand")} icon={<FieldIcon name="brand" />} htmlFor="brandId">
                   <select id="brandId" className="input-medium" {...form.register("brandId")}><option value="" /><SelectOptions items={brandOptions} /></select>
                 </Field>
-                <Field label={t("wizard.fields.projectName")} htmlFor="projectName" required error={form.formState.errors.projectName?.message}>
+                <Field label={t("wizard.fields.projectName")} icon={<FieldIcon name="project" />} htmlFor="projectName" required error={form.formState.errors.projectName?.message}>
                   <input id="projectName" className="input-long" {...form.register("projectName")} />
                 </Field>
-                <Field label={t("wizard.fields.videoGoal")} htmlFor="videoGoalId" required error={form.formState.errors.videoGoalId?.message}>
+                <Field label={t("wizard.fields.videoGoal")} icon={<FieldIcon name="target" />} htmlFor="videoGoalId" required error={form.formState.errors.videoGoalId?.message}>
                   <select id="videoGoalId" className="input-medium" {...form.register("videoGoalId")}><option value="" /><SelectOptions items={videoGoalOptions} /></select>
                 </Field>
-                <Field label={t("wizard.fields.deadline")} htmlFor="deadline"><input id="deadline" type="date" className="input-short" {...form.register("deadline")} /></Field>
-                <ChoiceField label={t("wizard.fields.audiences")} id="audience-group" required error={form.formState.errors.audienceIds?.message}>
+                <Field label={t("wizard.fields.deadline")} icon={<FieldIcon name="calendar" />} htmlFor="deadline"><input id="deadline" type="date" className="input-short" {...form.register("deadline")} /></Field>
+                <ChoiceField label={t("wizard.fields.audiences")} icon={<FieldIcon name="audience" />} id="audience-group" required error={form.formState.errors.audienceIds?.message}>
                   <div className="choice-row" id="audience-group">{audienceOptions.map((item) => <label className="choice-chip" key={item.id} aria-disabled={item.unavailable}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedAudienceIds.includes(item.id)} {...form.register("audienceIds")} /><span>{item.label}</span></label>)}</div>
                 </ChoiceField>
               </div>
@@ -373,20 +383,20 @@ export function ProjectFormPage() {
               <h2><span>1.2</span>{t("wizard.sections.book")}</h2>
               <p className="section-hint reference-section-hint">{t("wizard.sectionHints.book")}</p>
               <div className="form-grid">
-                <Field label={t("wizard.fields.bookTitle")} htmlFor="title" required error={form.formState.errors.title?.message}><input id="title" className="input-long" {...form.register("title")} /></Field>
-                <Field label={t("wizard.fields.subtitle")} htmlFor="subtitle"><input id="subtitle" className="input-long" {...form.register("subtitle")} /></Field>
-                <Field label={t("wizard.fields.authorName")} htmlFor="authorName" required error={form.formState.errors.authorName?.message}><input id="authorName" className="input-medium" {...form.register("authorName")} /></Field>
-                <Field label={t("wizard.fields.genre")} htmlFor="genreId" required error={form.formState.errors.genreId?.message}><select id="genreId" className="input-medium" {...form.register("genreId")}><option value="" /><SelectOptions items={genreOptions} /></select></Field>
-                <Field label={t("wizard.fields.sellingPoint")} htmlFor="sellingPoint" required className="field-wide" error={form.formState.errors.sellingPoint?.message}><textarea id="sellingPoint" rows={2} maxLength={150} {...form.register("sellingPoint")} /></Field>
-                <Field label={t("wizard.fields.synopsis")} htmlFor="synopsis" required className="field-wide" error={form.formState.errors.synopsis?.message}><textarea id="synopsis" rows={4} maxLength={600} {...form.register("synopsis")} /></Field>
-                <Field label={t("wizard.fields.contentLanguage")} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message}><select id="contentLanguageId" className="input-medium" {...form.register("contentLanguageId")}><option value="" /><SelectOptions items={languageOptions} /></select></Field>
-                <Field label={t("wizard.fields.duration")} htmlFor="videoDurationInput" required error={form.formState.errors.videoDurationId?.message ?? form.formState.errors.customVideoDuration?.message} hint={customDurationOptionIds.length ? t("wizard.durationEditableHint") : undefined}>
+                <Field label={t("wizard.fields.bookTitle")} icon={<FieldIcon name="book" />} htmlFor="title" required error={form.formState.errors.title?.message}><input id="title" className="input-long" {...form.register("title")} /></Field>
+                <Field label={t("wizard.fields.subtitle")} icon={<FieldIcon name="title" />} htmlFor="subtitle"><input id="subtitle" className="input-long" {...form.register("subtitle")} /></Field>
+                <Field label={t("wizard.fields.authorName")} icon={<FieldIcon name="author" />} htmlFor="authorName" required error={form.formState.errors.authorName?.message}><input id="authorName" className="input-medium" {...form.register("authorName")} /></Field>
+                <Field label={t("wizard.fields.genre")} icon={<FieldIcon name="genre" />} htmlFor="genreId" required error={form.formState.errors.genreId?.message}><select id="genreId" className="input-medium" {...form.register("genreId")}><option value="" /><SelectOptions items={genreOptions} /></select></Field>
+                <Field label={t("wizard.fields.sellingPoint")} icon={<FieldIcon name="highlight" />} htmlFor="sellingPoint" required className="field-wide" error={form.formState.errors.sellingPoint?.message}><textarea id="sellingPoint" rows={2} maxLength={150} {...form.register("sellingPoint")} /></Field>
+                <Field label={t("wizard.fields.synopsis")} icon={<FieldIcon name="summary" />} htmlFor="synopsis" required className="field-wide" error={form.formState.errors.synopsis?.message}><textarea id="synopsis" rows={4} maxLength={600} {...form.register("synopsis")} /></Field>
+                <Field label={t("wizard.fields.contentLanguage")} icon={<FieldIcon name="language" />} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message}><select id="contentLanguageId" className="input-medium" {...form.register("contentLanguageId")}><option value="" /><SelectOptions items={languageOptions} /></select></Field>
+                <Field label={t("wizard.fields.duration")} icon={<FieldIcon name="duration" />} htmlFor="videoDurationInput" required error={form.formState.errors.videoDurationId?.message ?? form.formState.errors.customVideoDuration?.message} hint={customDurationOptionIds.length ? t("wizard.durationEditableHint") : undefined}>
                   {customDurationOptionIds.length ? <EditableSelect id="videoDurationInput" name="videoDurationInput" className="input-short" autoComplete="off" maxLength={80} placeholder={t("wizard.durationPlaceholder")} options={editableDurationOptions} optionId={selectedVideoDurationId} customValue={customVideoDuration} onValueChange={(optionId, customValue) => {
                     form.setValue("videoDurationId", optionId, { shouldDirty: true, shouldValidate: true });
                     form.setValue("customVideoDuration", customValue, { shouldDirty: true, shouldValidate: true });
                   }} /> : <select id="videoDurationInput" className="input-short" {...form.register("videoDurationId", { onChange: () => form.setValue("customVideoDuration", "", { shouldDirty: true, shouldValidate: true }) })}><option value="" /><SelectOptions items={durationOptions} /></select>}
                 </Field>
-                <ChoiceField label={t("wizard.fields.platforms")} id="platform-group"><div className="choice-row" id="platform-group">{platformOptions.map((item) => <label className="choice-chip" key={item.id} aria-disabled={item.unavailable}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedPlatformIds.includes(item.id)} {...form.register("publishingPlatformIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
+                <ChoiceField label={t("wizard.fields.platforms")} icon={<FieldIcon name="platform" />} id="platform-group"><div className="choice-row" id="platform-group">{platformOptions.map((item) => <label className="choice-chip" key={item.id} aria-disabled={item.unavailable}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedPlatformIds.includes(item.id)} {...form.register("publishingPlatformIds")} /><span>{item.label}</span></label>)}</div></ChoiceField>
               </div>
             </section>
             <SourceFilesSection categories={sourceCategories} assets={sourceAssets} locale={validLocale} uploadCategory={uploadCategory ?? (saveDraft.isPending ? "__saving__" : undefined)} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemove={removeAsset} onCancel={cancelUpload} onRetry={retryUpload} />
@@ -396,7 +406,7 @@ export function ProjectFormPage() {
         </div>
 
         <div className="sticky-actions">
-          <button className="button button-secondary" type="button" disabled={saveDraft.isPending || Boolean(uploadCategory)} onClick={form.handleSubmit((values) => runSave(values, false, true))}>{saveDraft.isPending ? t("common.saving") : t("common.saveDraft")}</button>
+          <button className="button button-quiet" type="button" disabled={saveDraft.isPending || Boolean(uploadCategory)} onClick={form.handleSubmit((values) => runSave(values, false, true))}>{saveDraft.isPending ? t("common.saving") : t("common.saveNow")}</button>
           <p className="sticky-note">{t("wizard.footerNotes.project")}</p>
           <div>
           {conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}

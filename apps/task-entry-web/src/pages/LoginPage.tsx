@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { authService, localizedApiError } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+import { clearUserProjectQueries } from "../projectQueryCache";
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -12,6 +13,8 @@ export function LoginPage() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const [displayName, setDisplayName] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -22,12 +25,14 @@ export function LoginPage() {
   const requiresBootstrap = status.data?.requiresBootstrap === true;
   const authenticate = useMutation({
     mutationFn: () => requiresBootstrap
-      ? authService.bootstrap({ displayName, email, password })
+      ? authService.bootstrap({ displayName, email, password, phone, organizationName, locale: isSupportedLocale(locale) ? locale : undefined })
       : authService.login({ email, password, rememberMe }),
     onSuccess: async (user) => {
+      clearUserProjectQueries(queryClient);
       queryClient.setQueryData(["current-user"], user);
       await queryClient.invalidateQueries({ queryKey: ["auth-status"] });
-      const fallback = isSupportedLocale(locale) ? localizedPath(locale, "/tasks") : "/zh-CN/tasks";
+      const preferredLocale = user.locale ?? (isSupportedLocale(locale) ? locale : "zh-CN");
+      const fallback = localizedPath(preferredLocale, "/tasks");
       const target = (location.state as { from?: string } | null)?.from ?? fallback;
       navigate(target, { replace: true });
     },
@@ -65,9 +70,11 @@ export function LoginPage() {
             </div>
             <form className="login-form" onSubmit={submit} aria-busy={authenticate.isPending}>
               {requiresBootstrap ? <label className="login-field" htmlFor="display-name"><span>{t("auth.displayName")}</span><input id="display-name" name="displayName" type="text" autoComplete="name" minLength={2} maxLength={100} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label> : null}
+              {requiresBootstrap ? <label className="login-field" htmlFor="organization-name"><span>{t("auth.organizationName")}</span><input id="organization-name" name="organizationName" type="text" autoComplete="organization" minLength={2} maxLength={120} value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} /><small>{t("auth.organizationOptional")}</small></label> : null}
+              {requiresBootstrap ? <label className="login-field" htmlFor="bootstrap-phone"><span>{t("auth.phone")}</span><input id="bootstrap-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={phone} onChange={(event) => setPhone(event.target.value)} /><small>{t("auth.phoneOptional")}</small></label> : null}
               <label className="login-field" htmlFor="login-email"><span>{t("auth.email")}</span><input id="login-email" name="email" type="email" inputMode="email" autoComplete="username" spellCheck={false} maxLength={254} required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-              <label className="login-field" htmlFor="login-password"><span>{t("auth.password")}</span><span className="password-control"><input id="login-password" name="password" type={passwordVisible ? "text" : "password"} autoComplete={requiresBootstrap ? "new-password" : "current-password"} minLength={requiresBootstrap ? 12 : undefined} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" onClick={() => setPasswordVisible((visible) => !visible)}>{t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")}</button></span>{requiresBootstrap ? <small>{t("auth.passwordHint")}</small> : null}</label>
-              {requiresBootstrap ? <label className="login-field" htmlFor="confirm-password"><span>{t("auth.confirmPassword")}</span><input id="confirm-password" name="confirmPassword" type={passwordVisible ? "text" : "password"} autoComplete="new-password" minLength={12} maxLength={128} required aria-invalid={clientError ? true : undefined} aria-describedby={clientError ? "password-error" : undefined} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />{clientError ? <small className="field-error" id="password-error" role="alert">{clientError}</small> : null}</label> : <label className="remember-control"><input name="rememberMe" type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>{t("auth.rememberMe")}</span></label>}
+              <label className="login-field" htmlFor="login-password"><span>{t("auth.password")}</span><span className="password-control"><input id="login-password" name="password" type={passwordVisible ? "text" : "password"} autoComplete={requiresBootstrap ? "new-password" : "current-password"} minLength={requiresBootstrap ? 8 : undefined} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" onClick={() => setPasswordVisible((visible) => !visible)}>{t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")}</button></span>{requiresBootstrap ? <small>{t("auth.passwordHint")}</small> : null}</label>
+              {requiresBootstrap ? <label className="login-field" htmlFor="confirm-password"><span>{t("auth.confirmPassword")}</span><input id="confirm-password" name="confirmPassword" type={passwordVisible ? "text" : "password"} autoComplete="new-password" minLength={8} maxLength={128} required aria-invalid={clientError ? true : undefined} aria-describedby={clientError ? "password-error" : undefined} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />{clientError ? <small className="field-error" id="password-error" role="alert">{clientError}</small> : null}</label> : <label className="remember-control"><input name="rememberMe" type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>{t("auth.rememberMe")}</span></label>}
               {authenticate.isError ? <div className="inline-error" role="alert">{localizedApiError(authenticate.error, t)}</div> : null}
               <button className="button button-primary login-submit" type="submit" disabled={authenticate.isPending}>{authenticate.isPending ? t(requiresBootstrap ? "auth.creatingAccount" : "auth.signingIn") : t(requiresBootstrap ? "auth.createAccount" : "auth.signIn")}</button>
             </form>

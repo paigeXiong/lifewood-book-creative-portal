@@ -1,13 +1,13 @@
 /* Visual hierarchy uses fills and elevation; borders are reserved for editable controls. */
 button {
   border: 0;
-  background: #edf4f0;
+  background: #e8eeea;
   box-shadow: 0 1px 2px rgba(14, 54, 41, 0.08);
 }
 
 button:hover:not(:disabled) {
   border-color: transparent;
-  background: #dfece6;
+  background: #dce8e1;
   box-shadow: 0 2px 5px rgba(14, 54, 41, 0.12);
 }
 
@@ -24,11 +24,11 @@ a:focus-visible {
 
 .topbar {
   border-bottom: 0;
-  box-shadow: 0 2px 8px rgba(14, 54, 41, 0.06);
+  box-shadow: 0 2px 12px rgba(24, 55, 45, 0.07);
 }
 
 .sidebar nav a.active {
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 3px 10px rgba(24, 55, 45, 0.1);
 }
 
 .page-toolbar,
@@ -43,30 +43,30 @@ a:focus-visible {
 
 .project-rows {
   gap: 2px;
-  background: #eef2ef;
+  background: #e5ebe7;
 }
 
 .project-row {
   border: 0;
-  background: #fbfcfb;
+  background: var(--admin-surface);
   box-shadow: none;
 }
 
 .project-row:hover:not(:disabled) {
-  background: #f2f7f4;
+  background: #f0f4f1;
   box-shadow: none;
 }
 
 .pager {
   border-top: 0;
-  background: #f5f8f6;
+  background: #f0f3f0;
 }
 
 .detail-section {
   border-top: 0;
   padding: 0.7rem;
   border-radius: 0.55rem;
-  background: #f6f8f7;
+  background: #f1f3ef;
 }
 
 td {
@@ -74,11 +74,11 @@ td {
 }
 
 tbody tr:nth-child(even) {
-  background: #f7f9f8;
+  background: #f5f6f3;
 }
 
 tbody tr:hover {
-  background: #eef5f1;
+  background: #eaf1ed;
 }
 
 .delivery-actions .danger-link {

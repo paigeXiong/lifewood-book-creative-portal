@@ -1,19 +1,13 @@
 import { lazy, Suspense, useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { authService } from "@lifewood/api-client";
 import { isSupportedLocale } from "@lifewood/i18n";
-import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { clearUserProjectQueries } from "../projectQueryCache";
 import type { CurrentUser, SupportedLocale } from "@lifewood/domain";
 
 const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((module) => ({ default: module.AvatarEditor })));
-
-function switchLocale(pathname: string, locale: SupportedLocale): string {
-  const parts = pathname.split("/");
-  parts[1] = locale;
-  return parts.join("/") || `/${locale}/tasks`;
-}
 
 export function adminCenterUrl(locale: SupportedLocale, configuredBase = import.meta.env.VITE_ADMIN_APP_URL): string {
   const base = configuredBase?.trim()
@@ -33,12 +27,10 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   const { t } = useTranslation();
   const { locale } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const queryClient = useQueryClient();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountPopoverId = useId();
   const accountRef = useRef<HTMLDivElement>(null);
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
   const avatarTriggerRef = useRef<HTMLButtonElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
@@ -55,6 +47,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   const logout = useMutation({
     mutationFn: authService.logout,
     onSuccess: async () => {
+      clearUserProjectQueries(queryClient);
       await queryClient.invalidateQueries({ queryKey: ["current-user"] });
       if (isSupportedLocale(locale)) navigate(`/${locale}/login`, { replace: true });
     },
@@ -101,12 +94,6 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </span>
         </Link>
 
-        <nav className="nav-links" aria-label={t("nav.tasks")}>
-          <NavLink to={`/${locale}/tasks`} className={({ isActive }) => isActive ? "active" : undefined} onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}>
-            {t("nav.tasks")}
-          </NavLink>
-        </nav>
-
         <div className="topbar-actions">
           {canAccessAdmin ? (
             <a className="admin-entry" href={adminCenterUrl(locale)} aria-label={t("nav.adminCenter")} onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}>
@@ -114,23 +101,6 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
               <span>{t("nav.adminCenter")}</span>
             </a>
           ) : null}
-          <label className="locale-control reference-language">
-            <span className="language-icon" aria-hidden="true">文</span>
-            <span className="sr-only">{t("nav.language")}</span>
-            <select
-              name="locale"
-              autoComplete="off"
-              value={locale}
-              onChange={(event) => {
-                if (confirmLeave()) navigate(switchLocale(location.pathname, event.target.value as SupportedLocale) + location.search);
-                else event.target.value = locale;
-              }}
-            >
-              <option value="zh-CN">中文</option>
-              <option value="en-US">English</option>
-            </select>
-          </label>
-
           <div className="account-menu" ref={accountRef}>
             <button ref={avatarTriggerRef} className="avatar-trigger" type="button" aria-label={t("nav.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
               <img className="avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" />
@@ -139,6 +109,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
               ref={accountTriggerRef}
               className="profile-chip"
               type="button"
+              aria-haspopup="dialog"
               aria-expanded={accountOpen}
               aria-controls={accountPopoverId}
               aria-label={t("nav.accountMenu", { name: user.displayName })}
@@ -148,16 +119,16 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
               <span className="account-chevron" aria-hidden="true">⌄</span>
             </button>
             {accountOpen ? (
-              <div id={accountPopoverId} className="account-popover" role="region" aria-label={t("nav.account")}>
+              <div id={accountPopoverId} className="account-popover" role="dialog" aria-label={t("nav.account")}>
                 <div className="account-identity">
                   <button type="button" className="account-avatar-preview" aria-label={t("nav.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
                     <img className="avatar avatar-large" src={user.avatarUrl || "/api/me/avatar"} alt="" width="46" height="46" />
                   </button>
                   <div><strong>{user.displayName}</strong>{user.email ? <span>{user.email}</span> : null}{user.organization?.name ? <small>{user.organization.name}</small> : null}</div>
                 </div>
-                <button className="account-action" type="button" onClick={() => { setAccountOpen(false); setChangePasswordOpen(true); }}>
-                  {t("nav.changePassword")}
-                </button>
+                <Link className="account-action" to={`/${locale}/profile`} onClick={(event) => { if (confirmLeave()) setAccountOpen(false); else event.preventDefault(); }}>
+                  {t("nav.profile")}
+                </Link>
                 <button className="account-action" type="button" disabled={logout.isPending} onClick={() => { if (confirmLeave()) logout.mutate(); }}>
                   {logout.isPending ? t("nav.loggingOut") : t("nav.logout")}
                 </button>
@@ -169,7 +140,6 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
       </header>
       {avatarFeedback ? <p className="avatar-update-toast" role="status" aria-live="polite">{avatarFeedback}</p> : null}
       <main id="main-content" tabIndex={-1}>{children}</main>
-      {changePasswordOpen ? <ChangePasswordDialog onClose={() => setChangePasswordOpen(false)} /> : null}
       {avatarEditorOpen ? <Suspense fallback={null}><AvatarEditor
         avatarUrl={user.avatarUrl || "/api/me/avatar"}
         displayName={user.displayName}

@@ -5,7 +5,8 @@ cd /d "%~dp0"
 
 set "LIFEWOOD_SERVER=%~dp0server\Lifewood.BookPortal.Server.exe"
 set "LIFEWOOD_DATA=%~dp0data"
-set "LIFEWOOD_URL=http://127.0.0.1:5077"
+set "LIFEWOOD_BIND_URL=http://0.0.0.0:5077"
+set "LIFEWOOD_LOCAL_URL=http://127.0.0.1:5077"
 set "LIFEWOOD_LOG=%~dp0server.log"
 
 if not exist "%LIFEWOOD_SERVER%" (
@@ -21,15 +22,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
-curl.exe --silent --fail --max-time 2 "%LIFEWOOD_URL%/api/health" >nul 2>&1
+curl.exe --silent --fail --max-time 2 "%LIFEWOOD_LOCAL_URL%/api/health" >nul 2>&1
 if not errorlevel 1 goto already_running
 
 >"%LIFEWOOD_LOG%" echo [Lifewood] Server log / 服务端日志
-start "Lifewood Book Creative Portal Server" /b "%LIFEWOOD_SERVER%" --urls "%LIFEWOOD_URL%" --Lifewood:DataDirectory "%LIFEWOOD_DATA%" 1>>"%LIFEWOOD_LOG%" 2>&1
+start "Lifewood Book Creative Portal Server" /b "%LIFEWOOD_SERVER%" --urls "%LIFEWOOD_BIND_URL%" --Lifewood:DataDirectory "%LIFEWOOD_DATA%" 1>>"%LIFEWOOD_LOG%" 2>&1
 
 echo [Lifewood] Waiting for the web server... / 正在等待网页服务端...
 for /l %%I in (1,1,30) do (
-  curl.exe --silent --fail --max-time 2 "%LIFEWOOD_URL%/api/health" >nul 2>&1
+  curl.exe --silent --fail --max-time 2 "%LIFEWOOD_LOCAL_URL%/api/health" >nul 2>&1
   if not errorlevel 1 goto ready
   timeout /t 1 /nobreak >nul
 )
@@ -46,8 +47,11 @@ goto open_portal
 echo [Lifewood] Web server started. / 网页服务端已启动。
 
 :open_portal
-start "" "%LIFEWOOD_URL%/"
-echo [Lifewood] Customer portal / 客户门户: %LIFEWOOD_URL%/
-echo [Lifewood] Admin center / 管理中心: %LIFEWOOD_URL%/admin/
+start "" "%LIFEWOOD_LOCAL_URL%/"
+echo [Lifewood] Listening on / 监听地址: %LIFEWOOD_BIND_URL%
+echo [Lifewood] Local customer portal / 本机客户门户: %LIFEWOOD_LOCAL_URL%/
+echo [Lifewood] Local admin center / 本机管理中心: %LIFEWOOD_LOCAL_URL%/admin/
+echo [Lifewood] Network listener / 网络监听: %LIFEWOOD_BIND_URL%
+echo [Lifewood] Remote access requires a trusted HTTPS reverse proxy; direct LAN HTTP is rejected. / 远程访问必须配置可信 HTTPS 反向代理，平台会拒绝局域网直连 HTTP。
 endlocal
 exit /b 0

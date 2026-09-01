@@ -15,6 +15,7 @@ const CreativeFormPage = lazy(() => import("./pages/CreativeFormPage").then((mod
 const UpcomingStepPage = lazy(() => import("./pages/UpcomingStepPage").then((module) => ({ default: module.UpcomingStepPage })));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage").then((module) => ({ default: module.TaskDetailPage })));
 const SubmissionSuccessPage = lazy(() => import("./pages/SubmissionSuccessPage").then((module) => ({ default: module.SubmissionSuccessPage })));
+const ProfilePage = lazy(() => import("./pages/ProfilePage").then((module) => ({ default: module.ProfilePage })));
 
 function ScreenLoading() {
   const { t } = useTranslation();
@@ -71,6 +72,7 @@ export function App() {
         <Route path="login" element={<LoginRoute />} />
         <Route element={<ProtectedLayout />}>
           <Route path="tasks" element={<TaskListPage />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="tasks/:taskId/submitted" element={<SubmissionSuccessPage />} />
           <Route path="tasks/:taskId/edit/project" element={<ProjectFormPage />} />

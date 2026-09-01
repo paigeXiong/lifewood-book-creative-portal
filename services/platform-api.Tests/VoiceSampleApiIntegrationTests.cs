@@ -685,18 +685,53 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         var ownerId = me.RootElement.GetProperty("id").GetString();
 
         using var updateResponse = await Send(ownerClient, HttpMethod.Put, $"/api/admin/users/{ownerId}", csrf,
-            JsonContent.Create(new { displayName = "Test Owner", phone = "+86 138 0000 0000", role = "owner", active = true, organizationId }));
+            JsonContent.Create(new { displayName = "Owner", phone = (string?)null, role = "owner", active = true, organizationId }));
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+
+        using var profileResponse = await Send(ownerClient, HttpMethod.Put, "/api/me/profile", csrf,
+            JsonContent.Create(new { displayName = "Test Owner", clientName = "Preferred Client", phone = "+86 138 0000 0000" }));
+        Assert.Equal(HttpStatusCode.OK, profileResponse.StatusCode);
 
         using var created = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         using var draft = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
         var project = draft.RootElement.GetProperty("project");
-        Assert.Equal("Lifewood Books", project.GetProperty("clientName").GetString());
+        Assert.Equal("Preferred Client", project.GetProperty("clientName").GetString());
         Assert.Equal("Test Owner", project.GetProperty("contactName").GetString());
         Assert.Equal("owner@example.test", project.GetProperty("email").GetString());
         Assert.Equal("+86 138 0000 0000", project.GetProperty("phone").GetString());
     }
+
+    [Fact]
+    public async Task BootstrapAcceptsOptionalContactAndOrganizationProfile()
+    {
+        var csrf = await GetCsrf(ownerClient);
+        using var response = await Send(ownerClient, HttpMethod.Post, "/api/auth/bootstrap", csrf,
+            JsonContent.Create(new
+            {
+                displayName = "Initial Owner",
+                email = "initial@example.test",
+                password = "owner-password-123",
+                phone = "+1 801 555 0100",
+                organizationName = "Deseret Book",
+                locale = "en-US"
+            }));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Initial Owner", document.RootElement.GetProperty("displayName").GetString());
+        Assert.Equal("+1 801 555 0100", document.RootElement.GetProperty("phone").GetString());
+        Assert.Equal("Deseret Book", document.RootElement.GetProperty("organization").GetProperty("name").GetString());
+        Assert.Equal("Deseret Book", document.RootElement.GetProperty("clientName").GetString());
+        Assert.Equal("en-US", document.RootElement.GetProperty("locale").GetString());
+
+        var preferenceCsrf = await GetCsrf(ownerClient);
+        using var preferenceResponse = await Send(ownerClient, HttpMethod.Put, "/api/me/preferences", preferenceCsrf,
+            JsonContent.Create(new { locale = "zh-CN" }));
+        Assert.Equal(HttpStatusCode.OK, preferenceResponse.StatusCode);
+        using var preference = JsonDocument.Parse(await preferenceResponse.Content.ReadAsStringAsync());
+        Assert.Equal("zh-CN", preference.RootElement.GetProperty("locale").GetString());
+    }
+
     [Fact]
     public async Task AdministratorWorkflowDoesNotExposeOrMutateCustomerDrafts()
     {
@@ -885,6 +920,33 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         using var deleteStyle = await Send(ownerClient, HttpMethod.Delete, $"/api/projects/{id}/files/{styleFileId}?version={version}", csrf);
         Assert.Equal(HttpStatusCode.OK, deleteStyle.StatusCode);
     }
+
+    [Fact]
+    public async Task OwnerCanPersistValidatedRuntimeSettings()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+
+        using var initial = await ownerClient.GetAsync("/api/admin/runtime-settings");
+        Assert.Equal(HttpStatusCode.OK, initial.StatusCode);
+
+        using var invalid = await Send(ownerClient, HttpMethod.Put, "/api/admin/runtime-settings", csrf,
+            JsonContent.Create(new { listenAddress = "not a valid address", port = 70000 }));
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        using var saved = await Send(ownerClient, HttpMethod.Put, "/api/admin/runtime-settings", csrf,
+            JsonContent.Create(new { listenAddress = "0.0.0.0", port = 5088 }));
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        using var payload = JsonDocument.Parse(await saved.Content.ReadAsStringAsync());
+        Assert.Equal("0.0.0.0", payload.RootElement.GetProperty("listenAddress").GetString());
+        Assert.Equal(5088, payload.RootElement.GetProperty("port").GetInt32());
+        Assert.True(payload.RootElement.GetProperty("restartRequired").GetBoolean());
+
+        using var stored = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "runtime-settings.json")));
+        Assert.Equal("0.0.0.0", stored.RootElement.GetProperty("listenAddress").GetString());
+        Assert.Equal(5088, stored.RootElement.GetProperty("port").GetInt32());
+    }
+
     private async Task BootstrapOwner()
     {
         var csrf = await GetCsrf(ownerClient);

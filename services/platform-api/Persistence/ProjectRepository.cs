@@ -36,6 +36,10 @@ internal sealed class ProjectRepository(string connectionString)
                 voice_json TEXT NOT NULL DEFAULT '{"voiceover":{"selectedVoiceIds":[]},"assets":[],"competitorUrls":[],"creativeDirection":{"coreMessage":""}}',
                 submission_key TEXT NULL,
                 submission_snapshot_json TEXT NULL,
+                workflow_status TEXT NOT NULL DEFAULT 'new',
+                priority TEXT NOT NULL DEFAULT 'normal',
+                assignee_user_id TEXT NULL,
+                workflow_updated_at TEXT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -113,12 +117,56 @@ internal sealed class ProjectRepository(string connectionString)
             markMigration.ExecuteNonQuery();
         }
 
+        if (!HasColumn(connection, transaction, "projects", "workflow_status"))
+        {
+            using var migration = connection.CreateCommand();
+            migration.Transaction = transaction;
+            migration.CommandText = "ALTER TABLE projects ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'new';";
+            migration.ExecuteNonQuery();
+        }
+        if (!HasColumn(connection, transaction, "projects", "priority"))
+        {
+            using var migration = connection.CreateCommand();
+            migration.Transaction = transaction;
+            migration.CommandText = "ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';";
+            migration.ExecuteNonQuery();
+        }
+        if (!HasColumn(connection, transaction, "projects", "assignee_user_id"))
+        {
+            using var migration = connection.CreateCommand();
+            migration.Transaction = transaction;
+            migration.CommandText = "ALTER TABLE projects ADD COLUMN assignee_user_id TEXT NULL;";
+            migration.ExecuteNonQuery();
+        }
+        if (!HasColumn(connection, transaction, "projects", "workflow_updated_at"))
+        {
+            using var migration = connection.CreateCommand();
+            migration.Transaction = transaction;
+            migration.CommandText = "ALTER TABLE projects ADD COLUMN workflow_updated_at TEXT NULL;";
+            migration.ExecuteNonQuery();
+        }
+        using (var markMigration = connection.CreateCommand())
+        {
+            markMigration.Transaction = transaction;
+            markMigration.CommandText = "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, $appliedAt);";
+            markMigration.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
+            markMigration.ExecuteNonQuery();
+        }
+
         transaction.Commit();
     }
 
-    public PagedProjectsDto List(string ownerId, string? status, string? search, int page, int pageSize)
+    public PagedProjectsDto List(string ownerId, string? status, string? search, int page, int pageSize, string? sortBy = null, string? sortDirection = null)
     {
         using var connection = Open();
+        var sortExpression = sortBy switch
+        {
+            "project" => "COALESCE(NULLIF(TRIM(json_extract(book_json, '$.title')), ''), NULLIF(TRIM(json_extract(project_json, '$.projectName')), ''), '') COLLATE NOCASE",
+            "author" => "COALESCE(json_extract(book_json, '$.authorName'), '') COLLATE NOCASE",
+            "status" => "CASE WHEN status = 'draft' THEN 0 WHEN workflow_status = 'new' THEN 1 WHEN workflow_status = 'contacting' THEN 2 WHEN workflow_status = 'confirmed' THEN 3 WHEN workflow_status = 'in_production' THEN 4 WHEN workflow_status = 'awaiting_customer' THEN 5 WHEN workflow_status = 'completed' THEN 6 WHEN workflow_status = 'closed' THEN 7 ELSE 8 END",
+            _ => "updated_at"
+        };
+        var direction = string.Equals(sortDirection, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
         const string where = """
             WHERE owner_id = $ownerId
               AND ($status = '' OR status = $status)
@@ -137,7 +185,7 @@ internal sealed class ProjectRepository(string connectionString)
             SELECT id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status
             FROM projects
             {where}
-            ORDER BY updated_at DESC
+            ORDER BY {sortExpression} {direction}, id ASC
             LIMIT $pageSize OFFSET $offset;
             """;
         AddListParameters(command, ownerId, status, search);
@@ -149,6 +197,25 @@ internal sealed class ProjectRepository(string connectionString)
         while (reader.Read()) rows.Add(ReadDraft(reader));
 
         return new PagedProjectsDto(rows.Select(ToSummary).ToArray(), page, pageSize, total);
+    }
+
+    public ProjectStatsDto GetStats(string ownerId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                COUNT(*),
+                COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status = 'submitted' AND COALESCE(workflow_status, 'new') NOT IN ('completed', 'closed') THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status = 'submitted' AND workflow_status = 'completed' THEN 1 ELSE 0 END), 0)
+            FROM projects
+            WHERE owner_id = $ownerId;
+            """;
+        command.Parameters.AddWithValue("$ownerId", ownerId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) return new ProjectStatsDto(0, 0, 0, 0);
+        return new ProjectStatsDto(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3));
     }
 
     public TaskDraftDto Create(string ownerId, string clientName = "", string contactName = "", string email = "", string? phone = null)

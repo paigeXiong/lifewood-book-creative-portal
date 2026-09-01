@@ -35,6 +35,11 @@ function Assert-True([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
+$installerSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\installer\Package.wxs") -Raw
+Assert-True ($installerSource.Contains('FirstFailureActionType="restart"') -and
+    $installerSource.Contains('SecondFailureActionType="restart"') -and
+    $installerSource.Contains('ThirdFailureActionType="restart"')) "The Windows service recovery policy must restart the platform after every failed exit."
+
 $windowsInstaller = New-Object -ComObject WindowsInstaller.Installer
 foreach ($candidate in $PackagePath) {
     $resolved = (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).Path

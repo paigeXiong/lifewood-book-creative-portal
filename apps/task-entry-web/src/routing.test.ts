@@ -18,5 +18,13 @@ describe("localized routing", () => {
       for (const key of ["nav.openAvatarEditor", "nav.avatarEditorTitle", "nav.avatarCropInstruction", "nav.saveAvatar", "nav.avatarSourceInvalid"])
         expect(i18n.getResource(locale, "translation", key), key).toBeTypeOf("string");
     });
+    it(`contains complete profile copy for ${locale}`, () => {
+      for (const key of ["nav.profile", "profile.identityEyebrow", "profile.intakeTitle", "profile.contactDescription", "profile.accountTitle", "profile.passwordTitle", "profile.roles.member", "profile.readonlyNote", "profile.saved"])
+        expect(i18n.getResource(locale, "translation", key), key).toBeTypeOf("string");
+    });
+    it(`contains project sorting copy for ${locale}`, () => {
+      for (const key of ["tasks.sort.asc", "tasks.sort.desc", "tasks.sort.change"])
+        expect(i18n.getResource(locale, "translation", key), key).toBeTypeOf("string");
+    });
   }
 });

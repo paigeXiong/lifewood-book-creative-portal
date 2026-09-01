@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
-import { authService } from "@lifewood/api-client";
+import { authService, localizedApiError } from "@lifewood/api-client";
 import { isSupportedLocale } from "@lifewood/i18n";
 
 export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
@@ -11,6 +11,8 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const frameRef = useRef<HTMLDivElement>(null);
+  const currentPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const [mismatch, setMismatch] = useState(false);
   const busyRef = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -29,7 +31,7 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const frame = frameRef.current;
-    frame?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+    currentPasswordRef.current?.focus();
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busyRef.current) onCloseRef.current();
       if (event.key !== "Tab" || !frame) return;
@@ -53,7 +55,11 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     const data = new FormData(event.currentTarget);
     const currentPassword = String(data.get("currentPassword") ?? "");
     const newPassword = String(data.get("newPassword") ?? "");
-    if (newPassword !== String(data.get("confirmPassword") ?? "")) { setMismatch(true); return; }
+    if (newPassword !== String(data.get("confirmPassword") ?? "")) {
+      setMismatch(true);
+      confirmPasswordRef.current?.focus();
+      return;
+    }
     setMismatch(false);
     change.mutate({ currentPassword, newPassword });
   };
@@ -62,10 +68,10 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     <div ref={frameRef} className="password-dialog" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
       <div className="password-dialog-title"><h2 id="change-password-title">{t("nav.changePassword")}</h2><button type="button" aria-label={t("common.close")} disabled={change.isPending} onClick={onClose}>×</button></div>
       <form onSubmit={submit} aria-busy={change.isPending}>
-        <label><span>{t("nav.currentPassword")}</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required /></label>
-        <label><span>{t("nav.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
-        <label><span>{t("nav.confirmNewPassword")}</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
-        {(mismatch || change.isError) && <p className="account-error" role="alert">{t(mismatch ? "nav.passwordMismatch" : "nav.passwordInvalid")}</p>}
+        <label><span>{t("nav.currentPassword")}</span><input ref={currentPasswordRef} name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required aria-invalid={change.isError || undefined} aria-describedby={change.isError ? "change-password-error" : undefined} /></label>
+        <label><span>{t("nav.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>
+        <label><span>{t("nav.confirmNewPassword")}</span><input ref={confirmPasswordRef} name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required aria-invalid={mismatch || undefined} aria-describedby={mismatch ? "change-password-error" : undefined} onChange={() => { if (mismatch) setMismatch(false); }} /></label>
+        {(mismatch || change.isError) && <p id="change-password-error" className="account-error" role="alert">{mismatch ? t("nav.passwordMismatch") : localizedApiError(change.error, t)}</p>}
         <div className="password-actions"><button type="button" disabled={change.isPending} onClick={onClose}>{t("common.cancel")}</button><button className="button-primary" disabled={change.isPending}>{t(change.isPending ? "nav.savingPassword" : "nav.savePassword")}</button></div>
       </form>
     </div>
