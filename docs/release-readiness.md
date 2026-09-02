@@ -85,7 +85,7 @@ sudo ./linux/install.sh --lang zh-CN
 
 正式开放前确认：
 
-1. 配置 HTTPS 域名、传输层安全协议（TLS）终止代理和 `Network:TrustedProxies`
+1. 确认部署协议与访问范围；公网使用建议配置 HTTPS 域名、TLS 终止代理和 `Network:TrustedProxies`
 2. 创建首个真实管理员账号，确认发布物不含默认密码
 3. 确认组织与账号共享边界
 4. 确认授权形式、文件限制和大文件上传方式

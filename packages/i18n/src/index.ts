@@ -192,7 +192,6 @@ const resources = {
         system: { unexpected: "系统暂时无法完成请求，请稍后重试。" },
         http: {
           notFound: "接口不存在。",
-          httpsRequired: "远程访问必须通过 HTTPS。请配置可信反向代理后重试。",
         },
       },
       tasks: {
@@ -715,7 +714,6 @@ const resources = {
         },
         http: {
           notFound: "The endpoint was not found.",
-          httpsRequired: "Remote access requires HTTPS. Configure a trusted reverse proxy and try again.",
         },
       },
       tasks: {

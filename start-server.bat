@@ -52,6 +52,7 @@ echo [Lifewood] Listening on / 监听地址: %LIFEWOOD_BIND_URL%
 echo [Lifewood] Local customer portal / 本机客户门户: %LIFEWOOD_LOCAL_URL%/
 echo [Lifewood] Local admin center / 本机管理中心: %LIFEWOOD_LOCAL_URL%/admin/
 echo [Lifewood] Network listener / 网络监听: %LIFEWOOD_BIND_URL%
-echo [Lifewood] Remote access requires a trusted HTTPS reverse proxy; direct LAN HTTP is rejected. / 远程访问必须配置可信 HTTPS 反向代理，平台会拒绝局域网直连 HTTP。
+echo [Lifewood] Remote HTTP / 远程 HTTP: http://^<server-ip^>:5077/
+echo [Lifewood] HTTPS is also supported when Kestrel or a reverse proxy is configured with a certificate. / 配置 Kestrel 证书端点或 HTTPS 反向代理后也可使用 HTTPS。
 endlocal
 exit /b 0

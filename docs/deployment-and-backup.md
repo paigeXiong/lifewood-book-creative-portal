@@ -2,13 +2,15 @@
 
 ## 部署拓扑
 
-正式环境只运行一个 Lifewood Web 服务端，并使用同一 HTTPS 域名：
+正式环境只运行一个 Lifewood Web 服务端，并使用同一 HTTP 或 HTTPS 来源：
 
 - 根路径：客户门户；
 - /admin/：管理中心；
 - /api/：页面使用的内部数据接口。
 
-客户门户、管理中心和内部数据接口都由同一个服务端进程提供，不需要另行启动 Vite、Node.js 或静态文件服务器。公网同域部署继续使用 SameSite=Strict、Secure、HttpOnly Cookie；反向代理应把整个站点转发到该服务端。正式服务端只允许真实回环连接与回环 Host 使用本机 HTTP，且不需要任何开发环境或不安全模式开关。其他 HTTP 请求会在进入网页、CSRF 和认证处理前被拒绝；可信反向代理必须传递并由平台验证 HTTPS 协议信息。
+客户门户、管理中心和内部数据接口都由同一个服务端进程提供，不需要另行启动 Vite、Node.js 或静态文件服务器。服务端不会按客户端是否为本机强制限制 HTTP 或 HTTPS：监听地址可达时，远程 HTTP 可直接使用；配置 Kestrel 证书端点或 TLS 终止反向代理后可使用 HTTPS。Cookie 始终为 HttpOnly、SameSite=Strict，并根据当前请求协议自动设置 Secure。可信反向代理应把整个站点转发到该服务端，并仅在明确配置后才允许其转发协议信息。
+
+管理中心的“访问协议”表示 Kestrel 自己监听的协议。选择 `https` 前必须通过标准 Kestrel 配置提供证书，例如设置 `Kestrel__Certificates__Default__Path` 和 `Kestrel__Certificates__Default__Password`；若 HTTPS 在 Nginx、Caddy 等反向代理处终止，平台监听协议应保持 `http`，由代理向客户提供 `https`。
 
 ## 构建
 
@@ -34,9 +36,11 @@ MSI 将程序安装到 Program Files，将生产数据默认保存到 `C:\Progra
 
 无人值守安装可传入公共属性，例如：
 
-    msiexec /i Lifewood.Installer.msi /qn PORT=5077 DATAFOLDER="D:\LifewoodData\"
+    msiexec /i Lifewood.Installer.msi /qn LISTENADDRESS=0.0.0.0 PORT=5077 DATAFOLDER="D:\LifewoodData\"
 
-MSI 的直连模式只监听 `127.0.0.1`，适用于本机操作或由同机 HTTPS 反向代理转发。需要让其他计算机访问时，仍应按下方服务要求配置 HTTPS 反向代理，不应直接把安装端口暴露到公网。
+MSI 安装向导可选择仅本机监听 `127.0.0.1`，或监听所有网络接口 `0.0.0.0`。无人值守安装使用 `LISTENADDRESS` 设置同一选项；为避免服务参数注入，安装器只接受这两个值。安装后仍可在管理中心修改监听设置并重启平台。将端口暴露到公网前建议启用 HTTPS，并配置防火墙访问范围。
+
+Windows MSI 会为所有用户创建客户门户桌面快捷方式，并在开始菜单中创建客户门户和管理中心入口。卸载会移除这些入口，但不会删除生产数据目录。
 
 管理中心生产包已使用 /admin/ 作为资源和路由基址。本地开发仍使用独立的 5174 端口。
 
@@ -56,7 +60,7 @@ Linux 正式包是对应架构的 Native AOT `tar.gz`，支持 `linux-x64` 和 `
     tar -xzf lifewood-book-creative-portal-linux-x64-*.tar.gz
     sudo ./linux/install.sh --lang zh-CN
 
-安装器优先使用 `dialog`，其次使用 `whiptail`；两者都没有时使用普通终端问答。配置内容包括本机监听端口、生产数据目录和 HTTPS 反向代理 IP。服务器自动部署可以使用无人值守参数：
+安装器优先使用 `dialog`，其次使用 `whiptail`；两者都没有时使用普通终端问答。配置内容包括监听端口、生产数据目录和可选的可信反向代理 IP。服务器自动部署可以使用无人值守参数：
 
     sudo ./linux/install.sh \
       --non-interactive \
@@ -87,14 +91,14 @@ Linux 正式包是对应架构的 Native AOT `tar.gz`，支持 `linux-x64` 和 `
     journalctl -u lifewood-book-portal.service -f
     sudo systemctl restart lifewood-book-portal.service
 
-服务仅监听 `127.0.0.1`，不得直接暴露到公网。使用 Nginx、Caddy 或其他 HTTPS 反向代理，并把代理实际连接服务端时使用的 IP 配置为可信代理。`dialog`、`whiptail` 和安装器只负责配置，不负责签发 TLS 证书或自动修改现有反向代理。
+默认服务仅监听 `127.0.0.1`。如需远程直连，可把监听地址改为 `0.0.0.0` 或指定网卡地址；平台将接受 HTTP 请求。若使用 Nginx、Caddy 或其他 HTTPS 反向代理，应把代理实际连接服务端时使用的 IP 配置为可信代理。`dialog`、`whiptail` 和安装器只负责平台配置，不负责签发 TLS 证书或自动修改现有反向代理。
 
 容量限制等高级设置写入 `/etc/lifewood-book-portal/custom.env`，然后重启服务。安装器管理的 `portal.env` 在后加载，因此自定义文件不能覆盖监听地址、数据目录、Web 根目录和基础安全开关；覆盖安装不会修改 `custom.env`。
 
 ## 服务要求
 
-- 只让反向代理对公网开放，服务端监听本机或内网地址。
-- 必须启用 HTTPS，并把可信反向代理地址写入 Network:TrustedProxies。
+- 根据使用场景选择本机、内网或公网监听地址，并同步配置操作系统和云防火墙。
+- HTTP 和 HTTPS 均可使用；公网或其他不可信网络建议启用 HTTPS。使用反向代理时，把可信代理地址写入 `Network:TrustedProxies`。
 - 服务端的工作目录必须固定；账号数据库、上传资料、最终成品和数据保护密钥均位于其 data/ 目录。
 - 更新程序时不得覆盖或删除 data/。
 - 运行账号只应拥有程序读取权和 data/ 写入权。

@@ -27,16 +27,18 @@ public sealed record UpdateProfileRequest(string DisplayName, string? Phone = nu
 public sealed record UpdatePreferencesRequest(string Locale);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ResetPasswordRequest(string NewPassword);
-public sealed record RuntimeSettingsDocument(string ListenAddress, int Port);
+public sealed record RuntimeSettingsDocument(string ListenAddress, int Port, string Scheme = "http");
 public sealed record RuntimeSettingsDto(
+    string Scheme,
     string ListenAddress,
     int Port,
+    string ActiveScheme,
     string ActiveListenAddress,
     int ActivePort,
     bool RestartRequired,
     bool CanRestart,
     bool CanShutdown);
-public sealed record UpdateRuntimeSettingsRequest(string ListenAddress, int Port);
+public sealed record UpdateRuntimeSettingsRequest(string ListenAddress, int Port, string? Scheme = null);
 public sealed record RuntimeActionDto(string Action, DateTimeOffset RequestedAt);
 
 public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? Phone = null);

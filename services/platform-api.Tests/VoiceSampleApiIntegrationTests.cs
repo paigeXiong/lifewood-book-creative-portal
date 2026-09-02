@@ -112,7 +112,7 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     [Theory]
     [InlineData("Kestrel:Endpoints:Public:Url", "http://0.0.0.0:5000")]
     [InlineData("HTTP_PORTS", "5000")]
-    public async Task ProductionRejectsNonLoopbackHttpRegardlessOfListenerConfigurationSource(string setting, string value)
+    public async Task ProductionAllowsNonLoopbackHttpRegardlessOfListenerConfigurationSource(string setting, string value)
     {
         var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-nonloopback-" + Guid.NewGuid().ToString("N"));
         WebApplicationFactory<Program>? productionFactory = null;
@@ -128,8 +128,8 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
             });
             using var client = productionFactory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
             using var response = await client.GetAsync("/api/auth/csrf");
-            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Equal("security.https_required", await ErrorCode(response));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.DoesNotContain(response.Headers.GetValues("Set-Cookie"), value => value.Contains("; secure", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -140,7 +140,7 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task ProductionRemoteHttpCannotSpoofForwardedHttpsWithoutTrustedProxy()
+    public async Task ProductionRemoteHttpIgnoresForwardedHttpsWithoutTrustedProxy()
     {
         var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-spoofed-proxy-" + Guid.NewGuid().ToString("N"));
         WebApplicationFactory<Program>? productionFactory = null;
@@ -157,8 +157,8 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/csrf");
             request.Headers.Add("X-Forwarded-Proto", "https");
             using var response = await client.SendAsync(request);
-            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Equal("security.https_required", await ErrorCode(response));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.DoesNotContain(response.Headers.GetValues("Set-Cookie"), value => value.Contains("; secure", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -199,7 +199,7 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task ProductionTrustedLoopbackProxyCannotForwardPlainHttpAsLocalTraffic()
+    public async Task ProductionTrustedLoopbackProxyCanForwardPlainHttpWithoutSecureCookies()
     {
         var productionRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-production-loopback-proxy-http-" + Guid.NewGuid().ToString("N"));
         WebApplicationFactory<Program>? productionFactory = null;
@@ -218,8 +218,8 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
             request.Headers.Host = "127.0.0.1";
             request.Headers.Add("X-Forwarded-Proto", "http");
             using var response = await client.SendAsync(request);
-            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Equal("security.https_required", await ErrorCode(response));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.DoesNotContain(response.Headers.GetValues("Set-Cookie"), value => value.Contains("; secure", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -935,14 +935,16 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
 
         using var saved = await Send(ownerClient, HttpMethod.Put, "/api/admin/runtime-settings", csrf,
-            JsonContent.Create(new { listenAddress = "0.0.0.0", port = 5088 }));
+            JsonContent.Create(new { scheme = "https", listenAddress = "0.0.0.0", port = 5088 }));
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
         using var payload = JsonDocument.Parse(await saved.Content.ReadAsStringAsync());
+        Assert.Equal("https", payload.RootElement.GetProperty("scheme").GetString());
         Assert.Equal("0.0.0.0", payload.RootElement.GetProperty("listenAddress").GetString());
         Assert.Equal(5088, payload.RootElement.GetProperty("port").GetInt32());
         Assert.True(payload.RootElement.GetProperty("restartRequired").GetBoolean());
 
         using var stored = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "runtime-settings.json")));
+        Assert.Equal("https", stored.RootElement.GetProperty("scheme").GetString());
         Assert.Equal("0.0.0.0", stored.RootElement.GetProperty("listenAddress").GetString());
         Assert.Equal(5088, stored.RootElement.GetProperty("port").GetInt32());
     }

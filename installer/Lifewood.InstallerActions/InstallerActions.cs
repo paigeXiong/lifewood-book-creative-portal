@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Globalization;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
@@ -33,6 +34,33 @@ public static class InstallerActions
         return ErrorInstallFailure;
     }
 
+    [UnmanagedCallersOnly(EntryPoint = "NormalizePort", CallConvs = [typeof(CallConvStdcall)])]
+    public static uint NormalizePort(uint sessionHandle)
+    {
+        try
+        {
+            var value = GetProperty(sessionHandle, "PORT");
+            if (!TryNormalizeRegistryInteger(value, out var normalized)) return ErrorSuccess;
+            return MsiSetProperty(sessionHandle, "PORT", normalized);
+        }
+        catch
+        {
+            return ErrorInstallFailure;
+        }
+    }
+
+    internal static bool TryNormalizeRegistryInteger(string value, out string normalized)
+    {
+        normalized = value;
+        if (value.Length < 2 || value[0] != '#') return false;
+
+        var number = value.AsSpan(1);
+        if (number.Length > 0 && number[0] == '+') number = number[1..];
+        if (!int.TryParse(number, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed)) return false;
+        normalized = parsed.ToString(CultureInfo.InvariantCulture);
+        return true;
+    }
+
     // Exported only for the build-time smoke test. MSI invokes ValidateDataDirectory above.
     [UnmanagedCallersOnly(EntryPoint = "ValidateDataDirectoryPath", CallConvs = [typeof(CallConvStdcall)])]
     public static int ValidateDataDirectoryPath(
@@ -64,7 +92,8 @@ public static class InstallerActions
         uint length = 0;
         var status = MsiGetProperty(sessionHandle, name, null, ref length);
         if (status != ErrorMoreData && status != ErrorSuccess) throw new InvalidOperationException($"MsiGetProperty failed: {status}");
-        var value = new StringBuilder(checked((int)length + 1));
+        length = checked(length + 1);
+        var value = new StringBuilder(checked((int)length));
         status = MsiGetProperty(sessionHandle, name, value, ref length);
         if (status != ErrorSuccess) throw new InvalidOperationException($"MsiGetProperty failed: {status}");
         return value.ToString();
@@ -87,6 +116,9 @@ public static class InstallerActions
 
     [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiGetPropertyW")]
     private static extern uint MsiGetProperty(uint install, string name, StringBuilder? value, ref uint valueLength);
+
+    [DllImport("msi.dll", CharSet = CharSet.Unicode, EntryPoint = "MsiSetPropertyW")]
+    private static extern uint MsiSetProperty(uint install, string name, string value);
 
     [DllImport("msi.dll", EntryPoint = "MsiCreateRecord")]
     private static extern uint MsiCreateRecord(uint parameterCount);

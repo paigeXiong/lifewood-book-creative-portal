@@ -18,7 +18,8 @@ internal sealed class RuntimeSettingsStore
         path = Path.Combine(dataDirectory, "runtime-settings.json");
         var fallback = FromUrl(configuredUrl);
         desired = Read(path) ?? fallback;
-        if (!TryNormalize(desired.ListenAddress, desired.Port, out var normalized, out _)) desired = fallback;
+        var persistedScheme = string.IsNullOrWhiteSpace(desired.Scheme) ? "http" : desired.Scheme;
+        if (!TryNormalize(persistedScheme, desired.ListenAddress, desired.Port, out var normalized, out _)) desired = fallback;
         else desired = normalized;
         Active = desired;
     }
@@ -31,8 +32,10 @@ internal sealed class RuntimeSettingsStore
         lock (gate)
         {
             return new(
+                desired.Scheme,
                 desired.ListenAddress,
                 desired.Port,
+                Active.Scheme,
                 Active.ListenAddress,
                 Active.Port,
                 desired != Active,
@@ -41,11 +44,12 @@ internal sealed class RuntimeSettingsStore
         }
     }
 
-    public bool Save(string? listenAddress, int port, out string? field)
+    public bool Save(string? scheme, string? listenAddress, int port, out string? field)
     {
-        if (!TryNormalize(listenAddress, port, out var normalized, out field)) return false;
         lock (gate)
         {
+            var effectiveScheme = scheme is null ? desired.Scheme : scheme;
+            if (!TryNormalize(effectiveScheme, listenAddress, port, out var normalized, out field)) return false;
             var temporaryPath = path + "." + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) + ".tmp";
             try
             {
@@ -81,14 +85,20 @@ internal sealed class RuntimeSettingsStore
     {
         var value = configuredUrl?.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
         if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            return new(NormalizeHost(uri.Host), uri.Port);
+            return new(NormalizeHost(uri.Host), uri.Port, uri.Scheme.ToLowerInvariant());
         return new("127.0.0.1", 5000);
     }
 
-    private static bool TryNormalize(string? listenAddress, int port, out RuntimeSettingsDocument normalized, out string? field)
+    private static bool TryNormalize(string? scheme, string? listenAddress, int port, out RuntimeSettingsDocument normalized, out string? field)
     {
         normalized = new("127.0.0.1", 5000);
         field = null;
+        var normalizedScheme = scheme?.Trim().ToLowerInvariant() ?? "";
+        if (normalizedScheme is not ("http" or "https"))
+        {
+            field = "scheme";
+            return false;
+        }
         var address = NormalizeHost(listenAddress?.Trim() ?? "");
         if (address == "*") address = "0.0.0.0";
         if (!address.Equals("localhost", StringComparison.OrdinalIgnoreCase) && !IPAddress.TryParse(address, out _))
@@ -101,7 +111,7 @@ internal sealed class RuntimeSettingsStore
             field = "port";
             return false;
         }
-        normalized = new(address.ToLowerInvariant(), port);
+        normalized = new(address.ToLowerInvariant(), port, normalizedScheme);
         return true;
     }
 
@@ -112,7 +122,7 @@ internal sealed class RuntimeSettingsStore
         var host = settings.ListenAddress.Contains(':', StringComparison.Ordinal)
             ? $"[{settings.ListenAddress}]"
             : settings.ListenAddress;
-        return $"http://{host}:{settings.Port.ToString(CultureInfo.InvariantCulture)}";
+        return $"{settings.Scheme}://{host}:{settings.Port.ToString(CultureInfo.InvariantCulture)}";
     }
 }
 

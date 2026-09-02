@@ -8,11 +8,11 @@ It is not a mock service. It supports an administrator-operated final-delivery s
 
 - The first visit from the server's loopback interface creates the platform owner account; no default account or password is shipped. For a headless Linux host, use an SSH local port forward for initial setup.
 - Accounts are stored in SQLite and passwords use ASP.NET Core `PasswordHasher<TUser>`.
-- Authentication uses an HttpOnly, SameSite=Strict cookie with request-matched transport security. In Production, local HTTP is accepted only when the actual connection and Host are loopback; every other HTTP request is rejected before static files, CSRF, or authentication run, regardless of whether the listener came from `urls`, `Kestrel:Endpoints`, or `HTTP_PORTS`. A trusted reverse proxy must provide verified HTTPS forwarding. Persistent sessions are created only when the user selects “keep me signed in”.
+- Authentication uses an HttpOnly, SameSite=Strict cookie with request-matched transport security. Production accepts HTTP from both local and remote clients when the listener is reachable. HTTPS is also supported through a Kestrel certificate endpoint or a TLS-terminating reverse proxy. Persistent sessions are created only when the user selects “keep me signed in”.
 - Unsafe `/api` requests require an antiforgery token in `X-CSRF-TOKEN`.
 - Sign-in and first-account creation are rate-limited per IP. Five failed password attempts lock the account for 15 minutes.
 - Data-protection keys persist under `data/data-protection-keys`. Windows protects them with machine-scoped DPAPI, so a cross-machine restore must discard that key directory before startup and will invalidate existing sessions; account passwords and business data are unaffected. Linux relies on data-directory permissions and restores the keys with the backup.
-- Deploy the service behind HTTPS. The bootstrap endpoint rejects non-loopback clients even before the first account exists; complete setup locally before handing the public address to customers.
+- HTTPS is strongly recommended when traffic crosses an untrusted network, but the application does not force either protocol. The bootstrap endpoint still rejects non-loopback clients before the first account exists; complete setup locally before handing the address to customers.
 - When TLS terminates at a reverse proxy, list only that proxy's IP addresses under `Network:TrustedProxies`; forwarded scheme and client IP headers from any other source are ignored.
 - Legacy projects and upload folders are copied to the first real owner during first-account creation. The legacy owner folders remain untouched as a recoverable source copy.
 

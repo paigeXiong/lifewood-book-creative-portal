@@ -9,11 +9,14 @@
            Scope="perMachine"
            InstallerVersion="500">
     <SummaryInformation Description="!(loc.ProductDescription)" Manufacturer="Lifewood" />
-    <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="!(loc.DowngradeError)" />
+    <MajorUpgrade Schedule="afterInstallInitialize" IgnoreLanguage="yes" DowngradeErrorMessage="!(loc.DowngradeError)" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Property Id="PORT" Value="5077" Secure="yes">
       <RegistrySearch Id="PreviousPort" Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Port" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="LISTENADDRESS" Value="127.0.0.1" Secure="yes">
+      <RegistrySearch Id="PreviousListenAddress" Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="ListenAddress" Type="raw" Bitness="always64" />
     </Property>
     <Property Id="EXISTINGINSTALL">
       <RegistrySearch Id="PreviousInstall" Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Installed" Type="raw" Bitness="always64" />
@@ -25,6 +28,7 @@
     <Property Id="UNSAFEDATAPATHMESSAGE" Value="!(loc.UnsafeDataPathMessage)" Hidden="yes" />
     <Property Id="ARPNOMODIFY" Value="1" />
     <Launch Condition="PORT &gt;= 1024 AND PORT &lt;= 65535" Message="!(loc.InvalidPortMessage)" />
+    <Launch Condition="LISTENADDRESS = &quot;127.0.0.1&quot; OR LISTENADDRESS = &quot;0.0.0.0&quot;" Message="!(loc.InvalidListenAddressMessage)" />
     <Launch Condition="REMOVE OR NOT (Installed OR WIX_UPGRADE_DETECTED) OR (EXISTINGINSTALL AND PREVIOUSDATAFOLDER)" Message="!(loc.MissingUpgradeDataPathMessage)" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
@@ -42,6 +46,7 @@
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="PROGRAMMENUDIR" Name="Lifewood Book Creative Portal" />
     </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
 
     <ComponentGroup Id="PayloadFiles" Directory="INSTALLFOLDER">
       <Files Include="$(PayloadDir)\**">
@@ -59,11 +64,14 @@
                       Start="auto"
                       ErrorControl="normal"
                       Account="NT SERVICE\LifewoodBookCreativePortal"
-                      Arguments='--urls http://127.0.0.1:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot;'>
+                      Arguments='--urls http://[LISTENADDRESS]:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot;'>
         <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="restart" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
       </ServiceInstall>
       <ServiceControl Id="PlatformServiceControl" Name="LifewoodBookCreativePortal" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
-      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Port" Type="integer" Value="[PORT]" />
+      <!-- Older releases stored Port as REG_DWORD. Normalize its raw AppSearch value before use,
+           then persist it as REG_SZ so subsequent upgrades no longer receive a leading '#'. -->
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Port" Type="string" Value="[PORT]" />
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="ListenAddress" Type="string" Value="[LISTENADDRESS]" />
     </Component>
 
     <Component Id="PersistentDataDirectory" Directory="DATAFOLDER" Guid="F7EEB036-DA44-4201-9F1D-D4321F46B37D" Bitness="always64" Permanent="yes" NeverOverwrite="yes">
@@ -81,11 +89,17 @@
       <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Shortcuts" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="A33C70D1-367C-42D7-B30C-45A3EE06E5E1" Bitness="always64">
+      <Shortcut Id="DesktopCustomerPortalShortcut" Name="!(loc.CustomerShortcut)" Target="[SystemFolder]rundll32.exe" Arguments="url.dll,FileProtocolHandler http://localhost:[PORT]/!(loc.DefaultLocale)/tasks" WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
     <Feature Id="MainFeature" Title="!(loc.ProductName)" Level="1">
       <ComponentGroupRef Id="PayloadFiles" />
       <ComponentRef Id="PlatformService" />
       <ComponentRef Id="PersistentDataDirectory" />
       <ComponentRef Id="StartMenuShortcuts" />
+      <ComponentRef Id="DesktopShortcut" />
     </Feature>
 
     <Binary Id="InstallerActions" SourceFile="$(InstallerActionsDir)\Lifewood.InstallerActions.dll" />
@@ -96,14 +110,23 @@
                   Impersonate="no"
                   Return="check"
                   HideTarget="yes" />
+    <CustomAction Id="NormalizePort"
+                  BinaryRef="InstallerActions"
+                  DllEntry="NormalizePort"
+                  Execute="immediate"
+                  Return="check" />
     <SetProperty Id="ValidateDataDirectory"
                  Value="[DATAFOLDER]&#x9;[UNSAFEDATAPATHMESSAGE]&#x9;[INSTALLFOLDER]&#x9;[WindowsFolder]&#x9;[ProgramFiles64Folder]&#x9;[ProgramFilesFolder]&#x9;[%USERPROFILE]"
                  Before="ValidateDataDirectory"
                  Sequence="execute"
                  Condition="NOT REMOVE~=&quot;ALL&quot;" />
     <InstallExecuteSequence>
+      <Custom Action="NormalizePort" After="AppSearch" Condition="PORT" />
       <Custom Action="ValidateDataDirectory" Before="CreateFolders" Condition="NOT REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
+    <InstallUISequence>
+      <Custom Action="NormalizePort" After="AppSearch" Condition="PORT" />
+    </InstallUISequence>
 
     <!-- A command-line DATAFOLDER must never redirect an upgrade away from its existing production data. -->
     <SetProperty Id="DATAFOLDER" Value="[PREVIOUSDATAFOLDER]" After="AppSearch" Condition="EXISTINGINSTALL AND PREVIOUSDATAFOLDER" />

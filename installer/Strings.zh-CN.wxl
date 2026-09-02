@@ -11,7 +11,11 @@
   <String Id="DefaultLocale" Value="zh-CN" />
   <String Id="ConfigWindowTitle" Value="服务器配置" />
   <String Id="ConfigTitle" Value="配置本地平台服务" />
-  <String Id="ConfigDescription" Value="选择本机监听端口和持久化生产数据目录。" />
+  <String Id="ConfigDescription" Value="选择访问范围、监听端口和持久化生产数据目录。" />
+  <String Id="ListenAddressLabel" Value="访问范围" />
+  <String Id="ListenLocalOnly" Value="仅本机访问（127.0.0.1）" />
+  <String Id="ListenAllInterfaces" Value="允许本机及其他设备访问（0.0.0.0）" />
+  <String Id="InvalidListenAddressMessage" Value="监听地址只能使用 127.0.0.1 或 0.0.0.0。" />
   <String Id="PortLabel" Value="本机端口" />
   <String Id="PortHint" Value="请输入 1024 到 65535 之间未被占用的端口。" />
   <String Id="DataLabel" Value="生产数据目录" />

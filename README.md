@@ -95,7 +95,7 @@ npm run start:local
 ssh -L 5077:127.0.0.1:5077 user@server
 ```
 
-然后在本机打开 `http://127.0.0.1:5077`。正式开放前必须配置 HTTPS 和可信反向代理，具体步骤见[正式部署与数据备份](docs/deployment-and-backup.md)。
+然后在本机打开 `http://127.0.0.1:5077`。初始化后，服务端可以直接提供远程 HTTP，也可以通过 Kestrel 证书端点或反向代理提供 HTTPS；公网使用仍建议启用 HTTPS。具体步骤见[正式部署与数据备份](docs/deployment-and-backup.md)。
 
 ## 验证代码
 

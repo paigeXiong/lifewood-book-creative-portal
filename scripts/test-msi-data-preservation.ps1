@@ -52,7 +52,7 @@ foreach ($candidate in $PackagePath) {
     Assert-True (($attributes -band 128) -eq 128) "Production data component can be overwritten in $resolved"
 
     $service = @(Read-MsiRows $database "SELECT Arguments FROM ServiceInstall WHERE Name='LifewoodBookCreativePortal'")
-    Assert-True ($service.Count -eq 1 -and $service[0][0].Contains('--Lifewood:DataDirectory "[DATAFOLDER]."')) "Service does not use a quote-safe persistent data property in $resolved"
+    Assert-True ($service.Count -eq 1 -and $service[0][0].Contains('--urls http://[LISTENADDRESS]:[PORT]') -and $service[0][0].Contains('--Lifewood:DataDirectory "[DATAFOLDER]."')) "Service does not use validated network settings and a quote-safe persistent data property in $resolved"
     Assert-True (-not $service[0][0].Contains('AllowInsecureHttp')) "Service still depends on the obsolete insecure-HTTP compatibility flag in $resolved"
 
     $serviceAccount = @(Read-MsiRows $database "SELECT StartName FROM ServiceInstall WHERE Name='LifewoodBookCreativePortal'")
@@ -85,19 +85,54 @@ foreach ($candidate in $PackagePath) {
     Assert-True ($validatorData.Count -eq 1 -and $validatorData[0][0].Contains('[DATAFOLDER]') -and $validatorData[0][0].Contains('[INSTALLFOLDER]') -and $validatorData[0][0].Contains('[WindowsFolder]')) "Data-directory validator input is incomplete in $resolved"
 
     $secureProperties = @(Read-MsiRows $database "SELECT Value FROM Property WHERE Property='SecureCustomProperties'")
-    Assert-True ($secureProperties.Count -eq 1 -and $secureProperties[0][0].Contains('DATAFOLDER') -and $secureProperties[0][0].Contains('PREVIOUSDATAFOLDER')) "Persistent path properties are not secured for elevated install in $resolved"
+    Assert-True ($secureProperties.Count -eq 1 -and $secureProperties[0][0].Contains('DATAFOLDER') -and $secureProperties[0][0].Contains('PREVIOUSDATAFOLDER') -and $secureProperties[0][0].Contains('LISTENADDRESS')) "Network and persistent path properties are not secured for elevated install in $resolved"
 
     $launchConditions = @(Read-MsiRows $database "SELECT Condition FROM LaunchCondition")
     $conditionText = ($launchConditions | ForEach-Object { $_[0] }) -join "`n"
     Assert-True ($conditionText.Contains('PORT >= 1024 AND PORT <= 65535')) "Execute-sequence port validation is missing in $resolved"
+    Assert-True ($conditionText.Contains('LISTENADDRESS = "127.0.0.1" OR LISTENADDRESS = "0.0.0.0"')) "Execute-sequence listen-address validation is missing in $resolved"
     Assert-True ($conditionText.Contains('REMOVE OR NOT (Installed OR WIX_UPGRADE_DETECTED) OR (EXISTINGINSTALL AND PREVIOUSDATAFOLDER)')) "Damaged overlay or upgrade metadata is not blocked in $resolved"
+
+    $upgradeRows = @(Read-MsiRows $database "SELECT Language, Attributes FROM Upgrade")
+    Assert-True ($upgradeRows.Count -ge 2 -and @($upgradeRows | Where-Object { -not [string]::IsNullOrEmpty($_[0]) }).Count -eq 0) "Major upgrades are not configured to detect the other localized MSI in $resolved"
 
     $removals = @(Read-MsiRows $database "SELECT Component_ FROM RemoveFile")
     Assert-True (-not ($removals | ForEach-Object { $_[0] } | Where-Object { $_ -eq 'PersistentDataDirectory' })) "Production data component contains removal instructions in $resolved"
 
+    $desktopShortcut = @(Read-MsiRows $database "SELECT Directory_, Target, Arguments, Component_ FROM Shortcut WHERE Shortcut='DesktopCustomerPortalShortcut'")
+    Assert-True ($desktopShortcut.Count -eq 1 -and $desktopShortcut[0][0] -eq 'DesktopFolder' -and $desktopShortcut[0][1] -eq '[SystemFolder]rundll32.exe' -and $desktopShortcut[0][2].Contains('url.dll,FileProtocolHandler http://localhost:[PORT]/') -and $desktopShortcut[0][3] -eq 'DesktopShortcut') "Customer desktop shortcut is missing or invalid in $resolved"
+
     $files = @(Read-MsiRows $database "SELECT FileName FROM File")
     $forbidden = @($files | ForEach-Object { $_[0] } | Where-Object { $_ -match '(?i)(platform\.db|audit-pending|platform\.lock)' })
     if ($forbidden.Count -gt 0) { throw "Production data file is embedded in ${resolved}: $($forbidden[0])" }
+    $debugFiles = @($files | ForEach-Object { $_[0] } | Where-Object { $_ -match '(?i)\.(pdb|map)$' })
+    Assert-True ($debugFiles.Count -eq 0) "Debug symbols are embedded in ${resolved}: $($debugFiles -join ', ')"
+
+    $listenRegistry = @(Read-MsiRows $database "SELECT Value FROM Registry WHERE Name='ListenAddress' AND Component_='PlatformService'")
+    Assert-True ($listenRegistry.Count -eq 1 -and $listenRegistry[0][0] -eq '[LISTENADDRESS]') "The selected listening address is not persisted in $resolved"
+
+    $portRegistry = @(Read-MsiRows $database "SELECT Value FROM Registry WHERE Name='Port' AND Component_='PlatformService'")
+    Assert-True ($portRegistry.Count -eq 1 -and $portRegistry[0][0] -eq '[PORT]') "The selected port is not persisted in $resolved"
+    $portNormalizer = @(Read-MsiRows $database "SELECT Type, Source, Target FROM CustomAction WHERE Action='NormalizePort'")
+    Assert-True ($portNormalizer.Count -eq 1 -and $portNormalizer[0][1] -eq 'InstallerActions' -and $portNormalizer[0][2] -eq 'NormalizePort') "Legacy DWORD port normalization is missing in $resolved"
+    $portExecuteSequence = @(Read-MsiRows $database "SELECT Condition, Sequence FROM InstallExecuteSequence WHERE Action='NormalizePort'")
+    $portUiSequence = @(Read-MsiRows $database "SELECT Condition, Sequence FROM InstallUISequence WHERE Action='NormalizePort'")
+    $appSearchExecuteSequence = @(Read-MsiRows $database "SELECT Sequence FROM InstallExecuteSequence WHERE Action='AppSearch'")
+    $appSearchUiSequence = @(Read-MsiRows $database "SELECT Sequence FROM InstallUISequence WHERE Action='AppSearch'")
+    $launchConditionsExecuteSequence = @(Read-MsiRows $database "SELECT Sequence FROM InstallExecuteSequence WHERE Action='LaunchConditions'")
+    $launchConditionsUiSequence = @(Read-MsiRows $database "SELECT Sequence FROM InstallUISequence WHERE Action='LaunchConditions'")
+    Assert-True ($portExecuteSequence.Count -eq 1 -and $portUiSequence.Count -eq 1 -and
+        [int]$portExecuteSequence[0][1] -gt [int]$appSearchExecuteSequence[0][0] -and
+        [int]$portUiSequence[0][1] -gt [int]$appSearchUiSequence[0][0] -and
+        [int]$portExecuteSequence[0][1] -lt [int]$launchConditionsExecuteSequence[0][0] -and
+        [int]$portUiSequence[0][1] -lt [int]$launchConditionsUiSequence[0][0]) "Legacy port normalization is not sequenced between AppSearch and LaunchConditions in $resolved"
+
+    $serverDialog = @(Read-MsiRows $database "SELECT Height FROM Dialog WHERE Dialog='ServerConfigDlg'")
+    $serverControls = @(Read-MsiRows $database "SELECT Y, Height FROM Control WHERE Dialog_='ServerConfigDlg'")
+    Assert-True ($serverDialog.Count -eq 1 -and $serverControls.Count -gt 0 -and @($serverControls | Where-Object { [int]$_[0] + [int]$_[1] -gt [int]$serverDialog[0][0] }).Count -eq 0) "The server configuration dialog contains clipped controls in $resolved"
+    $listenOptions = @(Read-MsiRows $database "SELECT Value FROM RadioButton WHERE Property='LISTENADDRESS'")
+    $listenValues = @($listenOptions | ForEach-Object { $_[0] })
+    Assert-True ($listenValues.Count -eq 2 -and $listenValues -contains '127.0.0.1' -and $listenValues -contains '0.0.0.0') "The server configuration dialog does not expose both safe listening modes in $resolved"
 
     Write-Output "MSI data-preservation checks passed: $resolved"
 }

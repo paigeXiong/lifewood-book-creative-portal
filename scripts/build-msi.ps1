@@ -75,6 +75,8 @@ $serverTarget = Join-Path $payloadRoot "server"
 & dotnet publish (Join-Path $repositoryRoot "services\platform-api\Lifewood.PlatformApi.csproj") -c Release -r win-x64 --self-contained true -p:PublishAot=true -o $serverTarget
 if ($LASTEXITCODE -ne 0) { throw "Native AOT server publish failed." }
 if (-not (Test-Path -LiteralPath (Join-Path $serverTarget "Lifewood.BookPortal.Server.exe"))) { throw "Native AOT server executable is missing." }
+Get-ChildItem -LiteralPath $serverTarget -Recurse -File | Where-Object { $_.Extension -in @(".pdb", ".map") } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
 $serverWebTarget = Join-Path $serverTarget "web"
 New-Item -ItemType Directory -Path $serverWebTarget | Out-Null
 Copy-Item -LiteralPath $customerDist -Destination (Join-Path $serverWebTarget "customer") -Recurse
@@ -82,7 +84,8 @@ Copy-Item -LiteralPath $adminDist -Destination (Join-Path $serverWebTarget "admi
 
 $forbiddenPayload = @(Get-ChildItem -LiteralPath $payloadRoot -Recurse -Force | Where-Object {
     $_.FullName -match '[\\/](data|uploads|deliveries|keys)([\\/]|$)' -or
-    $_.Name -in @('platform.db', 'audit-pending.jsonl', 'platform.lock')
+    $_.Name -in @('platform.db', 'audit-pending.jsonl', 'platform.lock') -or
+    $_.Extension -in @('.pdb', '.map')
 })
 if ($forbiddenPayload.Count -gt 0) {
     throw "Production data must not be included in MSI payload: $($forbiddenPayload[0].FullName)"
@@ -107,6 +110,8 @@ if ($LASTEXITCODE -ne 0) { throw "MSI build failed." }
 
 $packages = @(Get-ChildItem -LiteralPath $outputRoot -Filter "*.msi" -Recurse -File)
 if ($packages.Count -lt 2) { throw "Expected localized en-US and zh-CN MSI packages." }
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-msi-session.ps1") -LibraryPath (Join-Path $installerActionsRoot "Lifewood.InstallerActions.dll") -PackagePath $packages[0].FullName
+if ($LASTEXITCODE -ne 0) { throw "Installer MSI session-property test failed." }
 & (Join-Path $PSScriptRoot "test-msi-data-preservation.ps1") -PackagePath @($packages.FullName)
 if ($LASTEXITCODE -ne 0) { throw "MSI data-preservation verification failed." }
 foreach ($packagePath in $packages) {

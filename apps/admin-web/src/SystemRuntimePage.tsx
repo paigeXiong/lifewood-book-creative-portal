@@ -9,22 +9,24 @@ import { showAdminToast } from "./Toast";
 
 type RuntimeAction = "restart" | "shutdown";
 
-function endpoint(address: string, port: number) {
+function endpoint(scheme: "http" | "https", address: string, port: number) {
   const displayAddress = address === "0.0.0.0" || address === "::" ? window.location.hostname : address;
   const host = displayAddress.includes(":") ? `[${displayAddress}]` : displayAddress;
-  return `http://${host}:${port}`;
+  return `${scheme}://${host}:${port}`;
 }
 
 export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: ["admin-runtime-settings"], queryFn: adminService.getRuntimeSettings });
+  const [scheme, setScheme] = useState<"http" | "https">("http");
   const [listenAddress, setListenAddress] = useState("");
   const [port, setPort] = useState("");
   const [confirmAction, setConfirmAction] = useState<RuntimeAction>();
 
   useEffect(() => {
     if (!settings.data) return;
+    setScheme(settings.data.scheme);
     setListenAddress(settings.data.listenAddress);
     setPort(String(settings.data.port));
   }, [settings.data]);
@@ -32,6 +34,7 @@ export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
   const save = useMutation({
     mutationFn: adminService.updateRuntimeSettings,
     onSuccess: async (updated) => {
+      setScheme(updated.scheme);
       setListenAddress(updated.listenAddress);
       setPort(String(updated.port));
       showAdminToast(t("admin.feedback.runtimeSettingsSaved"));
@@ -48,10 +51,10 @@ export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    save.mutate({ listenAddress: listenAddress.trim(), port: Number(port) });
+    save.mutate({ scheme, listenAddress: listenAddress.trim(), port: Number(port) });
   };
   const current = settings.data;
-  const changed = current ? listenAddress.trim() !== current.listenAddress || Number(port) !== current.port : false;
+  const changed = current ? scheme !== current.scheme || listenAddress.trim() !== current.listenAddress || Number(port) !== current.port : false;
   const busy = save.isPending || action.isPending;
 
   return <main className="content config-content">
@@ -66,6 +69,14 @@ export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
         </div>
         <form className="runtime-form" onSubmit={submit}>
           <label>
+            <span>{t("admin.runtime.scheme")}</span>
+            <select name="scheme" value={scheme} onChange={(event) => setScheme(event.target.value as "http" | "https")}>
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+            </select>
+            <small>{t("admin.runtime.schemeHint")}</small>
+          </label>
+          <label>
             <span>{t("admin.runtime.listenAddress")}</span>
             <input name="listenAddress" list="listen-addresses" value={listenAddress} onChange={(event) => setListenAddress(event.target.value)} maxLength={64} required autoComplete="off" spellCheck={false} />
             <datalist id="listen-addresses"><option value="127.0.0.1" /><option value="0.0.0.0" /><option value="localhost" /><option value="::1" /><option value="::" /></datalist>
@@ -78,8 +89,8 @@ export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
           </label>
           <div className="runtime-current">
             <span>{t("admin.runtime.activeEndpoint")}</span>
-            <strong translate="no">{endpoint(current.activeListenAddress, current.activePort)}</strong>
-            <small>{t("admin.runtime.pendingEndpoint")}: <span translate="no">{endpoint(current.listenAddress, current.port)}</span></small>
+            <strong translate="no">{endpoint(current.activeScheme, current.activeListenAddress, current.activePort)}</strong>
+            <small>{t("admin.runtime.pendingEndpoint")}: <span translate="no">{endpoint(current.scheme, current.listenAddress, current.port)}</span></small>
           </div>
           {save.isError && <div className="message error runtime-wide" role="alert">{localizedApiError(save.error, t)}</div>}
           <div className="runtime-actions runtime-wide">

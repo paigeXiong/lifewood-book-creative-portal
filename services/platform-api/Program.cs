@@ -219,18 +219,6 @@ app.Use(async (context, next) =>
 if (trustedProxyAddresses.Count > 0) app.UseForwardedHeaders();
 app.Use(async (context, next) =>
 {
-    if (!app.Environment.IsDevelopment() && !context.Request.IsHttps && !IsLoopbackRequest(context))
-    {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        await context.Response.WriteAsJsonAsync(
-            new ApiErrorDto("security.https_required", "errors.http.httpsRequired", "HTTPS is required for non-loopback access.", null, false, context.TraceIdentifier),
-            AppJsonContext.Default.ApiErrorDto);
-        return;
-    }
-    await next();
-});
-app.Use(async (context, next) =>
-{
     context.Response.Headers.XContentTypeOptions = "nosniff";
     context.Response.Headers["Referrer-Policy"] = "no-referrer";
     context.Response.Headers["X-Frame-Options"] = "DENY";
@@ -515,7 +503,7 @@ api.MapPut("/admin/runtime-settings", (UpdateRuntimeSettingsRequest? request, Ht
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
     if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
-    if (!settings.Save(request.ListenAddress, request.Port, out var field))
+    if (!settings.Save(request.Scheme, request.ListenAddress, request.Port, out var field))
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The listening settings are invalid.", false,
             [new FieldErrorDto(field ?? "request", "invalid", "errors.validation.invalid")]);
     return Results.Ok(settings.Get(lifecycle.CanRestart, true));

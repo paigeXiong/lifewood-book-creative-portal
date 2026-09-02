@@ -90,8 +90,10 @@ export interface AdminFormOption {
 }
 
 export interface RuntimeSettings {
+  scheme: "http" | "https";
   listenAddress: string;
   port: number;
+  activeScheme: "http" | "https";
   activeListenAddress: string;
   activePort: number;
   restartRequired: boolean;

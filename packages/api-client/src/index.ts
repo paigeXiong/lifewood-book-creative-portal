@@ -385,7 +385,7 @@ export interface AuditEventListQuery {
 export const adminService = {
   getOverview: () => request<AdminOverview>("/admin/overview"),
   getRuntimeSettings: () => request<RuntimeSettings>("/admin/runtime-settings"),
-  updateRuntimeSettings: (settings: { listenAddress: string; port: number }) =>
+  updateRuntimeSettings: (settings: { scheme: "http" | "https"; listenAddress: string; port: number }) =>
     request<RuntimeSettings>("/admin/runtime-settings", { method: "PUT", body: JSON.stringify(settings) }),
   restartPlatform: () =>
     request<RuntimeAction>("/admin/runtime-actions/restart", { method: "POST", body: JSON.stringify({}) }),

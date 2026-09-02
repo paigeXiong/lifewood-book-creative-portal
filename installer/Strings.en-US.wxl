@@ -11,7 +11,11 @@
   <String Id="DefaultLocale" Value="en-US" />
   <String Id="ConfigWindowTitle" Value="Server configuration" />
   <String Id="ConfigTitle" Value="Configure the local platform service" />
-  <String Id="ConfigDescription" Value="Choose the local listening port and the persistent production-data directory." />
+  <String Id="ConfigDescription" Value="Choose the access scope, listening port, and persistent production-data directory." />
+  <String Id="ListenAddressLabel" Value="Access scope" />
+  <String Id="ListenLocalOnly" Value="This computer only (127.0.0.1)" />
+  <String Id="ListenAllInterfaces" Value="This computer and other devices (0.0.0.0)" />
+  <String Id="InvalidListenAddressMessage" Value="The listening address must be 127.0.0.1 or 0.0.0.0." />
   <String Id="PortLabel" Value="Local port" />
   <String Id="PortHint" Value="Use an available port from 1024 to 65535." />
   <String Id="DataLabel" Value="Production-data directory" />
