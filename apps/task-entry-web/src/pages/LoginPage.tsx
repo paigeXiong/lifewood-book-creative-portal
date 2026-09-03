@@ -5,6 +5,8 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { authService, localizedApiError } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { clearUserProjectQueries } from "../projectQueryCache";
+import { LoginStory } from "../components/LoginStory";
+import { LoginBookBackdrop } from "../components/LoginBookBackdrop";
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -54,34 +56,45 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
-      <section className="login-panel" aria-labelledby="login-title">
-        <div className="login-topline">
-          <span translate="no">Lifewood AIGC Story Studio</span>
-          <Link to={`/${otherLocale}/login`} lang={otherLocale}>{locale === "zh-CN" ? "English" : "中文"}</Link>
-        </div>
+      <header className="login-header">
+        <div className="login-brand"><img src="/lifewood-logo.png" alt={t("app.providerName")} width="2285" height="492" /><strong translate="no">{t("app.clientName")}</strong></div>
+        <Link className="login-language" to={`/${otherLocale}/login`} lang={otherLocale}>{locale === "zh-CN" ? "English" : "中文"}</Link>
+      </header>
+      <div className="login-columns">
+        <LoginStory />
+        <div className="login-form-side">
+          <LoginBookBackdrop />
+          <section className="login-panel" aria-labelledby="login-title">
         {status.isPending ? <div className="screen-status compact" role="status" aria-busy="true">{t("common.loading")}</div> : null}
         {status.isError ? <div className="inline-error" role="alert">{localizedApiError(status.error, t)} <button className="button button-secondary" type="button" onClick={() => void status.refetch()}>{t("common.retry")}</button></div> : null}
         {status.data ? (
           <>
             <div className="login-heading">
-              <span className="folio-label">{requiresBootstrap ? t("auth.firstSetup") : t("auth.secureAccess")}</span>
               <h1 id="login-title">{t(requiresBootstrap ? "auth.bootstrapTitle" : "auth.title")}</h1>
-              <p>{t(requiresBootstrap ? "auth.bootstrapDescription" : "auth.description")}</p>
+              {requiresBootstrap && <p>{t("auth.bootstrapDescription")}</p>}
             </div>
             <form className="login-form" onSubmit={submit} aria-busy={authenticate.isPending}>
               {requiresBootstrap ? <label className="login-field" htmlFor="display-name"><span>{t("auth.displayName")}</span><input id="display-name" name="displayName" type="text" autoComplete="name" minLength={2} maxLength={100} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label> : null}
-              {requiresBootstrap ? <label className="login-field" htmlFor="organization-name"><span>{t("auth.organizationName")}</span><input id="organization-name" name="organizationName" type="text" autoComplete="organization" minLength={2} maxLength={120} value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} /><small>{t("auth.organizationOptional")}</small></label> : null}
-              {requiresBootstrap ? <label className="login-field" htmlFor="bootstrap-phone"><span>{t("auth.phone")}</span><input id="bootstrap-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={phone} onChange={(event) => setPhone(event.target.value)} /><small>{t("auth.phoneOptional")}</small></label> : null}
+              {requiresBootstrap ? <label className="login-field" htmlFor="organization-name"><span>{t("auth.organizationName")}</span><input id="organization-name" name="organizationName" type="text" autoComplete="organization" minLength={2} maxLength={120} value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} /></label> : null}
+              {requiresBootstrap ? <label className="login-field" htmlFor="bootstrap-phone"><span>{t("auth.phone")}</span><input id="bootstrap-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={phone} onChange={(event) => setPhone(event.target.value)} /></label> : null}
               <label className="login-field" htmlFor="login-email"><span>{t("auth.email")}</span><input id="login-email" name="email" type="email" inputMode="email" autoComplete="username" spellCheck={false} maxLength={254} required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
               <label className="login-field" htmlFor="login-password"><span>{t("auth.password")}</span><span className="password-control"><input id="login-password" name="password" type={passwordVisible ? "text" : "password"} autoComplete={requiresBootstrap ? "new-password" : "current-password"} minLength={requiresBootstrap ? 8 : undefined} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" onClick={() => setPasswordVisible((visible) => !visible)}>{t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")}</button></span>{requiresBootstrap ? <small>{t("auth.passwordHint")}</small> : null}</label>
               {requiresBootstrap ? <label className="login-field" htmlFor="confirm-password"><span>{t("auth.confirmPassword")}</span><input id="confirm-password" name="confirmPassword" type={passwordVisible ? "text" : "password"} autoComplete="new-password" minLength={8} maxLength={128} required aria-invalid={clientError ? true : undefined} aria-describedby={clientError ? "password-error" : undefined} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />{clientError ? <small className="field-error" id="password-error" role="alert">{clientError}</small> : null}</label> : <label className="remember-control"><input name="rememberMe" type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>{t("auth.rememberMe")}</span></label>}
               {authenticate.isError ? <div className="inline-error" role="alert">{localizedApiError(authenticate.error, t)}</div> : null}
               <button className="button button-primary login-submit" type="submit" disabled={authenticate.isPending}>{authenticate.isPending ? t(requiresBootstrap ? "auth.creatingAccount" : "auth.signingIn") : t(requiresBootstrap ? "auth.createAccount" : "auth.signIn")}</button>
             </form>
-            <p className="login-security-note">{t("auth.securityNote")}</p>
           </>
         ) : null}
       </section>
+        </div>
+      </div>
+      <footer className="login-footer" role="contentinfo">
+        <span translate="no">© {new Date().getFullYear()} {t("app.name")}</span>
+        <nav aria-label={t("auth.footerLinks")}>
+          <a href="https://lifewood.com/" target="_blank" rel="noopener noreferrer">{t("auth.officialWebsite")}<span aria-hidden="true">↗</span></a>
+          <a href="https://lifewood.com/contact" target="_blank" rel="noopener noreferrer">{t("auth.contactUs")}<span aria-hidden="true">↗</span></a>
+        </nav>
+      </footer>
     </main>
   );
 }
