@@ -47,6 +47,7 @@ import type {
   SupportedLocale,
   WorkflowStatus,
 } from "@lifewood/domain";
+import { getNarrationEnabled } from "@lifewood/domain";
 import { FinalDeliveryPanel } from "./FinalDeliveryPanel";
 import { ModalFrame } from "./ModalFrame";
 import {
@@ -347,7 +348,7 @@ function AdminShell({
         <div className="brand">
           <span>LW</span>
           <div>
-            <strong>Lifewood</strong>
+            <strong translate="no">{t("app.name")}</strong>
             <small>{t("admin.productName")}</small>
           </div>
         </div>
@@ -1051,7 +1052,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
       genders: options?.genders,
       visualStyles: options?.visualStyles,
       moodTags: options?.moodTags,
-      imageStyleTags: options?.imageStyleTags,
+      imageStyleTags: [...(options?.imageStyleTags ?? []), ...(options?.legacyImageStyleTags ?? [])],
       paceTags: options?.paceTags,
       narrationTones: options?.narrationTones,
       speechRates: options?.speechRates,
@@ -1073,6 +1074,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
   const book = task.book;
   const creative = task.creative;
   const voice = task.voiceAndReferences.voiceover;
+  const narrationEnabled = getNarrationEnabled(voice);
   const direction = task.voiceAndReferences.creativeDirection;
   const selectedVoices = voice.selectedVoiceIds.map((id) => voiceNames.get(id) ?? id);
   const characterPanelId = useId();
@@ -1202,6 +1204,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
                       number: selectedCharacterIndex + 1,
                     })}
                 </h4>
+                {selectedCharacter.presetId && <figure><img src={new URL(`/character-presets/${selectedCharacter.presetId}.png`, new URL(customerPortalUrl(locale), window.location.origin)).href} alt={t("bookIntake.presetImage", { name: selectedCharacter.name })} width="120" height="120" loading="lazy" /><figcaption>{t("bookIntake.presetHint")}</figcaption></figure>}
                 <FactGrid facts={[
                   { label: t("creative.fields.roleType"), value: label("roleTypes", selectedCharacter.roleTypeId) },
                   { label: t("creative.fields.storyRole"), value: selectedCharacter.storyRole },
@@ -1234,6 +1237,8 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
       <section className="detail-section">
         <h3>{t("admin.projects.voiceInfo")}</h3>
         <FactGrid facts={[
+          { label: t("voice.narration.question"), value: t(narrationEnabled === true ? "voice.narration.required" : narrationEnabled === false ? "voice.narration.notRequired" : "voice.narration.unselected"), wide: true },
+          ...(narrationEnabled === true ? [
           { label: t("voice.fields.contentLanguage"), value: label("contentLanguages", voice.contentLanguageId) },
           { label: t("voice.fields.narrationTone"), value: label("narrationTones", voice.narrationToneId) },
           { label: t("voice.fields.speechRate"), value: label("speechRates", voice.speechRateId) },
@@ -1245,6 +1250,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
           { label: t("admin.projects.selectedVoices"), value: selectedVoices.length ? listFormat.format(selectedVoices) : undefined, wide: true },
           { label: t("voice.fields.customVoice"), value: voice.customVoiceDescription, wide: true },
           { label: t("voice.fields.pronunciationNotes"), value: voice.pronunciationNotes, wide: true },
+          ] : []),
         ]} />
       </section>
       <section className="detail-section">

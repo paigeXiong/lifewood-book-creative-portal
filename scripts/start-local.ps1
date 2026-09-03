@@ -29,6 +29,9 @@ $adminLog = Join-Path $logDirectory "admin-$runStamp.log"
 $adminErrorLog = Join-Path $logDirectory "admin-$runStamp.error.log"
 $startedProcesses = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
 $previousEnvironment = $env:ASPNETCORE_ENVIRONMENT
+$previousApiProxyTarget = $env:VITE_API_PROXY_TARGET
+$previousAdminAppUrl = $env:VITE_ADMIN_APP_URL
+$previousCustomerAppUrl = $env:VITE_CUSTOMER_APP_URL
 
 function Assert-Command([string]$Name, [string]$InstallHint) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -141,6 +144,9 @@ try {
     }
 
     $env:ASPNETCORE_ENVIRONMENT = "Development"
+    $env:VITE_API_PROXY_TARGET = $apiUrl
+    $env:VITE_ADMIN_APP_URL = $adminUrl
+    $env:VITE_CUSTOMER_APP_URL = $webUrl
     $apiProcess = Start-Process -FilePath $apiExecutable `
         -ArgumentList "--urls", $apiUrl, "--Lifewood:RequireWebAssets", "false" `
         -WorkingDirectory (Split-Path -Parent $apiProject) `
@@ -194,4 +200,7 @@ catch {
 }
 finally {
     $env:ASPNETCORE_ENVIRONMENT = $previousEnvironment
+    $env:VITE_API_PROXY_TARGET = $previousApiProxyTarget
+    $env:VITE_ADMIN_APP_URL = $previousAdminAppUrl
+    $env:VITE_CUSTOMER_APP_URL = $previousCustomerAppUrl
 }

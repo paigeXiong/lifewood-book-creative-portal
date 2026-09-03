@@ -52,17 +52,22 @@ foreach ($candidate in $PackagePath) {
     Assert-True (($attributes -band 128) -eq 128) "Production data component can be overwritten in $resolved"
 
     $service = @(Read-MsiRows $database "SELECT Arguments FROM ServiceInstall WHERE Name='LifewoodBookCreativePortal'")
-    Assert-True ($service.Count -eq 1 -and $service[0][0].Contains('--urls http://[LISTENADDRESS]:[PORT]') -and $service[0][0].Contains('--Lifewood:DataDirectory "[DATAFOLDER]."')) "Service does not use validated network settings and a quote-safe persistent data property in $resolved"
+    Assert-True ($service.Count -eq 1 -and $service[0][0].Contains('--urls http://[LISTENADDRESS]:[PORT]') -and $service[0][0].Contains('--Lifewood:DataDirectory "[DATAFOLDER]."') -and $service[0][0].Contains('--Lifewood:CoordinationDirectory "[COORDINATIONFOLDER]."')) "Service does not use validated network settings, persistent data, and restore coordination properties in $resolved"
     Assert-True (-not $service[0][0].Contains('AllowInsecureHttp')) "Service still depends on the obsolete insecure-HTTP compatibility flag in $resolved"
 
     $serviceAccount = @(Read-MsiRows $database "SELECT StartName FROM ServiceInstall WHERE Name='LifewoodBookCreativePortal'")
     Assert-True ($serviceAccount.Count -eq 1 -and $serviceAccount[0][0] -eq 'NT SERVICE\LifewoodBookCreativePortal') "Service does not run under its dedicated virtual account in $resolved"
 
-    $dataAcl = @(Read-MsiRows $database "SELECT * FROM Wix4SecureObject")
-    Assert-True ($dataAcl.Count -eq 1 -and $dataAcl[0][0] -eq 'DATAFOLDER' -and $dataAcl[0][1] -eq 'CreateFolder' -and $dataAcl[0][3] -eq 'NT SERVICE\LifewoodBookCreativePortal' -and $dataAcl[0][5] -eq '-1073676288') "Persistent data ACL does not grant the dedicated service account generic read, generic write, and delete in $resolved"
+    $secureObjects = @(Read-MsiRows $database "SELECT * FROM Wix4SecureObject")
+    $dataAcl = @($secureObjects | Where-Object { $_[0] -eq 'DATAFOLDER' })
+    Assert-True ($dataAcl.Count -eq 1 -and $dataAcl[0][1] -eq 'CreateFolder' -and $dataAcl[0][3] -eq 'NT SERVICE\LifewoodBookCreativePortal' -and $dataAcl[0][5] -eq '-1073676288') "Persistent data ACL does not grant the dedicated service account generic read, generic write, and delete in $resolved"
+    $coordinationAcl = @($secureObjects | Where-Object { $_[0] -eq 'COORDINATIONFOLDER' })
+    Assert-True ($coordinationAcl.Count -eq 1 -and $coordinationAcl[0][1] -eq 'CreateFolder' -and $coordinationAcl[0][3] -eq 'NT SERVICE\LifewoodBookCreativePortal' -and $coordinationAcl[0][5] -eq '-1073676288') "Restore coordination ACL does not grant the dedicated service account lock-file access in $resolved"
 
     $registry = @(Read-MsiRows $database "SELECT Value FROM Registry WHERE Name='DataDirectory' AND Component_='PersistentDataDirectory'")
     Assert-True ($registry.Count -eq 1 -and $registry[0][0] -eq '[DATAFOLDER]') "Persistent data path is not recorded in $resolved"
+    $coordinationRegistry = @(Read-MsiRows $database "SELECT Value FROM Registry WHERE Name='CoordinationDirectory' AND Component_='RestoreCoordinationDirectory'")
+    Assert-True ($coordinationRegistry.Count -eq 1 -and $coordinationRegistry[0][0] -eq '[COORDINATIONFOLDER]') "Restore coordination path is not recorded in $resolved"
 
     $pathLock = @(Read-MsiRows $database "SELECT Target FROM CustomAction WHERE Action='SetDATAFOLDER'")
     Assert-True ($pathLock.Count -eq 1 -and $pathLock[0][0] -eq '[PREVIOUSDATAFOLDER]') "Upgrade data-path lock is missing in $resolved"
@@ -100,9 +105,10 @@ foreach ($candidate in $PackagePath) {
     Assert-True (-not ($removals | ForEach-Object { $_[0] } | Where-Object { $_ -eq 'PersistentDataDirectory' })) "Production data component contains removal instructions in $resolved"
 
     $desktopShortcut = @(Read-MsiRows $database "SELECT Directory_, Target, Arguments, Component_ FROM Shortcut WHERE Shortcut='DesktopCustomerPortalShortcut'")
-    Assert-True ($desktopShortcut.Count -eq 1 -and $desktopShortcut[0][0] -eq 'DesktopFolder' -and $desktopShortcut[0][1] -eq '[SystemFolder]rundll32.exe' -and $desktopShortcut[0][2].Contains('url.dll,FileProtocolHandler http://localhost:[PORT]/') -and $desktopShortcut[0][3] -eq 'DesktopShortcut') "Customer desktop shortcut is missing or invalid in $resolved"
+    Assert-True ($desktopShortcut.Count -eq 1 -and $desktopShortcut[0][0] -eq 'DesktopFolder' -and $desktopShortcut[0][1] -eq '[SystemFolder]WindowsPowerShell\v1.0\powershell.exe' -and $desktopShortcut[0][2].Contains('open-portal.ps1') -and $desktopShortcut[0][2].Contains('-DataDirectory "[DATAFOLDER]."') -and $desktopShortcut[0][2].Contains('-Area customer') -and $desktopShortcut[0][3] -eq 'DesktopShortcut') "Customer desktop shortcut is missing or does not resolve the active runtime endpoint in $resolved"
 
     $files = @(Read-MsiRows $database "SELECT FileName FROM File")
+    Assert-True (@($files | ForEach-Object { $_[0] } | Where-Object { $_ -match '(?i)open-portal\.ps1' }).Count -eq 1) "Runtime-aware portal launcher is missing in $resolved"
     $forbidden = @($files | ForEach-Object { $_[0] } | Where-Object { $_ -match '(?i)(platform\.db|audit-pending|platform\.lock)' })
     if ($forbidden.Count -gt 0) { throw "Production data file is embedded in ${resolved}: $($forbidden[0])" }
     $debugFiles = @($files | ForEach-Object { $_[0] } | Where-Object { $_ -match '(?i)\.(pdb|map)$' })

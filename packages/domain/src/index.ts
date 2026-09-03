@@ -22,6 +22,8 @@ export interface ConfigOption {
   description?: string;
   tone?: "neutral" | "info" | "warning" | "success" | "danger";
   previewColor?: string;
+  previewImageUrl?: string;
+  previewVideoUrl?: string;
   allowsCustomValue?: boolean;
 }
 
@@ -75,6 +77,8 @@ export interface AdminFileCategory {
 }
 
 export interface AdminFormOption {
+  previewImageUrl?: string;
+  previewVideoUrl?: string;
   groupId: string;
   id: string;
   labelZhCn: string;
@@ -122,6 +126,9 @@ export interface FormOptions {
   visualStyles: ConfigOption[];
   moodTags: ConfigOption[];
   imageStyleTags: ConfigOption[];
+  /** Display-only labels for retired selections; never offer as new choices. */
+  legacyImageStyleTags?: ConfigOption[];
+  bookRecognitionEnabled?: boolean;
   paceTags: ConfigOption[];
   narrationTones: ConfigOption[];
   speechRates: ConfigOption[];
@@ -169,6 +176,7 @@ export interface BookInfo {
 }
 
 export interface CharacterInfo {
+  presetId?: string;
   id: string;
   roleTypeId?: string;
   name: string;
@@ -204,6 +212,7 @@ export interface ReferenceAsset {
 }
 
 export interface VoiceoverInfo {
+  narrationEnabled?: boolean | null;
   contentLanguageId?: string;
   narrationToneId?: string;
   speechRateId?: string;
@@ -215,6 +224,23 @@ export interface VoiceoverInfo {
   selectedVoiceIds: string[];
   preferredVoiceId?: string;
   customVoiceDescription?: string;
+}
+
+// Legacy projects did not store a choice. Only narration-specific settings
+// imply opt-in; a prefilled book language alone does not.
+export function getNarrationEnabled(voice: VoiceoverInfo): boolean | undefined {
+  if (typeof voice.narrationEnabled === "boolean") return voice.narrationEnabled;
+  return [voice.narrationToneId, voice.speechRateId, voice.pronunciationNotes,
+    voice.voiceGenderId, voice.voiceAgeId, voice.accentId, voice.emotionStyleId,
+    voice.preferredVoiceId, voice.customVoiceDescription].some((value) => value?.trim())
+    || voice.selectedVoiceIds.length > 0 ? true : undefined;
+}
+
+export function normalizeNarration(voice: VoiceoverInfo): VoiceoverInfo {
+  const narrationEnabled = getNarrationEnabled(voice);
+  return narrationEnabled === false
+    ? { narrationEnabled: false, selectedVoiceIds: [] }
+    : { ...voice, narrationEnabled };
 }
 
 export interface CreativeDirectionInfo {
@@ -395,3 +421,5 @@ export interface AppErrorShape {
   requestId?: string;
   currentVersion?: number;
 }
+
+export interface BookRecognition { title: string; authorName: string; subtitle: string; genreId: string; sellingPoint: string; synopsis: string; }

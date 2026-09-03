@@ -15,14 +15,11 @@ internal static class SubmitValidator
         Required(errors, "project.clientName", draft.Project.ClientName);
         Required(errors, "project.contactName", draft.Project.ContactName);
         Required(errors, "project.email", draft.Project.Email);
-        Required(errors, "project.projectName", draft.Project.ProjectName);
         Required(errors, "project.videoGoalId", draft.Project.VideoGoalId);
         if (draft.Project.AudienceIds.Length == 0) errors.Add(Error("project.audienceIds"));
         Required(errors, "book.title", draft.Book.Title);
         Required(errors, "book.authorName", draft.Book.AuthorName);
         Required(errors, "book.genreId", draft.Book.GenreId);
-        Required(errors, "book.sellingPoint", draft.Book.SellingPoint);
-        Required(errors, "book.synopsis", draft.Book.Synopsis);
         Required(errors, "book.contentLanguageId", draft.Book.ContentLanguageId);
         Required(errors, "book.videoDurationId", draft.Book.VideoDurationId);
         foreach (var category in fileCategories.ForLocale(FileCategoryScopes.Source, "en-US").Where(category => category.Required))

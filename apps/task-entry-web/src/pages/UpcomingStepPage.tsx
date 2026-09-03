@@ -9,13 +9,15 @@ import {
   projectService,
 } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+import { getNarrationEnabled } from "@lifewood/domain";
 import { StepProgress } from "../components/StepProgress";
+import { getHighestReachableStep } from "../workflow-progress";
 import { ReferenceLinks } from "../components/ReferenceLinks";
 import { ScreenError } from "../components/ScreenError";
 import { ProjectCoverImage } from "../components/ProjectCoverImage";
-import { isCreativeComplete } from "./creativeFormSchema";
-import { isVoiceStepComplete } from "./voiceFormSchema";
-import { isProjectStepComplete } from "./projectFormSchema";
+import { isCharactersComplete, isStyleComplete } from "./creativeFormSchema";
+import { isReferencesStepComplete, isVoicePreferencesComplete } from "./voiceFormSchema";
+import { isProjectStepComplete, isProjectBasicsComplete } from "./projectFormSchema";
 
 export function UpcomingStepPage() {
   const { t } = useTranslation();
@@ -36,9 +38,11 @@ export function UpcomingStepPage() {
     queryKey: ["form-options", validLocale],
     queryFn: () => optionService.getFormOptions(validLocale),
   });
+  const needsVoices = project.data ? getNarrationEnabled(project.data.voiceAndReferences.voiceover) === true : false;
   const voices = useQuery({
     queryKey: ["voices", validLocale],
     queryFn: () => optionService.getVoices(validLocale),
+    enabled: needsVoices,
   });
   const submit = useMutation({
     mutationFn: async () => {
@@ -72,7 +76,7 @@ export function UpcomingStepPage() {
     },
   });
   if (!isSupportedLocale(locale) || !taskId) return null;
-  if (project.isPending || options.isPending || voices.isPending)
+  if (project.isPending || options.isPending || (needsVoices && voices.isPending))
     return (
       <div className="screen-status" role="status" aria-busy="true">
         {t("common.loading")}
@@ -81,11 +85,11 @@ export function UpcomingStepPage() {
   if (
     project.isError ||
     options.isError ||
-    voices.isError ||
+    (needsVoices && voices.isError) ||
     !project.data ||
     !options.data
   )
-    return <ScreenError error={project.error ?? options.error ?? voices.error} onRetry={() => Promise.all([project.refetch(), options.refetch(), voices.refetch()])} />;
+    return <ScreenError error={project.error ?? options.error ?? (needsVoices ? voices.error : undefined)} onRetry={() => Promise.all([project.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])} />;
   if (project.data.status !== "draft")
     return <Navigate replace to={localizedPath(locale, `/tasks/${taskId}`)} />;
   if (!isProjectStepComplete(project.data))
@@ -95,18 +99,32 @@ export function UpcomingStepPage() {
         to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}
       />
     );
-  if (!isCreativeComplete(project.data.creative))
+  if (!isCharactersComplete(project.data.creative))
     return (
       <Navigate
         replace
         to={localizedPath(locale, `/tasks/${taskId}/edit/characters`)}
       />
     );
-  if (!isVoiceStepComplete(project.data.voiceAndReferences))
+  if (!isVoicePreferencesComplete(project.data.voiceAndReferences))
     return (
       <Navigate
         replace
         to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}
+      />
+    );
+  if (!isStyleComplete(project.data.creative))
+    return (
+      <Navigate
+        replace
+        to={localizedPath(locale, `/tasks/${taskId}/edit/style`)}
+      />
+    );
+  if (!isProjectBasicsComplete(project.data.project) || !isReferencesStepComplete(project.data.voiceAndReferences))
+    return (
+      <Navigate
+        replace
+        to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}
       />
     );
 
@@ -139,14 +157,24 @@ export function UpcomingStepPage() {
       path: "project",
     },
     {
-      keys: ["creative."],
+      keys: ["creative.characters"],
       label: t("wizard.steps.characters"),
       path: "characters",
     },
     {
-      keys: ["voiceAndReferences."],
+      keys: ["voiceAndReferences.voiceover"],
       label: t("wizard.steps.voice"),
       path: "voice",
+    },
+    {
+      keys: ["creative.visualStyleId", "creative.moodTagIds", "creative.imageStyleTagIds", "creative.paceTagIds", "creative.styleReference"],
+      label: t("wizard.steps.style"),
+      path: "style",
+    },
+    {
+      keys: ["voiceAndReferences.assets", "voiceAndReferences.competitorUrls", "voiceAndReferences.creativeDirection"],
+      label: t("wizard.steps.references"),
+      path: "references",
     },
   ]
     .map((group) => ({
@@ -159,13 +187,8 @@ export function UpcomingStepPage() {
 
   return (
     <div className="wizard-page review-page">
-      <div className="wizard-heading">
-        <div>
-          <h1>{t("wizard.pageTitles.review")}</h1>
-          <p>{t("wizard.pageSubtitles.review")}</p>
-        </div>
-      </div>
-      <StepProgress current={4} />
+      <h1 className="sr-only">{t("wizard.pageTitles.review")}</h1>
+      <StepProgress current={6} highestReachable={getHighestReachableStep(project.data)} />
       {submit.isError && (
         <div className="inline-error review-error" role="alert">
           {localizedApiError(submit.error, t)}
@@ -348,7 +371,7 @@ export function UpcomingStepPage() {
                 {t("taskDetail.creative")}
               </h2>
               <Link
-                to={localizedPath(locale, `/tasks/${taskId}/edit/characters`)}
+                to={localizedPath(locale, `/tasks/${taskId}/edit/style`)}
               >
                 {t("review.edit")}
               </Link>
@@ -368,7 +391,7 @@ export function UpcomingStepPage() {
                 <dt>{t("creative.fields.imageTags")}</dt>
                 <dd>
                   {labels(
-                    catalog.imageStyleTags,
+                    [...catalog.imageStyleTags, ...(catalog.legacyImageStyleTags ?? [])],
                     draft.creative.imageStyleTagIds,
                   )}
                 </dd>
@@ -438,6 +461,11 @@ export function UpcomingStepPage() {
               </Link>
             </div>
             <dl className="data-grid">
+              <div className="data-wide">
+                <dt>{t("voice.narration.question")}</dt>
+                <dd>{t(getNarrationEnabled(draft.voiceAndReferences.voiceover) === true ? "voice.narration.required" : getNarrationEnabled(draft.voiceAndReferences.voiceover) === false ? "voice.narration.notRequired" : "voice.narration.unselected")}</dd>
+              </div>
+              {getNarrationEnabled(draft.voiceAndReferences.voiceover) === true && <>
               <div>
                 <dt>{t("voice.fields.contentLanguage")}</dt>
                 <dd>
@@ -532,6 +560,7 @@ export function UpcomingStepPage() {
                     "—"}
                 </dd>
               </div>
+              </>}
               <div className="data-wide">
                 <dt>{t("taskDetail.referenceFiles")}</dt>
                 <dd>
@@ -574,7 +603,7 @@ export function UpcomingStepPage() {
                 <span>5</span>
                 {t("taskDetail.direction")}
               </h2>
-              <Link to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>
+              <Link to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}>
                 {t("review.edit")}
               </Link>
             </div>
@@ -689,11 +718,11 @@ export function UpcomingStepPage() {
       <div className="sticky-actions">
         <Link
           className="button button-secondary"
-          to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}
+          to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}
         >
-          {t("wizard.actions.backVoice")}
+          {t("wizard.actions.backReferences")}
         </Link>
-        <p className="sticky-note">{t("wizard.footerNotes.review")}</p>
+
         <div>
           <button
             className="button button-primary"

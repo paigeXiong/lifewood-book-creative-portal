@@ -14,6 +14,124 @@ public sealed class PersistenceIntegrationTests : IDisposable
     public PersistenceIntegrationTests() => Directory.CreateDirectory(root);
 
     [Fact]
+    public void BookIntakeMigrationDisablesOldSourceTypesOnlyOnce()
+    {
+        var categories = new FileCategoryRepository(ConnectionString);
+        categories.Initialize();
+        var legacy = new UpsertFileCategoryRequest("旧分类", "Old category", null, null, ["application/pdf"], 1000000, 1, false, true, true, 3);
+        Assert.Equal(FileCategoryWriteOutcome.Saved, categories.Upsert(FileCategoryScopes.Source,"key-chapters",legacy,out _).Outcome);
+        Execute("DELETE FROM file_category_migrations WHERE id='basic-book-intake-v1';");
+        Execute("UPDATE file_categories SET max_files=1 WHERE id='book-cover';");
+        categories.Initialize();
+        Assert.Null(categories.FindEnabled("key-chapters"));
+        var cover=categories.ListAdmin(FileCategoryScopes.Source).Single(c=>c.Id=="book-cover");
+        Assert.Equal(6,cover.MaxFiles);
+        Execute("UPDATE file_categories SET max_files=4 WHERE id='book-cover';");
+        categories.Initialize();
+        Assert.Equal(4,categories.FindEnabled("book-cover")!.Category.MaxFiles);
+        Assert.Equal(4,categories.ListAdmin(FileCategoryScopes.Source).Length); // Legacy metadata is retained.
+    }
+
+    [Fact]
+    public void SubmissionAllowsOmittedHookSynopsisButRequiresBasicInformation()
+    {
+        var projects = new ProjectRepository(ConnectionString); projects.Initialize();
+        var options = new FormOptionRepository(ConnectionString); options.Initialize();
+        var categories = new FileCategoryRepository(ConnectionString); categories.Initialize();
+        var draft=projects.Create("owner-id");
+        var errors=SubmitValidator.Validate(draft,new HashSet<string>(),options,categories);
+        foreach(var field in new[]{"book.sellingPoint","book.synopsis","book.sourceAssets.manuscript","project.projectName"})
+            Assert.DoesNotContain(errors,e=>e.Field==field);
+        Assert.Contains(errors,e=>e.Field=="book.sourceAssets.book-cover");
+        Assert.Contains(errors,e=>e.Field=="book.title");
+        Assert.Contains(errors,e=>e.Field=="project.videoGoalId");
+        Assert.Contains(errors,e=>e.Field=="project.audienceIds");
+    }
+
+    [Fact]
+    public void ExistingManuscriptCategoryBecomesOptional()
+    {
+        var categories = new FileCategoryRepository(ConnectionString);
+        categories.Initialize();
+        Execute("UPDATE file_categories SET required=1,label_zh_cn='全书或节选',label_en_us='Manuscript or excerpt' WHERE id='manuscript';");
+        Execute("DELETE FROM file_category_migrations WHERE id='optional-manuscript-v1';");
+        categories.Initialize();
+        categories.Initialize();
+        foreach (var locale in new[] { "zh-CN", "en-US" })
+        {
+            var source = categories.ForLocale(FileCategoryScopes.Source, locale);
+            Assert.False(source.Single(item => item.Id == "manuscript").Required);
+            Assert.True(source.Single(item => item.Id == "book-cover").Required);
+        }
+    }
+
+    [Fact]
+    public void PresetMigrationUpdatesOnlyDraftDefaultsAndRunsOnce()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var draft = projects.Create("owner-id", locale: "zh-CN");
+        var first = draft.Creative.Characters[0] with { Name = "主角", AgeRangeId = null, GenderId = null };
+        var custom = draft.Creative.Characters[1] with { Name = "自定义名字", AgeRangeId = "senior", GenderId = "neutral" };
+        projects.SaveCreative("owner-id", draft.Id, new(draft.Version, draft.Creative with { Characters = [first, custom] }));
+        var submitted = projects.Create("owner-id");
+        projects.SaveCreative("owner-id", submitted.Id, new(submitted.Version, submitted.Creative with { Characters = [first] }));
+        Execute("UPDATE projects SET status='submitted' WHERE id=$id;", ("$id", submitted.Id));
+        Execute("DELETE FROM schema_migrations WHERE version=7;");
+
+        projects.Initialize();
+        var upgraded = projects.Get("owner-id", draft.Id)!;
+        Assert.Equal(2, upgraded.Creative.Characters.Length);
+        Assert.Equal("米拉", upgraded.Creative.Characters[0].Name);
+        Assert.Equal("young-adult", upgraded.Creative.Characters[0].AgeRangeId);
+        Assert.Equal("female", upgraded.Creative.Characters[0].GenderId);
+        Assert.Equal(custom.Name, upgraded.Creative.Characters[1].Name);
+        Assert.Equal("senior", upgraded.Creative.Characters[1].AgeRangeId);
+        Assert.Equal("neutral", upgraded.Creative.Characters[1].GenderId);
+        Assert.Equal("主角", projects.Get("owner-id", submitted.Id)!.Creative.Characters[0].Name);
+        projects.SaveCreative("owner-id", draft.Id, new(upgraded.Version, upgraded.Creative with { Characters = [] }));
+        projects.Initialize();
+        Assert.Empty(projects.Get("owner-id", draft.Id)!.Creative.Characters);
+    }
+
+    [Fact]
+    public void VisualStyleMediaPersistsAndRejectsUnsafeUrls()
+    {
+        var options = new FormOptionRepository(ConnectionString);
+        options.Initialize();
+        var current = options.ListAdmin(FormOptionGroups.VisualStyles).Single(item => item.Id == "cinematic");
+        var request = new UpsertFormOptionRequest(current.LabelZhCn, current.LabelEnUs, null, null, null, null,
+            true, 0, current.UpdatedAt, PreviewImageUrl: "/style-previews/poster.jpg", PreviewVideoUrl: "https://media.example.test/style.mp4");
+        Assert.Equal(FormOptionWriteOutcome.Saved, options.Upsert(FormOptionGroups.VisualStyles, current.Id, request, out var saved).Outcome);
+        options.Initialize();
+        Assert.Equal(request.PreviewVideoUrl, options.ListAdmin(FormOptionGroups.VisualStyles).Single(item => item.Id == current.Id).PreviewVideoUrl);
+        foreach (var locale in new[] { "zh-CN", "en-US" })
+        {
+            var style = options.ForLocale(locale).VisualStyles.Single(item => item.Id == current.Id);
+            Assert.Equal(request.PreviewImageUrl, style.PreviewImageUrl);
+            Assert.Equal(request.PreviewVideoUrl, style.PreviewVideoUrl);
+        }
+        foreach (var url in new[] { "javascript:alert(1)", "//example.test/video.mp4", "file:///tmp/video.mp4" })
+            Assert.Equal(FormOptionWriteOutcome.Invalid, options.Upsert(FormOptionGroups.VisualStyles, current.Id,
+                request with { ExpectedUpdatedAt = saved!.UpdatedAt, PreviewVideoUrl = url }, out _).Outcome);
+        Assert.Equal(FormOptionWriteOutcome.Saved, options.Upsert(FormOptionGroups.VisualStyles, current.Id,
+            request with { ExpectedUpdatedAt = saved!.UpdatedAt, PreviewVideoUrl = null }, out _).Outcome);
+        Assert.Null(options.ForLocale("en-US").VisualStyles.Single(item => item.Id == current.Id).PreviewVideoUrl);
+    }
+
+    [Fact]
+    public void SubmissionDefaultsBlankProjectNameToBookTitle()
+    {
+        var projects = new ProjectRepository(ConnectionString);
+        projects.Initialize();
+        var draft = projects.Create("owner-id");
+        var saved = projects.Save("owner-id", draft.Id, new(draft.Version, draft.Project with { ProjectName=" " }, draft.Book with { Title="Book title" })).Draft!;
+        var submitted = projects.Submit("owner-id", draft.Id, saved.Version, "name-fallback", null).Draft!;
+        Assert.Equal("Book title", submitted.Project.ProjectName);
+        Assert.Equal("Book title", projects.Get("owner-id", draft.Id)!.Project.ProjectName);
+    }
+
+    [Fact]
     public void DraftDeletionProtectsNewerAndSubmittedProjects()
     {
         var projects = new ProjectRepository(ConnectionString);
@@ -721,13 +839,108 @@ public sealed class PersistenceIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void ContentLanguageOptionsUseAutonymsAndOnlyMigrateLegacyDefaults()
+    {
+        var options = new FormOptionRepository(ConnectionString);
+        options.Initialize();
+
+        Assert.Equal("English (United States)", options.ForLocale("zh-CN").ContentLanguages.Single(value => value.Id == "en-US").Label);
+        Assert.Equal("English (United Kingdom)", options.ForLocale("en-US").ContentLanguages.Single(value => value.Id == "en-GB").Label);
+        Assert.Equal("简体中文", options.ForLocale("en-US").ContentLanguages.Single(value => value.Id == "zh-CN").Label);
+        Assert.Equal("Español (Latinoamérica)", options.ForLocale("zh-CN").ContentLanguages.Single(value => value.Id == "es-419").Label);
+        Assert.Equal("日本語", options.ForLocale("en-US").ContentLanguages.Single(value => value.Id == "ja-JP").Label);
+        Assert.Equal("العربية", options.ForLocale("zh-CN").ContentLanguages.Single(value => value.Id == "ar").Label);
+        Assert.Equal(16, options.ForLocale("zh-CN").ContentLanguages.Length);
+
+        // Simulate a database that has not applied the one-time language migration.
+        Execute("DELETE FROM form_option_catalog_migrations WHERE id = 'content-language-autonyms-v1';");
+        Execute("UPDATE form_options SET label_zh_cn = '英语（美国）', label_en_us = 'English (US)' WHERE group_id = $group AND id = 'en-US';", ("$group", FormOptionGroups.ContentLanguages));
+        Execute("UPDATE form_options SET label_zh_cn = '客户自定义英语', label_en_us = 'English (UK)' WHERE group_id = $group AND id = 'en-GB';", ("$group", FormOptionGroups.ContentLanguages));
+
+        options.Initialize();
+
+        var migrated = options.ListAdmin(FormOptionGroups.ContentLanguages).Single(value => value.Id == "en-US");
+        Assert.Equal("English (United States)", migrated.LabelZhCn);
+        Assert.Equal("English (United States)", migrated.LabelEnUs);
+        var customized = options.ListAdmin(FormOptionGroups.ContentLanguages).Single(value => value.Id == "en-GB");
+        Assert.Equal("客户自定义英语", customized.LabelZhCn);
+        Assert.Equal("English (UK)", customized.LabelEnUs);
+    }
+
+    [Fact]
+    public void ProjectFormDefaultsCoverCommonBookCampaignScenarios()
+    {
+        var options = new FormOptionRepository(ConnectionString);
+        options.Initialize();
+
+        var zhCn = options.ForLocale("zh-CN");
+        var enUs = options.ForLocale("en-US");
+        Assert.Equal(7, zhCn.VideoGoals.Length);
+        Assert.Equal(8, zhCn.Audiences.Length);
+        Assert.Equal(12, zhCn.Genres.Length);
+        Assert.Equal(7, zhCn.VideoDurations.Length);
+        Assert.Equal(10, zhCn.PublishingPlatforms.Length);
+        Assert.DoesNotContain(zhCn.PublishingPlatforms, value => value.Id == "tiktok");
+        Assert.Contains(zhCn.VideoGoals, value => value.Id == "brand-awareness" && value.Label == "品牌认知");
+        Assert.Contains(enUs.Audiences, value => value.Id == "adults" && value.Label == "Adults");
+        Assert.Contains(zhCn.Genres, value => value.Id == "biography-memoir" && value.Label == "传记与回忆录");
+        Assert.Contains(enUs.Genres, value => value.Id == "comics-graphic-novels" && value.Label == "Comics and graphic novels");
+        Assert.DoesNotContain(zhCn.VideoGoals, value => value.Id == "book-trailer");
+        Assert.DoesNotContain(zhCn.Audiences, value => value.Id == "book-clubs");
+        Assert.DoesNotContain(zhCn.Genres, value => value.Id == "fantasy");
+        Assert.Equal(["brand-awareness", "launch-promotion", "audience-engagement", "sales-conversion", "knowledge-communication", "event-support", "internal-communication"], zhCn.VideoGoals.Select(value => value.Id).ToArray());
+        Assert.Equal(["children", "young-adults", "adults", "families", "educators", "professionals", "seniors", "general"], zhCn.Audiences.Select(value => value.Id).ToArray());
+        Assert.Equal("fiction", zhCn.Genres[0].Id);
+        Assert.Equal("comics-graphic-novels", zhCn.Genres[^1].Id);
+        Assert.Contains(enUs.PublishingPlatforms, value => value.Id == "email-newsletter" && value.Label == "Email newsletter");
+        Assert.True(zhCn.VideoDurations.Single(value => value.Id == "custom").AllowsCustomValue);
+
+        var legacyRequest = new UpsertFormOptionRequest(
+            "图书预告片", "Book trailer", null, null, null, null, true, 500);
+        Assert.Equal(FormOptionWriteOutcome.Saved,
+            options.Upsert(FormOptionGroups.VideoGoals, "book-trailer", legacyRequest, out _).Outcome);
+        Execute("DELETE FROM form_option_catalog_migrations WHERE id = 'broad-project-taxonomy-v1';");
+        options.Initialize();
+        Assert.DoesNotContain(options.ForLocale("zh-CN").VideoGoals, value => value.Id == "book-trailer");
+
+        var disabledLegacy = options.ListAdmin(FormOptionGroups.VideoGoals).Single(value => value.Id == "book-trailer");
+        var reenableRequest = new UpsertFormOptionRequest(
+            disabledLegacy.LabelZhCn, disabledLegacy.LabelEnUs,
+            disabledLegacy.DescriptionZhCn, disabledLegacy.DescriptionEnUs,
+            disabledLegacy.Tone, disabledLegacy.PreviewColor, true, disabledLegacy.SortOrder,
+            disabledLegacy.UpdatedAt, disabledLegacy.AllowsCustomValue);
+        Assert.Equal(FormOptionWriteOutcome.Saved,
+            options.Upsert(FormOptionGroups.VideoGoals, disabledLegacy.Id, reenableRequest, out _).Outcome);
+        options.Initialize();
+        Assert.Contains(options.ForLocale("zh-CN").VideoGoals, value => value.Id == "book-trailer");
+    }
+
+    [Fact]
+    public void ExistingPublishingCatalogRetiresTikTokInBothLocales()
+    {
+        var options = new FormOptionRepository(ConnectionString);
+        options.Initialize();
+        Assert.Equal(FormOptionWriteOutcome.Saved, options.Upsert(
+            FormOptionGroups.PublishingPlatforms, "tiktok",
+            new("TikTok", "TikTok", null, null, null, null, true, 20), out _).Outcome);
+        Execute("DELETE FROM form_option_catalog_migrations WHERE id = 'remove-tiktok-platform-v1';");
+
+        options.Initialize();
+        options.Initialize();
+
+        Assert.DoesNotContain(options.ForLocale("zh-CN").PublishingPlatforms, item => item.Id == "tiktok");
+        Assert.DoesNotContain(options.ForLocale("en-US").PublishingPlatforms, item => item.Id == "tiktok");
+        Assert.False(options.ListAdmin(FormOptionGroups.PublishingPlatforms).Single(item => item.Id == "tiktok").Enabled);
+    }
+
+    [Fact]
     public async Task FormOptionsPersistBilingualContentAndKeepDisabledIdsForExistingDrafts()
     {
         var options = new FormOptionRepository(ConnectionString);
         options.Initialize();
         var fileCategories = new FileCategoryRepository(ConnectionString);
         fileCategories.Initialize();
-        Assert.Equal(6, fileCategories.ListAdmin(FileCategoryScopes.Source).Length);
+        Assert.Equal(3, fileCategories.ListAdmin(FileCategoryScopes.Source).Length);
         Assert.Equal(8, fileCategories.ListAdmin(FileCategoryScopes.Reference).Length);
         Assert.Contains(fileCategories.ListAdmin(FileCategoryScopes.Reference), value => value.Id == "character-reference" && value.MaxFiles == 6);
         Assert.Contains(fileCategories.ListAdmin(FileCategoryScopes.Reference), value => value.Id == "style-reference" && value.MaxFiles == 6);

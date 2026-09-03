@@ -105,12 +105,6 @@ export function ProfilePage() {
             </div>
           </div>
         </div>
-        <div className="profile-intake-note">
-          <span className="profile-intake-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="19" height="19"><path d="M6 3.5h9.5L19 7v13.5H6v-17Zm9 1.8V8h2.7M9 12h7M9 15.5h7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </span>
-          <span><strong>{t("profile.intakeTitle")}</strong><small>{t("profile.intakeDescription")}</small></span>
-        </div>
       </header>
 
       <div className="profile-layout">
@@ -119,7 +113,7 @@ export function ProfilePage() {
             <span className="profile-section-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c.5-4 2.8-6 7-6s6.5 2 7 6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
             </span>
-            <span><h2 id="profile-contact-title">{t("profile.contactTitle")}</h2><p>{t("profile.contactDescription")}</p></span>
+            <span><h2 id="profile-contact-title">{t("profile.contactTitle")}</h2></span>
           </div>
           <div className="profile-fields">
             <label className="profile-field" htmlFor="profile-client-name">
@@ -132,7 +126,7 @@ export function ProfilePage() {
             </label>
             <label className="profile-field" htmlFor="profile-phone">
               <span>{t("profile.phone")}</span>
-              <input id="profile-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={currentPhone} onChange={(event) => { setPhone(event.target.value); setSaved(false); }} placeholder={t("profile.phonePlaceholder")} />
+              <input id="profile-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={currentPhone} onChange={(event) => { setPhone(event.target.value); setSaved(false); }} />
             </label>
           </div>
           {updateProfile.isError ? <p className="inline-error" role="alert">{localizedApiError(updateProfile.error, t)}</p> : null}
@@ -148,15 +142,14 @@ export function ProfilePage() {
               <span className="profile-section-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 10V8a6 6 0 0 1 12 0v2m-13 0h14v10H5V10Zm7 4v2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </span>
-              <span><h2 id="profile-account-title">{t("profile.accountTitle")}</h2><p>{t("profile.accountDescription")}</p></span>
+              <span><h2 id="profile-account-title">{t("profile.accountTitle")}</h2></span>
             </div>
             <dl className="profile-account-list">
               <div><dt>{t("profile.email")}</dt><dd>{user.email || t("profile.notSet")}</dd></div>
               <div><dt>{t("profile.organization")}</dt><dd>{user.organization?.name || t("profile.notAssigned")}</dd></div>
             </dl>
-            <p className="profile-account-note">{t("profile.readonlyNote")}</p>
             <div className="profile-security-row">
-              <span><strong>{t("profile.passwordTitle")}</strong><small>{t("profile.passwordDescription")}</small></span>
+              <span><strong>{t("profile.passwordTitle")}</strong></span>
               <button className="profile-security-action" type="button" onClick={() => setPasswordOpen(true)}>{t("nav.changePassword")}</button>
             </div>
           </aside>
@@ -166,10 +159,10 @@ export function ProfilePage() {
               <span className="profile-section-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.7"/><path d="M3.8 12h16.4M12 3.5c2.2 2.3 3.3 5.2 3.3 8.5S14.2 18.2 12 20.5C9.8 18.2 8.7 15.3 8.7 12S9.8 5.8 12 3.5Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
               </span>
-              <span><h2 id="profile-preferences-title">{t("profile.preferencesTitle")}</h2><p>{t("profile.preferencesDescription")}</p></span>
+              <span><h2 id="profile-preferences-title">{t("profile.preferencesTitle")}</h2></span>
             </div>
             <label className="profile-language-field" htmlFor="profile-language">
-              <span><strong>{t("profile.language")}</strong><small>{t("profile.languageDescription")}</small></span>
+              <span><strong>{t("profile.language")}</strong></span>
               <select
                 id="profile-language"
                 name="locale"

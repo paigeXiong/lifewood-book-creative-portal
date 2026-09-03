@@ -76,8 +76,10 @@ export function App() {
           <Route path="tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="tasks/:taskId/submitted" element={<SubmissionSuccessPage />} />
           <Route path="tasks/:taskId/edit/project" element={<ProjectFormPage />} />
-          <Route path="tasks/:taskId/edit/characters" element={<CreativeFormPage />} />
-          <Route path="tasks/:taskId/edit/voice" element={<VoiceAndReferencesPage />} />
+          <Route path="tasks/:taskId/edit/characters" element={<CreativeFormPage stage="characters" />} />
+          <Route path="tasks/:taskId/edit/style" element={<CreativeFormPage stage="style" />} />
+          <Route path="tasks/:taskId/edit/voice" element={<VoiceAndReferencesPage stage="voice" />} />
+          <Route path="tasks/:taskId/edit/references" element={<VoiceAndReferencesPage stage="references" />} />
           <Route path="tasks/:taskId/edit/review" element={<UpcomingStepPage />} />
         </Route>
       </Route>

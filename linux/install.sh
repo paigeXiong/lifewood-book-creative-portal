@@ -9,6 +9,7 @@ config_dir="/etc/lifewood-book-portal"
 env_file="$config_dir/portal.env"
 unit_file="/etc/systemd/system/$service_name.service"
 default_data_dir="/var/lib/lifewood-book-portal"
+coordination_dir="/var/lib/lifewood-book-portal-coordination"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 payload_root="$(cd -- "$script_dir/.." && pwd -P)"
 
@@ -404,6 +405,7 @@ elif ! runuser -u "$service_user" -- test -r "$data_dir/platform.db" || ! runuse
   fail "The service account cannot read and write the recorded production data directory: $data_dir"
 fi
 install -d -m 0755 -o root -g root "$config_dir"
+install -d -m 0750 -o "$service_user" -g "$service_user" "$coordination_dir"
 
 configure_command="/usr/local/sbin/lifewood-portal-configure"
 had_install=false
@@ -521,6 +523,7 @@ trap cleanup EXIT
 {
   printf 'ASPNETCORE_URLS=http://127.0.0.1:%s\n' "$port"
   printf 'Lifewood__DataDirectory=%s\n' "$data_dir"
+  printf 'Lifewood__CoordinationDirectory=%s\n' "$coordination_dir"
   printf 'Lifewood__WebRoot=%s/server/web\n' "$install_dir"
   printf 'Network__TrustedProxies__0=%s\n' "$trusted_proxy"
 } > "$env_temp"

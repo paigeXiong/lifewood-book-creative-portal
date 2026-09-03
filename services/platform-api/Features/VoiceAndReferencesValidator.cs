@@ -25,8 +25,11 @@ internal static class VoiceAndReferencesValidator
         if (voice is null) errors.Add(Error("voiceAndReferences.voiceover", "required"));
         else
         {
+            voice = NarrationSettings.Normalize(voice);
+            if (request.RequireComplete && voice.NarrationEnabled is null)
+                errors.Add(Error("voiceAndReferences.voiceover.narrationEnabled", "required"));
             Action<List<FieldErrorDto>, string, string?, IReadOnlySet<string>> optionRule =
-                request.RequireComplete ? RequiredOption : OptionalOption;
+                request.RequireComplete && voice.NarrationEnabled is true ? RequiredOption : OptionalOption;
             optionRule(errors, "voiceAndReferences.voiceover.contentLanguageId", voice.ContentLanguageId, Allowed(options, FormOptionGroups.ContentLanguages, previous?.ContentLanguageId ?? current?.Book.ContentLanguageId));
             optionRule(errors, "voiceAndReferences.voiceover.narrationToneId", voice.NarrationToneId, Allowed(options, FormOptionGroups.NarrationTones, previous?.NarrationToneId));
             optionRule(errors, "voiceAndReferences.voiceover.speechRateId", voice.SpeechRateId, Allowed(options, FormOptionGroups.SpeechRates, previous?.SpeechRateId));

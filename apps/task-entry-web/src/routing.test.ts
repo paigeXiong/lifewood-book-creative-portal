@@ -26,5 +26,9 @@ describe("localized routing", () => {
       for (const key of ["tasks.sort.asc", "tasks.sort.desc", "tasks.sort.change"])
         expect(i18n.getResource(locale, "translation", key), key).toBeTypeOf("string");
     });
+    it(`contains the six independent workflow stages for ${locale}`, () => {
+      for (const key of ["wizard.steps.characters", "wizard.steps.style", "wizard.steps.voice", "wizard.steps.references", "wizard.pageTitles.references", "wizard.actions.toStyle", "wizard.actions.toReferences", "wizard.actions.backReferences"])
+        expect(i18n.getResource(locale, "translation", key), key).toBeTypeOf("string");
+    });
   }
 });

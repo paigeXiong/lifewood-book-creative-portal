@@ -40,6 +40,8 @@ const requiredKeys = [
   "admin.formOptions.groups.visual-styles",
   "admin.formOptions.groups.voice-emotions",
   "admin.formOptions.previewColor",
+  "admin.formOptions.previewImageUrl",
+  "admin.formOptions.previewVideoUrl",
   "admin.formOptions.createTitle",
   "admin.account.openAvatarEditor",
   "admin.account.avatarEditorTitle",

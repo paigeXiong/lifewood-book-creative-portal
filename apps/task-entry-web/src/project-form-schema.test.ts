@@ -16,7 +16,7 @@ describe("project form validation", () => {
   it("requires the completed step before continuing", () => {
     const result = createStepSchema(t).safeParse(empty);
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error.issues.some((issue) => issue.path[0] === "clientName")).toBe(true);
+    if (!result.success) expect(result.error.issues.some((issue) => issue.path[0] === "title")).toBe(true);
   });
 
   it("rejects invalid email and excessive text in a draft", () => {

@@ -40,6 +40,7 @@
       <Directory Id="COMPANYDATAFOLDER" Name="Lifewood">
         <Directory Id="PRODUCTDATAFOLDER" Name="BookCreativePortal">
           <Directory Id="DATAFOLDER" Name="data" />
+          <Directory Id="COORDINATIONFOLDER" Name="coordination" />
         </Directory>
       </Directory>
     </StandardDirectory>
@@ -64,7 +65,7 @@
                       Start="auto"
                       ErrorControl="normal"
                       Account="NT SERVICE\LifewoodBookCreativePortal"
-                      Arguments='--urls http://[LISTENADDRESS]:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot;'>
+                      Arguments='--urls http://[LISTENADDRESS]:[PORT] --Lifewood:DataDirectory &quot;[DATAFOLDER].&quot; --Lifewood:CoordinationDirectory &quot;[COORDINATIONFOLDER].&quot;'>
         <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="restart" RestartServiceDelayInSeconds="10" ResetPeriodInDays="1" />
       </ServiceInstall>
       <ServiceControl Id="PlatformServiceControl" Name="LifewoodBookCreativePortal" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
@@ -82,15 +83,34 @@
       <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Installed" Type="integer" Value="1" />
     </Component>
 
+    <Component Id="RestoreCoordinationDirectory" Directory="COORDINATIONFOLDER" Guid="E5C1F7A2-0E65-4C2E-A51F-8B822E8D5D98" Bitness="always64" Permanent="yes" NeverOverwrite="yes">
+      <CreateFolder>
+        <util:PermissionEx User="NT SERVICE\LifewoodBookCreativePortal" GenericRead="yes" GenericWrite="yes" Delete="yes" />
+      </CreateFolder>
+      <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="CoordinationDirectory" Type="string" Value="[COORDINATIONFOLDER]" KeyPath="yes" />
+    </Component>
+
     <Component Id="StartMenuShortcuts" Directory="PROGRAMMENUDIR" Guid="C3F9DA89-9AB4-4DBA-B3B3-F9FC3848FF62">
-      <Shortcut Id="CustomerPortalShortcut" Name="!(loc.CustomerShortcut)" Target="[SystemFolder]rundll32.exe" Arguments="url.dll,FileProtocolHandler http://localhost:[PORT]/!(loc.DefaultLocale)/tasks" WorkingDirectory="INSTALLFOLDER" />
-      <Shortcut Id="AdminPortalShortcut" Name="!(loc.AdminShortcut)" Target="[SystemFolder]rundll32.exe" Arguments="url.dll,FileProtocolHandler http://localhost:[PORT]/admin/!(loc.DefaultLocale)/overview" WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="CustomerPortalShortcut"
+                Name="!(loc.CustomerShortcut)"
+                Target="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe"
+                Arguments='-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]ops\open-portal.ps1&quot; -DataDirectory &quot;[DATAFOLDER].&quot; -Port [PORT] -Locale !(loc.DefaultLocale) -Area customer'
+                WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="AdminPortalShortcut"
+                Name="!(loc.AdminShortcut)"
+                Target="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe"
+                Arguments='-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]ops\open-portal.ps1&quot; -DataDirectory &quot;[DATAFOLDER].&quot; -Port [PORT] -Locale !(loc.DefaultLocale) -Area admin'
+                WorkingDirectory="INSTALLFOLDER" />
       <RemoveFolder Id="RemoveProgramMenuDir" On="uninstall" />
       <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="Shortcuts" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
     <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="A33C70D1-367C-42D7-B30C-45A3EE06E5E1" Bitness="always64">
-      <Shortcut Id="DesktopCustomerPortalShortcut" Name="!(loc.CustomerShortcut)" Target="[SystemFolder]rundll32.exe" Arguments="url.dll,FileProtocolHandler http://localhost:[PORT]/!(loc.DefaultLocale)/tasks" WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="DesktopCustomerPortalShortcut"
+                Name="!(loc.CustomerShortcut)"
+                Target="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe"
+                Arguments='-NoProfile -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]ops\open-portal.ps1&quot; -DataDirectory &quot;[DATAFOLDER].&quot; -Port [PORT] -Locale !(loc.DefaultLocale) -Area customer'
+                WorkingDirectory="INSTALLFOLDER" />
       <RegistryValue Root="HKLM" Key="Software\Lifewood\BookCreativePortal" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
@@ -98,6 +118,7 @@
       <ComponentGroupRef Id="PayloadFiles" />
       <ComponentRef Id="PlatformService" />
       <ComponentRef Id="PersistentDataDirectory" />
+      <ComponentRef Id="RestoreCoordinationDirectory" />
       <ComponentRef Id="StartMenuShortcuts" />
       <ComponentRef Id="DesktopShortcut" />
     </Feature>

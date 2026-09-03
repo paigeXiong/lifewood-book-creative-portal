@@ -6,18 +6,28 @@ internal static class FormOptionCatalog
 {
     public const int MaxSelectedVoices = 4;
     public static readonly IReadOnlySet<string> BrandIds = Set("lifewood", "deseret-book", "independent");
-    public static readonly IReadOnlySet<string> VideoGoalIds = Set("book-trailer", "social-promotion", "author-event", "internal-presentation");
-    public static readonly IReadOnlySet<string> AudienceIds = Set("young-adults", "families", "educators", "general");
-    public static readonly IReadOnlySet<string> GenreIds = Set("adventure", "inspirational", "history", "education", "fiction");
-    public static readonly IReadOnlySet<string> ContentLanguageIds = Set("en-US", "en-GB", "zh-CN");
-    public static readonly IReadOnlySet<string> VideoDurationIds = Set("30s", "60s", "90s", "custom");
-    public static readonly IReadOnlySet<string> PublishingPlatformIds = Set("youtube", "instagram", "tiktok", "website", "event");
+    public static readonly IReadOnlySet<string> VideoGoalIds = Set(
+        "brand-awareness", "launch-promotion", "audience-engagement", "sales-conversion",
+        "knowledge-communication", "event-support", "internal-communication");
+    public static readonly IReadOnlySet<string> AudienceIds = Set(
+        "children", "young-adults", "adults", "families", "educators", "professionals", "seniors", "general");
+    public static readonly IReadOnlySet<string> GenreIds = Set(
+        "fiction", "nonfiction", "children-young-adult", "biography-memoir", "education-academic",
+        "business-professional", "self-help-lifestyle", "religion-spirituality", "history-society",
+        "arts-culture", "poetry-literature", "comics-graphic-novels");
+    public static readonly IReadOnlySet<string> ContentLanguageIds = Set(
+        "en-US", "en-GB", "zh-CN", "zh-TW", "es-419", "fr-FR", "de-DE", "pt-BR",
+        "it-IT", "ja-JP", "ko-KR", "ar", "hi-IN", "id-ID", "vi-VN", "th-TH");
+    public static readonly IReadOnlySet<string> VideoDurationIds = Set("15s", "30s", "45s", "60s", "90s", "120s", "custom");
+    public static readonly IReadOnlySet<string> PublishingPlatformIds = Set(
+        "youtube", "instagram", "facebook", "linkedin", "x", "vimeo", "amazon",
+        "website", "email-newsletter", "event");
     public static readonly IReadOnlySet<string> RoleTypeIds = Set("protagonist", "supporting", "narrator", "mentor", "antagonist", "child", "background");
     public static readonly IReadOnlySet<string> AgeRangeIds = Set("child", "teen", "young-adult", "adult", "senior", "unspecified");
     public static readonly IReadOnlySet<string> GenderIds = Set("female", "male", "neutral", "unspecified");
     public static readonly IReadOnlySet<string> VisualStyleIds = Set("cinematic", "storybook", "editorial", "watercolor", "animation-3d", "motion-graphics");
     public static readonly IReadOnlySet<string> MoodTagIds = Set("warm", "hopeful", "mysterious", "tense", "playful", "reflective");
-    public static readonly IReadOnlySet<string> ImageStyleTagIds = Set("natural-light", "high-contrast", "soft-texture", "graphic-shapes", "vintage", "modern");
+    public static readonly IReadOnlySet<string> ImageStyleTagIds = Set("natural-color", "warm-tone", "cool-tone", "black-and-white");
     public static readonly IReadOnlySet<string> PaceTagIds = Set("slow", "measured", "dynamic", "fast");
     public static readonly IReadOnlySet<string> NarrationToneIds = Set("inspiring", "warm", "calm", "authoritative", "intimate");
     public static readonly IReadOnlySet<string> SpeechRateIds = Set("slow", "medium", "fast");
@@ -38,45 +48,80 @@ internal static class FormOptionCatalog
             ],
             VideoGoals:
             [
-                Option("book-trailer", en ? "Book trailer" : "图书预告片"),
-                Option("social-promotion", en ? "Social promotion" : "社交媒体推广"),
-                Option("author-event", en ? "Author event" : "作者活动"),
-                Option("internal-presentation", en ? "Internal presentation" : "内部展示")
+                Option("brand-awareness", en ? "Brand awareness" : "品牌认知"),
+                Option("launch-promotion", en ? "Launch promotion" : "上市推广"),
+                Option("audience-engagement", en ? "Audience engagement" : "受众互动"),
+                Option("sales-conversion", en ? "Sales conversion" : "销售转化"),
+                Option("knowledge-communication", en ? "Knowledge communication" : "知识传播"),
+                Option("event-support", en ? "Event support" : "活动支持"),
+                Option("internal-communication", en ? "Internal communication" : "内部沟通")
             ],
             Audiences:
             [
+                Option("children", en ? "Children" : "儿童"),
                 Option("young-adults", en ? "Young adults" : "青少年"),
+                Option("adults", en ? "Adults" : "成年人"),
                 Option("families", en ? "Families" : "家庭"),
                 Option("educators", en ? "Educators" : "教育工作者"),
+                Option("professionals", en ? "Industry professionals" : "行业从业者"),
+                Option("seniors", en ? "Seniors" : "银发人群"),
                 Option("general", en ? "General audience" : "大众")
             ],
             Genres:
             [
-                Option("adventure", en ? "Adventure" : "冒险"),
-                Option("inspirational", en ? "Inspirational" : "励志"),
-                Option("history", en ? "History" : "历史"),
-                Option("education", en ? "Education" : "教育"),
-                Option("fiction", en ? "Fiction" : "小说")
+                Option("fiction", en ? "Fiction" : "小说"),
+                Option("nonfiction", en ? "Nonfiction" : "非虚构"),
+                Option("children-young-adult", en ? "Children and young adult" : "儿童与青少年读物"),
+                Option("biography-memoir", en ? "Biography and memoir" : "传记与回忆录"),
+                Option("education-academic", en ? "Education and academic" : "教育与学术"),
+                Option("business-professional", en ? "Business and professional" : "商业与专业"),
+                Option("self-help-lifestyle", en ? "Self-help and lifestyle" : "个人成长与生活"),
+                Option("religion-spirituality", en ? "Religion and spirituality" : "宗教与心灵成长"),
+                Option("history-society", en ? "History and society" : "历史与社会"),
+                Option("arts-culture", en ? "Arts and culture" : "艺术与文化"),
+                Option("poetry-literature", en ? "Poetry and literature" : "诗歌与文学"),
+                Option("comics-graphic-novels", en ? "Comics and graphic novels" : "漫画与图像小说")
             ],
             ContentLanguages:
             [
-                Option("en-US", en ? "English (US)" : "英语（美国）"),
-                Option("en-GB", en ? "English (UK)" : "英语（英国）"),
-                Option("zh-CN", en ? "Chinese (Simplified)" : "简体中文")
+                Option("en-US", "English (United States)"),
+                Option("en-GB", "English (United Kingdom)"),
+                Option("zh-CN", "简体中文"),
+                Option("zh-TW", "繁體中文"),
+                Option("es-419", "Español (Latinoamérica)"),
+                Option("fr-FR", "Français"),
+                Option("de-DE", "Deutsch"),
+                Option("pt-BR", "Português (Brasil)"),
+                Option("it-IT", "Italiano"),
+                Option("ja-JP", "日本語"),
+                Option("ko-KR", "한국어"),
+                Option("ar", "العربية"),
+                Option("hi-IN", "हिन्दी"),
+                Option("id-ID", "Bahasa Indonesia"),
+                Option("vi-VN", "Tiếng Việt"),
+                Option("th-TH", "ไทย")
             ],
             VideoDurations:
             [
+                Option("15s", en ? "15 seconds" : "15 秒"),
                 Option("30s", en ? "30 seconds" : "30 秒"),
+                Option("45s", en ? "45 seconds" : "45 秒"),
                 Option("60s", en ? "60 seconds" : "60 秒"),
                 Option("90s", en ? "90 seconds" : "90 秒"),
+                Option("120s", en ? "120 seconds" : "120 秒"),
                 Option("custom", en ? "Custom" : "自定义", allowsCustomValue: true)
             ],
             PublishingPlatforms:
             [
                 Option("youtube", "YouTube"),
                 Option("instagram", "Instagram"),
-                Option("tiktok", "TikTok"),
+                Option("facebook", "Facebook"),
+                Option("linkedin", "LinkedIn"),
+                Option("x", "X (Twitter)"),
+                Option("vimeo", "Vimeo"),
+                Option("amazon", en ? "Amazon book page" : "Amazon 图书页面"),
                 Option("website", en ? "Website" : "官方网站"),
+                Option("email-newsletter", en ? "Email newsletter" : "电子邮件简报"),
                 Option("event", en ? "Live event" : "线下活动")
             ],
             TaskStatuses:
@@ -107,15 +152,15 @@ internal static class FormOptionCatalog
             ],
             VisualStyles:
             [
-                Option("cinematic", en ? "Cinematic realism" : "电影写实", null, "#244D3A"),
-                Option("storybook", en ? "Storybook illustration" : "故事书插画", null, "#D89A58"),
-                Option("editorial", en ? "Minimal editorial" : "极简编辑风", null, "#D8D4C7"),
-                Option("watercolor", en ? "Watercolor" : "水彩", null, "#8DB7B2"),
-                Option("animation-3d", en ? "3D animation" : "3D 动画", null, "#725F8D"),
-                Option("motion-graphics", en ? "Premium motion graphics" : "高级动态图形", null, "#C45F3C")
+                Style("cinematic", en ? "Cinematic realism" : "电影写实", "#244D3A"),
+                Style("storybook", en ? "Storybook illustration" : "故事书插画", "#D89A58"),
+                Style("editorial", en ? "Minimal editorial" : "极简编辑风", "#D8D4C7"),
+                Style("watercolor", en ? "Watercolor" : "水彩", "#8DB7B2"),
+                Style("animation-3d", en ? "3D animation" : "3D 动画", "#725F8D"),
+                Style("motion-graphics", en ? "Premium motion graphics" : "高级动态图形", "#C45F3C")
             ],
             MoodTags: [Option("warm", en ? "Warm" : "温暖"), Option("hopeful", en ? "Hopeful" : "希望"), Option("mysterious", en ? "Mysterious" : "神秘"), Option("tense", en ? "Tense" : "紧张"), Option("playful", en ? "Playful" : "轻快"), Option("reflective", en ? "Reflective" : "沉思")],
-            ImageStyleTags: [Option("natural-light", en ? "Natural light" : "自然光"), Option("high-contrast", en ? "High contrast" : "高对比"), Option("soft-texture", en ? "Soft texture" : "柔和质感"), Option("graphic-shapes", en ? "Graphic shapes" : "图形构成"), Option("vintage", en ? "Vintage" : "复古"), Option("modern", en ? "Modern" : "现代")],
+            ImageStyleTags: [Option("natural-color", en ? "Natural colors" : "自然原色"), Option("warm-tone", en ? "Warm tones" : "暖色调"), Option("cool-tone", en ? "Cool tones" : "冷色调"), Option("black-and-white", en ? "Black and white" : "黑白")],
             PaceTags: [Option("slow", en ? "Slow" : "舒缓"), Option("measured", en ? "Measured" : "从容"), Option("dynamic", en ? "Dynamic" : "动感"), Option("fast", en ? "Fast" : "快速")],
             NarrationTones: [Option("inspiring", en ? "Inspiring" : "励志"), Option("warm", en ? "Warm" : "温暖"), Option("calm", en ? "Calm" : "冷静"), Option("authoritative", en ? "Authoritative" : "权威"), Option("intimate", en ? "Intimate" : "亲切")],
             SpeechRates: [Option("slow", en ? "Slow" : "慢速"), Option("medium", en ? "Medium" : "适中"), Option("fast", en ? "Fast" : "快速")],
@@ -126,11 +171,8 @@ internal static class FormOptionCatalog
             VoiceTags: [Option("warm", en ? "Warm" : "温暖"), Option("natural", en ? "Natural" : "自然"), Option("grounded", en ? "Grounded" : "沉稳"), Option("professional", en ? "Professional" : "专业"), Option("bright", en ? "Bright" : "明亮"), Option("clear", en ? "Clear" : "清晰")],
             SourceCategories:
             [
-                Category("book-cover", en ? "Book cover" : "图书封面", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 10_000_000, 1, required: true),
-                Category("manuscript", en ? "Manuscript or excerpt" : "全书或节选", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 200_000_000, 1, required: true),
-                Category("key-chapters", en ? "Chapter highlights" : "章节要点", en ? "PDF or DOCX" : "PDF 或 DOCX", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], 50_000_000, 5),
-                Category("brand-guidelines", en ? "Brand guide" : "品牌规范", "PDF", ["application/pdf"], 50_000_000, 1),
-                Category("authorization", en ? "Rights / approval confirmation" : "授权确认", en ? "PDF or DOCX" : "PDF 或 DOCX", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], 20_000_000, 1),
+                Category("book-cover", en ? "Book cover" : "图书封面", en ? "JPG or PNG; up to 6 cover photos" : "JPG 或 PNG；最多 6 张封面照片", ["image/jpeg", "image/png"], 10_000_000, 6, required: true),
+                Category("manuscript", en ? "Manuscript or excerpt (optional)" : "全书或节选（可选）", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 200_000_000, 1),
                 Category("supplemental-images", en ? "Optional images / phone photos" : "补充图片 / 手机照片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 8)
             ],
             ReferenceCategories:
@@ -176,6 +218,16 @@ internal static class FormOptionCatalog
         ];
     }
 
+    // Built-in illustrative assets, not customer uploads. Unknown/custom IDs have no implied example.
+    public static string? VisualStylePreviewUrl(string id) => id switch
+    {
+        "cinematic" or "storybook" or "editorial" or "watercolor" or "animation-3d" or "motion-graphics"
+            => $"/style-previews/{id}-v1.jpg",
+        _ => null
+    };
+
+    private static ConfigOptionDto Style(string id, string label, string color) =>
+        new(id, label, PreviewColor: color, PreviewImageUrl: VisualStylePreviewUrl(id));
     private static ConfigOptionDto Option(string id, string label, string? tone = null, string? previewColor = null, bool allowsCustomValue = false) => new(id, label, null, tone, previewColor, allowsCustomValue);
     private static ReferenceCategoryDto Category(string id, string label, string description, string[] accept, long maxBytes, int maxFiles, bool allowsUrl = false, bool required = false) => new(id, label, description, accept, maxBytes, maxFiles, allowsUrl, required);
     private static IReadOnlySet<string> Set(params string[] values) => new HashSet<string>(values, StringComparer.Ordinal);
