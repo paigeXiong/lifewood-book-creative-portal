@@ -5,7 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch, type Control } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
+import { useWizardNavigate as useNavigate } from "../wizard-motion";
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { ReferenceAsset, ReferenceCategory, TaskDraft } from "@lifewood/domain";
@@ -190,14 +191,14 @@ export function ProjectFormPage() {
       const saved = await projectService.saveDraft(current.id, next, validLocale);
       return { saved, continueAfter, values };
     },
-    onSuccess: ({ saved, continueAfter, values }) => {
+    onSuccess: async ({ saved, continueAfter, values }) => {
       queryClient.setQueryData(["project", taskId], saved);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       form.reset(values, { keepValues: true });
       savedSnapshotRef.current = JSON.stringify(values);
       failedSaveSnapshotRef.current = undefined;
       setSaveState("idle");
-      if (continueAfter) navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/characters`));
+      if (continueAfter) await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/characters`));
     },
     onError: (_error, variables) => { failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
     onSettled: () => { saveInFlightRef.current = false; },
@@ -227,7 +228,7 @@ export function ProjectFormPage() {
     return () => { if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = undefined; };
   }, [autosaveValues, form.formState.isDirty, saveDraft.isPending, uploadCategory, returningHome, continuing, schema]);
 
-  const returnHome = async () => {
+  const returnHome = async (path = localizedPath(validLocale, "/tasks")) => {
     if (returningHome || uploadingRef.current) return;
     setReturningHome(true);
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
@@ -244,7 +245,7 @@ export function ProjectFormPage() {
       if (needsSave) {
         if (!await runSave(checked.data, false, true)) return;
       }
-      navigate(localizedPath(validLocale, "/tasks"));
+      await navigate(path);
     } finally { setReturningHome(false); }
   };
   if (!taskId || !isSupportedLocale(locale)) return null;
@@ -379,7 +380,7 @@ export function ProjectFormPage() {
         <h1 className="sr-only">{t("wizard.pageTitles.project")}</h1>
         {statusText && <span className={`save-state save-${saveState}`} role="alert">{statusText}</span>}
       </div>
-      <StepProgress current={1} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success && options.sourceCategories.every(category => !category.required || sourceAssets.some(asset => asset.categoryId === category.id))} busy={returningHome || continuing || Boolean(uploadCategory)} />
+      <StepProgress onNavigate={(path) => void returnHome(path)} current={1} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success && options.sourceCategories.every(category => !category.required || sourceAssets.some(asset => asset.categoryId === category.id))} busy={returningHome || continuing || Boolean(uploadCategory)} />
 
       <form autoComplete="off" onSubmit={continueStep} inert={returningHome || continuing} aria-busy={returningHome || continuing}>
         <div className="wizard-layout">

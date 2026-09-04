@@ -1001,6 +1001,34 @@ label > small {
   overflow: auto;
   height: calc(100% - 3.65rem);
 }
+.users-content,
+.organizations-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.users-content > .page-toolbar,
+.organizations-content > .page-toolbar {
+  flex-shrink: 0;
+}
+.users-content > .table-card,
+.organizations-content > .table-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: auto;
+  overflow: hidden;
+}
+.management-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.management-table-scroll + .pager {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
 .audit-content {
   height: 100%;
 }

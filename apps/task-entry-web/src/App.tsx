@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { Navigate, Outlet, Route, createRoutesFromElements, useLocation, useParams, useRouteError } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { authService, ApiError } from "@lifewood/api-client";
 import { i18n, isSupportedLocale, localizedPath, setLocale } from "@lifewood/i18n";
@@ -8,16 +8,12 @@ import type { SupportedLocale } from "@lifewood/domain";
 import { AppShell } from "./components/AppShell";
 import { ScreenError } from "./components/ScreenError";
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
-const VoiceAndReferencesPage = lazy(() => import("./pages/VoiceAndReferencesPage").then((module) => ({ default: module.VoiceAndReferencesPage })));
 const TaskListPage = lazy(() => import("./pages/TaskListPage").then((module) => ({ default: module.TaskListPage })));
-const ProjectFormPage = lazy(() => import("./pages/ProjectFormPage").then((module) => ({ default: module.ProjectFormPage })));
-const CreativeFormPage = lazy(() => import("./pages/CreativeFormPage").then((module) => ({ default: module.CreativeFormPage })));
-const UpcomingStepPage = lazy(() => import("./pages/UpcomingStepPage").then((module) => ({ default: module.UpcomingStepPage })));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage").then((module) => ({ default: module.TaskDetailPage })));
 const SubmissionSuccessPage = lazy(() => import("./pages/SubmissionSuccessPage").then((module) => ({ default: module.SubmissionSuccessPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage").then((module) => ({ default: module.ProfilePage })));
 
-function ScreenLoading() {
+export function ScreenLoading() {
   const { t } = useTranslation();
   return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
 }
@@ -64,9 +60,7 @@ function ProtectedLayout() {
   return <AppShell user={userQuery.data}><Suspense fallback={<ScreenLoading />}><Outlet context={{ locale, user: userQuery.data }} /></Suspense></AppShell>;
 }
 
-export function App() {
-  return (
-    <Routes>
+export const appRoutes = createRoutesFromElements(<>
       <Route path="/" element={<RootRedirect />} />
       <Route path="/:locale" element={<LocaleLayout />}>
         <Route path="login" element={<LoginRoute />} />
@@ -75,15 +69,17 @@ export function App() {
           <Route path="profile" element={<ProfilePage />} />
           <Route path="tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="tasks/:taskId/submitted" element={<SubmissionSuccessPage />} />
-          <Route path="tasks/:taskId/edit/project" element={<ProjectFormPage />} />
-          <Route path="tasks/:taskId/edit/characters" element={<CreativeFormPage stage="characters" />} />
-          <Route path="tasks/:taskId/edit/style" element={<CreativeFormPage stage="style" />} />
-          <Route path="tasks/:taskId/edit/voice" element={<VoiceAndReferencesPage stage="voice" />} />
-          <Route path="tasks/:taskId/edit/references" element={<VoiceAndReferencesPage stage="references" />} />
-          <Route path="tasks/:taskId/edit/review" element={<UpcomingStepPage />} />
+          <Route path="tasks/:taskId/edit/project" lazy={async () => ({ Component: (await import("./pages/ProjectFormPage")).ProjectFormPage })} />
+          <Route path="tasks/:taskId/edit/characters" lazy={async () => { const { CreativeFormPage } = await import("./pages/CreativeFormPage"); return { Component: () => <CreativeFormPage stage="characters" /> }; }} />
+          <Route path="tasks/:taskId/edit/style" lazy={async () => { const { CreativeFormPage } = await import("./pages/CreativeFormPage"); return { Component: () => <CreativeFormPage stage="style" /> }; }} />
+          <Route path="tasks/:taskId/edit/voice" lazy={async () => { const { VoiceAndReferencesPage } = await import("./pages/VoiceAndReferencesPage"); return { Component: () => <VoiceAndReferencesPage stage="voice" /> }; }} />
+          <Route path="tasks/:taskId/edit/references" lazy={async () => { const { VoiceAndReferencesPage } = await import("./pages/VoiceAndReferencesPage"); return { Component: () => <VoiceAndReferencesPage stage="references" /> }; }} />
+          <Route path="tasks/:taskId/edit/review" lazy={async () => ({ Component: (await import("./pages/UpcomingStepPage")).UpcomingStepPage })} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate replace to="/" />} />
-    </Routes>
-  );
+</>);
+
+export function RouteError() {
+  return <ScreenError error={useRouteError()} onRetry={() => window.location.reload()} />;
 }

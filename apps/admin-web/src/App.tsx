@@ -1395,6 +1395,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
         </div>
       )}
       <section className="table-card">
+        <div className="management-table-scroll" aria-busy={users.isFetching}>
         <table>
           <thead>
             <tr>
@@ -1490,6 +1491,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
         {!users.isPending && !users.data?.items.length && (
           <div className="empty">{t("admin.users.empty")}</div>
         )}
+        </div>
         <nav className="pager">
           <button
             type="button"

@@ -212,7 +212,7 @@ export function UpcomingStepPage() {
           <ul>
             {validationGroups.map((group) => (
               <li key={group.path}>
-                <Link
+                <Link viewTransition
                   to={localizedPath(
                     validLocale,
                     `/tasks/${taskId}/edit/${group.path}`,
@@ -236,7 +236,7 @@ export function UpcomingStepPage() {
                 <span>1</span>
                 {t("taskDetail.project")}
               </h2>
-              <Link to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>
+              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>
                 {t("review.edit")}
               </Link>
             </div>
@@ -295,7 +295,7 @@ export function UpcomingStepPage() {
                 <span>2</span>
                 {t("taskDetail.book")}
               </h2>
-              <Link to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>
+              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>
                 {t("review.edit")}
               </Link>
             </div>
@@ -370,7 +370,7 @@ export function UpcomingStepPage() {
                 <span>3</span>
                 {t("taskDetail.creative")}
               </h2>
-              <Link
+              <Link viewTransition
                 to={localizedPath(locale, `/tasks/${taskId}/edit/style`)}
               >
                 {t("review.edit")}
@@ -456,7 +456,7 @@ export function UpcomingStepPage() {
                 <span>4</span>
                 {t("taskDetail.voice")}
               </h2>
-              <Link to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>
+              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>
                 {t("review.edit")}
               </Link>
             </div>
@@ -603,7 +603,7 @@ export function UpcomingStepPage() {
                 <span>5</span>
                 {t("taskDetail.direction")}
               </h2>
-              <Link to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}>
+              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}>
                 {t("review.edit")}
               </Link>
             </div>
@@ -716,7 +716,7 @@ export function UpcomingStepPage() {
         </aside>
       </div>
       <div className="sticky-actions">
-        <Link
+        <Link viewTransition
           className="button button-secondary"
           to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}
         >

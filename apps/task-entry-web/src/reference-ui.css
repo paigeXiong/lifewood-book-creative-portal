@@ -722,6 +722,8 @@ body {
   .character-roster { grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); max-height: none; }
 }
 .reference-image-upload { display: grid; gap: .45rem; }
+.character-editor .form-grid + .reference-image-upload,
+.character-editor .form-grid + .reference-image-field { margin-top: 1rem; }
 .character-reference-drop-card { min-height: 220px; background: #edf3ef; }
 .character-reference-drop-card .upload-drop-prompt { min-height: 62px; }
 .reference-image-preview { display: grid; gap: .5rem; }

@@ -16,7 +16,8 @@ import {
 } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
+import { useWizardNavigate as useNavigate } from "../wizard-motion";
 import {
   ApiError,
   localizedApiError,
@@ -376,14 +377,14 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       );
       return { saved, continueAfter, values };
     },
-    onSuccess: ({ saved, continueAfter, values }) => {
+    onSuccess: async ({ saved, continueAfter, values }) => {
       queryClient.setQueryData(["project", taskId], saved);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values);
       failedSaveSnapshotRef.current = undefined;
       setSaveState("idle");
       if (continueAfter)
-        navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "characters" ? "voice" : "references"}`));
+        await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "characters" ? "voice" : "references"}`));
     },
     onError: (_error, variables) => {
       failedSaveSnapshotRef.current = JSON.stringify(variables.values);
@@ -702,7 +703,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       if (!checked.success) { setSaveState("invalid"); await form.trigger(); return; }
       const needsSave = savedSnapshotRef.current === undefined ? form.formState.isDirty : savedSnapshotRef.current !== JSON.stringify(checked.data);
       if (needsSave && !await runSave(checked.data, false, true)) return;
-      navigate(path);
+      await navigate(path);
     } finally { setNavigating(false); }
   };
   const guardLink = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -755,7 +756,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
         <h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1>
         {statusText && <span className={`save-state save-${saveState}`} role="alert">{statusText}</span>}
       </div>
-      <StepProgress current={stage === "characters" ? 2 : 4} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadTarget)} />
+      <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "characters" ? 2 : 4} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadTarget)} />
       <form
         autoComplete="off"
         onSubmit={continueStep}

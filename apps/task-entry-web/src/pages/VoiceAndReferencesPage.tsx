@@ -5,7 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch, type Control, type UseFormReturn } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
+import { useWizardNavigate as useNavigate } from "../wizard-motion";
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { ReferenceCategory, TaskDraft, VoiceReference } from "@lifewood/domain";
@@ -152,7 +153,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
       }};
       return { saved: await projectService.saveVoiceAndReferences(current.id, next, validLocale, stage === "references" && continueAfter, stage === "references"), continueAfter, values };
     },
-    onSuccess: ({ saved, continueAfter, values }) => { queryClient.setQueryData(["project", taskId], saved); void queryClient.invalidateQueries({ queryKey: ["projects"] }); form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values); failedSaveSnapshotRef.current = undefined; setSaveState("idle"); if (continueAfter) navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "voice" ? "style" : "review"}`)); },
+    onSuccess: async ({ saved, continueAfter, values }) => { queryClient.setQueryData(["project", taskId], saved); void queryClient.invalidateQueries({ queryKey: ["projects"] }); form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values); failedSaveSnapshotRef.current = undefined; setSaveState("idle"); if (continueAfter) await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "voice" ? "style" : "review"}`)); },
     onError: (_error, variables) => { failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
     onSettled: () => { saveInFlightRef.current = false; },
   });
@@ -217,7 +218,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
       if (!checked.success) { setSaveState("invalid"); await form.trigger(); return; }
       const needsSave = savedSnapshotRef.current === undefined ? form.formState.isDirty : savedSnapshotRef.current !== JSON.stringify(checked.data);
       if (needsSave && !await runSave(checked.data, false, true)) return;
-      navigate(path);
+      await navigate(path);
     } finally { setNavigating(false); }
   };
   const guardLink = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -328,7 +329,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   return <div className={`wizard-page voice-page ${stage}-page`}>
     <div className="wizard-heading"><h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1>{statusText && <span className={`save-state save-${saveState}`} role="alert">{statusText}</span>}</div>
     {stage === "voice" && narrationEnabled === true && removedVoiceCount > 0 && <div className="inline-notice" role="status">{t("voice.unavailableRemoved", { count: removedVoiceCount })}</div>}
-    <StepProgress current={stage === "voice" ? 3 : 5} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadCategory)} />
+    <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "voice" ? 3 : 5} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadCategory)} />
     <form autoComplete="off" onSubmit={continueStep} inert={navigating} aria-busy={navigating}>
       <div className="voice-layout"><div className="form-stack">
         {stage === "voice" && <NarrationChoice value={narrationEnabled} error={form.formState.errors.narrationEnabled?.message} onChange={(value) => {
