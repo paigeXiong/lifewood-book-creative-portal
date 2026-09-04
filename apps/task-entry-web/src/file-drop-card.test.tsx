@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "@lifewood/i18n";
 import type { ReferenceAsset, ReferenceCategory } from "@lifewood/domain";
 import { FileDropCard } from "./components/FileDropCard";
+import { preparePhoto } from "./prepare-photo";
+
+vi.mock("./prepare-photo", async importOriginal => ({
+  ...await importOriginal<typeof import("./prepare-photo")>(),
+  preparePhoto: vi.fn(),
+}));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -41,6 +47,7 @@ describe("file drop card", () => {
   let root: Root;
 
   beforeEach(async () => {
+    vi.mocked(preparePhoto).mockReset();
     await i18n.changeLanguage("en");
     container = document.createElement("div");
     document.body.append(container);
@@ -121,5 +128,27 @@ describe("file drop card", () => {
     act(() => container.querySelector<HTMLButtonElement>(".uploaded-files button")!.click());
     expect(onRemove).toHaveBeenCalledWith(asset.id);
     expect(picker).not.toHaveBeenCalled();
+  });
+
+  it.each(["picker", "camera", "drop"])("prepares cover photos from the %s entrance", async entrance => {
+    const cover = { ...category, accept: ["image/jpeg"] };
+    const original = new File(["original"], "camera.heic", { type: "image/heic" });
+    const prepared = new File(["compressed"], "camera.jpg", { type: "image/jpeg" });
+    vi.mocked(preparePhoto).mockResolvedValue(prepared);
+    const onUpload = vi.fn().mockResolvedValue(undefined);
+    act(() => root.render(<FileDropCard camera inputId="cover" category={cover} files={[]} locale="en" onUpload={onUpload} onRemove={vi.fn()} />));
+    await act(async () => {
+      if (entrance === "drop") {
+        const event = new Event("drop", { bubbles: true, cancelable: true });
+        Object.defineProperty(event, "dataTransfer", { value: { files: fileList(original) } });
+        container.querySelector(".upload-drop-card")!.dispatchEvent(event);
+      } else {
+        const input = container.querySelectorAll<HTMLInputElement>("input[type=file]")[entrance === "camera" ? 1 : 0];
+        Object.defineProperty(input, "files", { value: fileList(original) });
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    expect(preparePhoto).toHaveBeenCalledWith(original, cover);
+    expect(onUpload).toHaveBeenCalledWith(cover, [prepared]);
   });
 });

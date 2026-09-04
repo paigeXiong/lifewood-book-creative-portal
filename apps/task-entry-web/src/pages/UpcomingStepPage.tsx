@@ -1,3 +1,4 @@
+import { createId } from "../create-id";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,7 +25,7 @@ export function UpcomingStepPage() {
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const idempotencyKey = useRef(crypto.randomUUID().replaceAll("-", ""));
+  const idempotencyKey = useRef(createId().replaceAll("-", ""));
   const [validationIssues, setValidationIssues] = useState<
     Array<{ field: string; code: string; messageKey?: string }>
   >([]);

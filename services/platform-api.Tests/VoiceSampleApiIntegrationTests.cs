@@ -1064,6 +1064,48 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         };
     }
 
+    [Fact]
+    public async Task AiSettingsRequireOwnerAndCsrfAndApplyWithoutReturningSecrets()
+    {
+        using var anonymous = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/admin/ai-settings")).StatusCode);
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var customer = await CreateCustomerClient(csrf);
+        Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync("/api/admin/ai-settings")).StatusCode);
+        var payload = new { enabled = true, endpoint = "https://example.test/chat", model = "vision", apiKey = "test-secret-value" };
+        using var denied = await ownerClient.PutAsJsonAsync("/api/admin/ai-settings", payload);
+        Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
+        using var saved = await Send(ownerClient, HttpMethod.Put, "/api/admin/ai-settings", csrf, JsonContent.Create(payload));
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        var body = await saved.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("test-secret-value", body);
+        using var json = JsonDocument.Parse(body);
+        Assert.True(json.RootElement.GetProperty("hasApiKey").GetBoolean());
+        using var options = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/form-options"));
+        Assert.True(options.RootElement.GetProperty("bookRecognitionEnabled").GetBoolean());
+        using var added = await Send(ownerClient, HttpMethod.Post, "/api/admin/ai-settings/providers", csrf,
+            JsonContent.Create(new { name = "Claude provider", protocol = "anthropic", endpoint = "https://example.test/v1/messages", model = "", models = new[] { "claude-a", "claude-b" }, apiKey = "second-test-key" }));
+        Assert.Equal(HttpStatusCode.OK, added.StatusCode);
+        var addedBody = await added.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("second-test-key", addedBody);
+        using var providerJson = JsonDocument.Parse(addedBody);
+        var providerId = providerJson.RootElement.GetProperty("providers").EnumerateArray().Single(p => p.GetProperty("name").GetString() == "Claude provider").GetProperty("id").GetString();
+        using var bound = await Send(ownerClient, HttpMethod.Put, "/api/admin/ai-settings/bindings", csrf,
+            JsonContent.Create(new { featureId = "book-recognition", providerId, model = "claude-b", enabled = true }));
+        Assert.Equal(HttpStatusCode.OK, bound.StatusCode);
+        using var invalidModel = await Send(ownerClient, HttpMethod.Put, "/api/admin/ai-settings/bindings", csrf,
+            JsonContent.Create(new { featureId = "book-recognition", providerId, model = "not-in-catalog", enabled = true }));
+        Assert.Equal(HttpStatusCode.BadRequest, invalidModel.StatusCode);
+        using var cannotDelete = await Send(ownerClient, HttpMethod.Delete, $"/api/admin/ai-settings/providers/{providerId}", csrf);
+        Assert.Equal(HttpStatusCode.BadRequest, cannotDelete.StatusCode);
+        using var blocked = await Send(customer, HttpMethod.Put, "/api/admin/ai-settings", await GetCsrf(customer), JsonContent.Create(payload));
+        Assert.Equal(HttpStatusCode.Forbidden, blocked.StatusCode);
+        using var blockedBinding = await Send(customer, HttpMethod.Put, "/api/admin/ai-settings/bindings", await GetCsrf(customer),
+            JsonContent.Create(new { featureId = "book-recognition", providerId, model = "claude-a", enabled = true }));
+        Assert.Equal(HttpStatusCode.Forbidden, blockedBinding.StatusCode);
+    }
+
     private async Task<HttpClient> CreateCustomerClient(string ownerCsrf)
     {
         using var create = await Send(ownerClient, HttpMethod.Post, "/api/admin/users", ownerCsrf,

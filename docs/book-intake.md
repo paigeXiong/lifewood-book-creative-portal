@@ -14,7 +14,7 @@
 
 视觉风格示例支持图片和视频。管理后台的表单选项「视觉风格」可填写示例图片 / 视频封面地址以及可选的视频地址，支持站内绝对路径或 HTTPS 媒体直链。视频静音、内联循环播放，只在指针悬停时启动，移开、离开视口或切到后台时暂停；触屏及键盘提供原生播放控件。视频加载失败时回退图片。当前内置示例仍使用原图片，配置视频后生效。客户页面不展示风格示例来源备注或色彩基调的内部说明。
 
-服务端配置 `Lifewood:BookRecognition`。默认关闭，关闭时前端完全隐藏识别区域。不存在浏览器端密钥，也不会自动调用外部服务。配置完整并重启 API 后，用户才能点击识别按钮。
+平台所有者可在管理后台「系统配置 → AI 接入」配置完整 HTTPS Chat Completions 地址、模型、API Key 和启用开关。保存后立即用于后续识别请求，无需重启。默认关闭，关闭时客户页面隐藏识别区域；已打开的客户页面可刷新以更新开关。用户仍需手动点击识别，不会在上传时自动发送照片。
 
 文件资料仅封面默认必传；全书或节选及补充图片可选。不上传手稿不会阻止进入后续步骤或提交。已有分类通过一次性迁移同步为选传，保留已上传文件。
 
@@ -34,3 +34,21 @@
 接口返回 `title`、`authorName`、`subtitle`、`genreId`、`sellingPoint`、`synopsis`。看不清或缺失的资料留空；类型匹配现有启用目录。只填入请求前为空且请求期间未改变的字段，保留已有内容；切换任务、语言或照片后取消旧请求。识别不会直接保存到数据库，复用现有表单自动保存流程。
 
 多图请求格式依据 [OpenAI 官方图像输入文档](https://developers.openai.com/api/docs/guides/images-vision?api-mode=chat)。其他兼容服务需提供相同消息、JSON 输出及 `choices[].message.content` 响应格式。未配置真实密钥，因此验证使用模拟提供商，尚未测真实模型识别质量。
+
+
+### Admin API configuration / 后台 API 配置
+
+后台保存优先于环境变量，配置持久化到数据目录的 book-recognition.json。密钥通过 ASP.NET Core Data Protection 加密，API 仅返回是否已配置，不回显原文。备份/迁移时需要同时保留数据目录及 Data Protection 密钥目录。留空保留已有密钥；清除密钥需关闭识别。更换 API 地址时需重新填写密钥，避免将已有密钥发送到新的服务地址。配置保存记入操作审计，不记录密钥内容。
+
+Owner-only administration is available under System settings → AI integration. Saved settings override environment configuration and apply to subsequent recognition requests without restarting. Keys are encrypted at rest and never returned in settings responses. Keep the Data Protection key directory when migrating the data. Changing the endpoint requires re-entering the key. Real-provider compatibility and recognition quality still require testing with your selected model.
+
+
+### Providers and AI features / 服务商与 AI 业务
+
+AI 接入分为两层：「模型服务商」维护名称、接口格式、HTTPS 地址、密钥及可用模型清单（一行一个模型 ID）；「AI 业务配置」只选择服务商及其清单中的模型，并控制业务启用。当前业务目录只有封面识别；以后新增业务时在服务端目录注册，并由该业务的服务读取对应绑定。
+
+支持 OpenAI Chat Completions 与 Anthropic Messages。后者使用 x-api-key、anthropic-version: 2023-06-01、image/source/base64 消息和 max_tokens，解析 content 文本块；前者使用 Bearer、image_url 和 choices 响应。模型必须支持图像理解；没有对真实 Anthropic 账号发起测试。
+
+旧单服务商配置自动映射为一个服务商及封面识别绑定，保留模型、加密密钥和启用状态。被业务引用的服务商和模型不能直接删除，需先更改业务绑定。新增或编辑供应商不会自动切换当前业务。基础地址 / 和 /v1 会根据所选协议补全接口路径，自定义完整路径保持原样。
+
+Providers own their model catalogs; AI features select a provider and a model from that catalog. Both the UI and server enforce this relationship. Settings take effect on the next recognition request. Legacy settings migrate without changing the selected model or exposing the saved key.

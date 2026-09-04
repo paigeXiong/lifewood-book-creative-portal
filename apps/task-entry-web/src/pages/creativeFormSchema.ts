@@ -1,3 +1,4 @@
+import { createId } from "../create-id";
 import { z, type RefinementCtx } from "zod";
 import type { Translate } from "./projectFormSchema";
 import type { CreativeInfo } from "@lifewood/domain";
@@ -76,5 +77,5 @@ export function isStyleComplete(creative: CreativeInfo): boolean {
 }
 
 export function emptyCharacter(): CreativeFormValues["characters"][number] {
-  return { id: crypto.randomUUID(), roleTypeId: "", name: "", storyRole: "", personality: "", appearance: "", ageRangeId: "", genderId: "", clothing: "", emotion: "", voiceHint: "", referenceImageUrls: [], referenceImages: [] };
+  return { id: createId(), roleTypeId: "", name: "", storyRole: "", personality: "", appearance: "", ageRangeId: "", genderId: "", clothing: "", emotion: "", voiceHint: "", referenceImageUrls: [], referenceImages: [] };
 }

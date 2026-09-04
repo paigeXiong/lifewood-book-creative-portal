@@ -9,6 +9,58 @@ namespace Lifewood.PlatformApi.Tests;
 
 public sealed class BookRecognitionTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadsBoundedManuscriptContext(bool docx)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var id = Guid.NewGuid().ToString("N");
+        var path = Path.Combine(folder, id + "_excerpt");
+        try
+        {
+            if (docx)
+            {
+                using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+                using var writer = new StreamWriter(zip.CreateEntry("word/document.xml").Open());
+                writer.Write("<document><p><t>Composition and colour</t></p></document>");
+            }
+            else await File.WriteAllTextAsync(path, "Composition and colour" + new string('a', 20000));
+            var asset = new ReferenceAssetDto(id, "manuscript", "excerpt", docx ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "text/plain", new FileInfo(path).Length, "unused");
+            var book = new BookInfoDto("Visual storytelling", "Design", "", null, "", "", null, null, [], [asset]);
+            var context = await BookRecognitionContext.BuildAsync(book, folder, default);
+            Assert.Contains("Visual storytelling", context);
+            Assert.Contains("Composition and colour", context);
+            Assert.True(context.Length < 12500);
+        }
+        finally { File.Delete(path); Directory.Delete(folder); }
+    }
+
+    [Fact]
+    public async Task SendsBookContextAsReferenceDataForOptionalClassification()
+    {
+        var handler = new ProviderHandler();
+        using var client = new HttpClient(handler);
+        var service = new BookRecognitionService(client, new(true, new Uri("https://example.test/chat/completions"), "vision-model", "test-key"));
+        await service.RecognizeAsync([new("image/png", [1])], [new("art", "艺术与文化")], "zh-CN", default, "Title: Visual storytelling\nSubtitle: Colour and composition");
+        using var request = JsonDocument.Parse(handler.Body!);
+        var prompt = request.RootElement.GetProperty("messages")[0].GetProperty("content")[0].GetProperty("text").GetString()!;
+        Assert.Contains("Visual storytelling", prompt);
+        Assert.Contains("classification is optional", prompt);
+        Assert.Contains("untrusted reference data", prompt);
+        Assert.Contains("Simplified Chinese", prompt);
+    }
+
+    [Fact]
+    public void ResolvesLocalizedLabelsButRejectsAmbiguousOrUnknownCategories()
+    {
+        Assert.Equal("art", BookRecognitionService.ParseResult("{\"genreId\":\"艺术与文化\"}", [new("art", "艺术与文化")]).GenreId);
+        Assert.Equal("art", BookRecognitionService.ParseResult("{\"genreId\":\"Arts\"}", [new("art", "Arts")]).GenreId);
+        Assert.Equal("", BookRecognitionService.ParseResult("{\"genreId\":\"Arts\"}", [new("art", "Arts"), new("other", "Arts")]).GenreId);
+        Assert.Equal("", BookRecognitionService.ParseResult("{\"genreId\":\"\"}", [new("art", "Arts")]).GenreId);
+    }
+
     [Fact]
     public async Task MissingConfigurationDisablesRecognitionWithoutCallingProvider()
     {
@@ -105,6 +157,34 @@ public sealed class BookRecognitionTests
         Assert.Equal("Client", repaired.ClientName); Assert.Equal("Creator", repaired.ContactName); Assert.Equal(user.Email, repaired.Email); Assert.Equal("123",repaired.Phone);
         var snapshot = missing with { ClientName="Captured company",ContactName="Captured name", Email="captured@example.test", Phone="456" };
         Assert.Equal(snapshot,CreatorInfo.FillMissing(snapshot,user));
+    }
+
+    [Fact]
+    public async Task AnthropicUsesMessagesHeadersAndBase64ImageBlocks()
+    {
+        var handler = new AnthropicHandler();
+        using var client = new HttpClient(handler);
+        var service = new BookRecognitionService(client, new(true, new Uri("https://example.test/v1/messages"), "vision", "test-key", "anthropic"));
+        var result = await service.RecognizeAsync([new("image/jpeg", [1,2,3])], [], "zh-CN", default);
+        Assert.Equal("Book", result.Title);
+    }
+
+    private sealed class AnthropicHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            Assert.Null(request.Headers.Authorization);
+            Assert.Equal("test-key", request.Headers.GetValues("x-api-key").Single());
+            Assert.Equal("2023-06-01", request.Headers.GetValues("anthropic-version").Single());
+            using var json = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
+            Assert.True(json.RootElement.TryGetProperty("max_tokens", out _));
+            Assert.False(json.RootElement.TryGetProperty("response_format", out _));
+            var image = json.RootElement.GetProperty("messages")[0].GetProperty("content")[1];
+            Assert.Equal("image", image.GetProperty("type").GetString());
+            Assert.Equal("image/jpeg", image.GetProperty("source").GetProperty("media_type").GetString());
+            Assert.Equal("AQID", image.GetProperty("source").GetProperty("data").GetString());
+            return new(HttpStatusCode.OK) { Content = new StringContent("{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Book\\\"}\"}]}") };
+        }
     }
 
     private sealed class ProviderHandler : HttpMessageHandler

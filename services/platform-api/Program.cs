@@ -41,8 +41,8 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddOpenApi();
-builder.Services.AddSingleton(BookRecognitionSettings.FromConfiguration(builder.Configuration));
-builder.Services.AddHttpClient<BookRecognitionService>(client => client.Timeout = TimeSpan.FromSeconds(60))
+
+builder.Services.AddHttpClient("book-recognition", client => client.Timeout = TimeSpan.FromSeconds(60))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 var trustedProxyAddresses = new HashSet<IPAddress>();
 foreach (var value in builder.Configuration.GetSection("Network:TrustedProxies")
@@ -75,6 +75,8 @@ var dataDirectory = string.IsNullOrWhiteSpace(configuredDataDirectory)
     : Path.GetFullPath(Path.IsPathRooted(configuredDataDirectory)
         ? configuredDataDirectory
         : Path.Combine(builder.Environment.ContentRootPath, configuredDataDirectory));
+builder.Services.AddSingleton(provider => new BookRecognitionSettingsStore(dataDirectory, builder.Configuration, provider.GetRequiredService<IDataProtectionProvider>()));
+builder.Services.AddTransient(provider => new BookRecognitionService(provider.GetRequiredService<IHttpClientFactory>().CreateClient("book-recognition"), provider.GetRequiredService<BookRecognitionSettingsStore>().Current));
 var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db")}";
 var voiceSampleDirectory = Path.Combine(dataDirectory, "voice-samples");
 var voiceSampleLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
@@ -505,6 +507,61 @@ api.MapGet("/form-options", (HttpContext context, FormOptionRepository options, 
         SourceCategories = categories.ForLocale(FileCategoryScopes.Source, locale),
         ReferenceCategories = categories.ForLocale(FileCategoryScopes.Reference, locale)
     });
+});
+
+api.MapGet("/admin/ai-settings", (HttpContext context, BookRecognitionSettingsStore settings) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    context.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(settings.Get(Locale(context)));
+});
+api.MapPut("/admin/ai-settings", (UpdateAiSettingsRequest? request, HttpContext context, BookRecognitionSettingsStore settings) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    context.Response.Headers.CacheControl = "no-store";
+    if (request is null || !settings.Save(request)) return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid AI settings.", false);
+    return Results.Ok(settings.Get(Locale(context)));
+});
+
+api.MapPost("/admin/ai-settings/providers", (UpsertAiProviderRequest? request, HttpContext context, BookRecognitionSettingsStore settings) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    context.Response.Headers.CacheControl = "no-store";
+    if (request is null || !settings.Upsert(request)) return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid provider settings.", false);
+    return Results.Ok(settings.Get(Locale(context)));
+});
+api.MapPut("/admin/ai-settings/active", (SelectAiProviderRequest? request, HttpContext context, BookRecognitionSettingsStore settings) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    context.Response.Headers.CacheControl = "no-store";
+    if (request is null || !settings.Select(request.ProviderId)) return Error(context, 400, "validation.failed", "errors.validation.failed", "Provider is not configured.", false);
+    return Results.Ok(settings.Get(Locale(context)));
+});
+api.MapPut("/admin/ai-settings/bindings", (UpdateAiBindingRequest? request, HttpContext context, BookRecognitionSettingsStore settings) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    context.Response.Headers.CacheControl = "no-store";
+    if (request is null || !settings.Bind(request)) return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid AI feature settings.", false);
+    return Results.Ok(settings.Get(Locale(context)));
+});
+api.MapDelete("/admin/ai-settings/providers/{id}", (string id, HttpContext context, BookRecognitionSettingsStore settings) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
+    context.Response.Headers.CacheControl = "no-store";
+    if (!settings.Remove(id)) return Error(context, 400, "validation.failed", "errors.validation.failed", "Switch or disable the active provider before deleting it.", false);
+    return Results.Ok(settings.Get(Locale(context)));
 });
 
 api.MapGet("/admin/runtime-settings", (HttpContext context, RuntimeSettingsStore settings, RuntimeLifecycle lifecycle) =>
@@ -1144,7 +1201,8 @@ api.MapPost("/projects/{id}/recognize-book", async (string id, BookRecognitionRe
                 return Error(context, 400, "recognition.images", "bookIntake.recognitionImages", "Cover photo is unavailable.", false);
             images.Add(new(asset.ContentType, await File.ReadAllBytesAsync(path, context.RequestAborted)));
         }
-        var result = await recognition.RecognizeAsync([.. images], options.ForLocale(Locale(context)).Genres, Locale(context), context.RequestAborted);
+        var bookContext = await BookRecognitionContext.BuildAsync(project.Book, folder, context.RequestAborted);
+        var result = await recognition.RecognizeAsync([.. images], options.ForLocale(Locale(context)).Genres, Locale(context), context.RequestAborted, bookContext);
         return Results.Ok(result);
     }
     catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested) { return Results.StatusCode(499); }
@@ -1336,7 +1394,7 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     var requestSizeFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
     if (requestSizeFeature is { IsReadOnly: false }) requestSizeFeature.MaxRequestBodySize = multipartLimit;
     if (context.Request.ContentLength is > 0 && context.Request.ContentLength > multipartLimit)
-        return Error(context, 413, "validation.file", "errors.validation.file", "The file is larger than this category allows.", false);
+        return Error(context, 413, "validation.file", "errors.validation.fileSize", "The file is larger than this category allows.", false);
     var form = await context.Request.ReadFormAsync(context.RequestAborted);
     var categoryId = form["categoryId"].ToString();
     var characterId = form["characterId"].ToString();
@@ -1370,8 +1428,12 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     };
     if (storedAssets.Count(asset => asset.CategoryId == categoryId) >= category.MaxFiles)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The category file limit was reached.", false, [new FieldErrorDto(assetField, "too_many", "errors.validation.too_many")]);
-    if (file.Length > category.MaxBytes || !category.Accept.Contains(contentType, StringComparer.OrdinalIgnoreCase) || !await HasExpectedSignature(file, contentType, context.RequestAborted))
-        return Error(context, 400, "validation.file", "errors.validation.file", "The file type or size is not allowed.", false);
+    if (file.Length > category.MaxBytes)
+        return Error(context, 400, "validation.file", "errors.validation.fileSize", "The file is larger than this category allows.", false);
+    if (!category.Accept.Contains(contentType, StringComparer.OrdinalIgnoreCase))
+        return Error(context, 400, "validation.file", "errors.validation.fileType", "The file type is not allowed for this category.", false);
+    if (!await HasExpectedSignature(file, contentType, context.RequestAborted))
+        return Error(context, 400, "validation.file", "errors.validation.fileContent", "The file contents do not match its declared format.", false);
 
     await using var reservation = await storageQuota.TryReserveAsync(file.Length, context.RequestAborted);
     if (reservation is null)

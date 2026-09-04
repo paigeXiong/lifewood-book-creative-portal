@@ -13,7 +13,7 @@ export function isSupportedLocale(
 const resources = {
   "zh-CN": {
     translation: {
-      bookIntake: {"basicHint": "填写品牌、项目名称、视频目标、截止日期和目标受众。", "presetImage": "{{name}}的默认角色参考图", "presetHint": "AI 生成的默认参考图。可修改设定、上传自己的参考图，或删除整个角色。", "recognitionTitle": "封面识别", "recognitionHint": "上传封面、封底或书腰照片后，可将最多 6 张、合计 20 MB 的照片发送给已配置的 AI，提取书名、作者、副标题、类型、卖点和简介。只填入空白字段，请核对结果。", "recognitionDisabled": "尚未配置封面识别服务；请手动填写书籍信息。", "recognitionImages": "请选择 1–6 张已上传的封面照片，每张最多 10 MB，合计不超过 20 MB。", "recognitionFailed": "识别失败。请稍后重试或手动填写，已有信息未被修改。", "recognize": "识别并填写空白字段", "recognizing": "正在识别封面…", "recognitionDone": "已填入识别到的资料，请核对并补充。未识别的信息保留为空。", "recognitionNoChange": "没有可自动填入的新资料。已有内容已保留，您可以手动补充。", "uploadFirst": "前往 1.2 上传封面照片", "takePhoto": "拍摄封面照片"},
+      bookIntake: {"basicHint": "填写品牌、项目名称、视频目标、截止日期和目标受众。", "presetImage": "{{name}}的默认角色参考图", "presetHint": "AI 生成的默认参考图。可修改设定、上传自己的参考图，或删除整个角色。", "uploadCover": "上传封面", "recognizeShort": "识别填写", "recognitionTitle": "封面识别", "recognitionHint": "上传封面、封底或书腰照片后，可将最多 6 张、合计 20 MB 的照片发送给已配置的 AI，提取书名、作者、副标题、类型、卖点和简介。只填入空白字段，请核对结果。", "recognitionDisabled": "尚未配置封面识别服务；请手动填写书籍信息。", "recognitionImages": "请选择 1–6 张已上传的封面照片，每张最多 10 MB，合计不超过 20 MB。", "recognitionFailed": "识别失败。请稍后重试或手动填写，已有信息未被修改。", "recognize": "识别并填写空白字段", "recognizing": "正在识别封面…", "recognitionDone": "已填入识别到的资料，请核对并补充。未识别的信息保留为空。", "recognitionNoChange": "没有可自动填入的新资料。已有内容已保留，您可以手动补充。", "uploadFirst": "前往 1.2 上传封面照片", "takePhoto": "拍摄封面照片", "preparingPhoto": "正在处理并上传照片…", "photoFormat": "当前类别不接受 JPG 或 PNG 照片，请联系管理员检查文件类别配置。", "photoSize": "照片压缩后仍超过大小限制，请选择较小的照片。", "photoUnreadable": "无法读取这张照片，请将相机格式设为 JPG 后重拍，或选择 JPG、PNG 图片上传。", "photoInterrupted_camera": "拍照期间页面重新加载，尚未收到照片。请从相册重新选择照片上传。", "photoInterrupted_processing": "处理照片时页面重新加载，上传已中断。请降低拍照分辨率后重试。", "photoInterrupted_uploading": "上传时页面重新加载。请先检查封面列表，未出现时再重新上传。", "photoTimeout": "照片处理超时，请重新选择照片或降低相机分辨率后再试。", "photoUploadFailed": "照片上传失败，请重试。"},
       app: { name: "Lifewood · Deseret Book", clientName: "Deseret Book", providerName: "Lifewood" },
       nav: {
         tasks: "项目",
@@ -205,6 +205,9 @@ const resources = {
           invalid: "数据格式无效。",
           url: "素材地址无效。",
           file: "文件格式或大小不符合当前类别的要求，请重新选择。",
+          fileSize: "文件超过当前类别的大小限制，请压缩后重新上传。",
+          fileType: "当前类别不支持该文件格式，请选择卡片上列出的格式。",
+          fileContent: "文件内容与声明的格式不符，请重新导出为支持的格式后上传。",
         },
         system: { unexpected: "系统暂时无法完成请求，请稍后重试。" },
         http: {
@@ -423,6 +426,7 @@ const resources = {
         removeConfirm: "确定移除这个书籍文件吗？平台存储中的文件也会被删除。",
       },
       uploadZone: {
+        tapHint: "点击选择文件",
         dropHint: "点击卡片选择文件，或拖拽到此处",
         dropActive: "松开即可上传",
         browseHint: "支持从本机选择文件",
@@ -590,7 +594,7 @@ const resources = {
   },
   "en-US": {
     translation: {
-      bookIntake: {"basicHint": "Set the brand, project name, video goal, deadline and target audience.", "presetImage": "Default reference portrait for {{name}}", "presetHint": "AI-generated reference portrait. Edit the preset, upload your own reference images, or delete this character.", "recognitionTitle": "Cover recognition", "recognitionHint": "After uploading cover, back-cover or book-jacket photos, send up to 6 photos (20 MB total) to the configured AI to extract title, author, subtitle, genre, hook and synopsis. Only blank fields are filled. Please check the results.", "recognitionDisabled": "Cover recognition is not configured. Enter the book information manually.", "recognitionImages": "Choose 1–6 uploaded cover photos, up to 10 MB each and 20 MB in total.", "recognitionFailed": "Recognition failed. Try again later or enter the information manually. Existing information has been preserved.", "recognize": "Recognize and fill blank fields", "recognizing": "Recognizing cover…", "recognitionDone": "Recognized information has been filled in. Please review and complete it. Unreadable details remain blank.", "recognitionNoChange": "No new information could be filled in. Existing content was preserved; you can complete the fields manually.", "uploadFirst": "Go to 1.2 to upload cover photos", "takePhoto": "Take a cover photo"},
+      bookIntake: {"basicHint": "Set the brand, project name, video goal, deadline and target audience.", "presetImage": "Default reference portrait for {{name}}", "presetHint": "AI-generated reference portrait. Edit the preset, upload your own reference images, or delete this character.", "uploadCover": "Upload cover", "recognizeShort": "Scan & fill", "recognitionTitle": "Cover recognition", "recognitionHint": "After uploading cover, back-cover or book-jacket photos, send up to 6 photos (20 MB total) to the configured AI to extract title, author, subtitle, genre, hook and synopsis. Only blank fields are filled. Please check the results.", "recognitionDisabled": "Cover recognition is not configured. Enter the book information manually.", "recognitionImages": "Choose 1–6 uploaded cover photos, up to 10 MB each and 20 MB in total.", "recognitionFailed": "Recognition failed. Try again later or enter the information manually. Existing information has been preserved.", "recognize": "Recognize and fill blank fields", "recognizing": "Recognizing cover…", "recognitionDone": "Recognized information has been filled in. Please review and complete it. Unreadable details remain blank.", "recognitionNoChange": "No new information could be filled in. Existing content was preserved; you can complete the fields manually.", "uploadFirst": "Go to 1.2 to upload cover photos", "takePhoto": "Take a cover photo", "preparingPhoto": "Processing and uploading photo…", "photoFormat": "This category does not accept JPG or PNG photos. Ask an administrator to check its file settings.", "photoSize": "The compressed photo still exceeds the size limit. Choose a smaller photo.", "photoUnreadable": "This photo could not be read. Set the camera format to JPG and retake it, or upload a JPG or PNG image.", "photoInterrupted_camera": "The page reloaded before receiving the photo. Please select it from your gallery to upload.", "photoInterrupted_processing": "The page reloaded while processing the photo. Try a lower camera resolution.", "photoInterrupted_uploading": "The page reloaded during upload. Check your covers before uploading again.", "photoTimeout": "Photo processing timed out. Select the photo again or try a lower camera resolution.", "photoUploadFailed": "Photo upload failed. Please try again."},
       app: { name: "Lifewood · Deseret Book", clientName: "Deseret Book", providerName: "Lifewood" },
       nav: {
         tasks: "Projects",
@@ -792,6 +796,9 @@ const resources = {
           invalid: "The data format is invalid.",
           url: "A reference URL is invalid.",
           file: "This file type or size is not allowed for the selected category. Choose another file.",
+          fileSize: "The file exceeds the category size limit. Compress it and try again.",
+          fileType: "This category does not support the file format. Choose a format listed on the card.",
+          fileContent: "The file contents do not match its declared format. Export it again in a supported format and retry.",
         },
         system: {
           unexpected: "The request could not be completed. Try again later.",
@@ -1033,6 +1040,7 @@ const resources = {
           "Remove this book file? It will also be deleted from platform storage.",
       },
       uploadZone: {
+        tapHint: "Tap to choose files",
         dropHint: "Click the card to choose files, or drag them here",
         dropActive: "Drop to upload",
         browseHint: "Choose files from this device",

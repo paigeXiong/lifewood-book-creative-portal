@@ -131,7 +131,7 @@ function ReferenceImageField({
   assets: ReferenceAsset[];
   busy: boolean;
   error?: string;
-  onUpload: (files: FileList | null) => Promise<void>;
+  onUpload: (files: FileList | readonly File[] | null) => Promise<void>;
   onRemove: (asset: ReferenceAsset) => Promise<void>;
 }) {
   const { t, i18n } = useTranslation();
@@ -556,7 +556,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   };
   const uploadReferences = async (
     category: ReferenceCategory | undefined,
-    files: FileList | null,
+    files: FileList | readonly File[] | null,
     characterId?: string,
   ) => {
     if (!category || !files?.length || uploadTarget) return;

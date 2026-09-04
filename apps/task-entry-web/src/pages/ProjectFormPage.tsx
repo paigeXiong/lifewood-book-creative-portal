@@ -1,3 +1,4 @@
+import { createId } from "../create-id";
 import { EnumField } from "../components/EnumField";
 import { ChoiceRow } from "../components/ChoiceRow";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,11 +30,12 @@ type SourceTransfer = { id: string; categoryId: string; file: File; status: "upl
 
 function SourceFilesSection({ categories, assets, locale, uploadCategory, transfers, uploadError, onUpload, onRemove, onCancel, onRetry }: {
   categories: DisplayReferenceCategory[]; assets: ReferenceAsset[]; locale: string; uploadCategory?: string; transfers: SourceTransfer[]; uploadError?: string;
-  onUpload: (category: ReferenceCategory, files: FileList | null) => Promise<void>; onRemove: (id: string) => Promise<void>; onCancel: (id: string) => void; onRetry: (item: SourceTransfer) => Promise<void>;
+  onUpload: (category: ReferenceCategory, files: FileList | readonly File[] | null) => Promise<void>; onRemove: (id: string) => Promise<void>; onCancel: (id: string) => void; onRetry: (item: SourceTransfer) => Promise<void>;
 }) {
   const { t } = useTranslation();
   return <section className="form-panel source-files-panel">
     <h2><span>1.2</span>{t("wizard.sections.sources")}</h2>
+    {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
 
     <div className="upload-grid source-upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <FileDropCard
       key={category.id}
@@ -44,12 +46,11 @@ function SourceFilesSection({ categories, assets, locale, uploadCategory, transf
       busyCategory={uploadCategory}
       required={category.required}
       camera={category.id === "book-cover"}
+      feedback={transfers.some(item => item.categoryId === category.id) && <ul className="transfer-list" aria-live="polite">{transfers.filter(item => item.categoryId === category.id).map(item => <li key={item.id}><span>{item.file.name}</span><small role={item.status === "error" ? "alert" : undefined}>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancel(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetry(item)}>{t("common.retry")}</button>}</li>)}</ul>}
       preview={category.id === "book-cover" && files[0] ? <img className="source-cover-preview" src={files[0].url} alt={t("sourceFiles.coverAlt", { title: files[0].fileName })} width="320" height="128" /> : undefined}
       onUpload={onUpload}
       onRemove={onRemove}
     />; })}</div>
-    {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancel(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetry(item)}>{t("common.retry")}</button>}</li>)}</ul>}
-    {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
   </section>;
 }
 
@@ -322,19 +323,26 @@ export function ProjectFormPage() {
       uploadControllers.current.delete(item.id);
     }
   };
-  const upload = async (category: ReferenceCategory, files: FileList | null) => {
-    if (!files?.length || uploadingRef.current) return;
+  const upload = async (category: ReferenceCategory, files: FileList | readonly File[] | null) => {
+    if (!files?.length) return;
+    if (uploadingRef.current) {
+      setUploadError(t("bookIntake.photoUploadFailed"));
+      if (category.id === "book-cover") throw new Error("Upload is already in progress");
+      return;
+    }
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
     uploadingRef.current = true;
     setUploadError(undefined);
     setUploadCategory(category.id);
     const available = Math.max(0, category.maxFiles - sourceAssets.filter((asset) => asset.categoryId === category.id).length);
-    const queue = Array.from(files).slice(0, available).map((file) => ({ id: crypto.randomUUID(), categoryId: category.id, file, status: "uploading" as const }));
     try {
+      const queue = Array.from(files).slice(0, available).map((file) => ({ id: createId(), categoryId: category.id, file, status: "uploading" as const }));
       if (saveInFlightRef.current && !await savePromiseRef.current) return;
       setTransfers((current) => [...current, ...queue]);
       for (const item of queue) await uploadOne(item);
+    } catch (error) {
+      setUploadError(localizedApiError(error, t));
     } finally {
       uploadingRef.current = false;
       setUploadCategory(undefined);

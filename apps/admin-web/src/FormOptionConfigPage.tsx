@@ -7,7 +7,6 @@ import { ModalFrame } from "./ModalFrame";
 import { SettingsTabs } from "./SettingsTabs";
 import { showAdminToast } from "./Toast";
 import { useUnsavedClose } from "./useUnsavedClose";
-import "./voice-config.css";
 
 const groups = ["brands", "video-goals", "audiences", "genres", "content-languages", "video-durations", "publishing-platforms", "role-types", "age-ranges", "genders", "visual-styles", "mood-tags", "image-style-tags", "pace-tags", "narration-tones", "speech-rates", "voice-genders", "voice-ages", "accents", "voice-emotions", "voice-tags"] as const;
 type GroupId = typeof groups[number];

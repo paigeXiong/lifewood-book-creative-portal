@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Lifewood.PlatformApi.Contracts;
+using Lifewood.PlatformApi.Features;
 
 namespace Lifewood.PlatformApi.Serialization;
 
@@ -9,6 +10,13 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSerializable(typeof(CurrentUserDto))]
 [JsonSerializable(typeof(HealthDto))]
 [JsonSerializable(typeof(BookRecognitionDto))]
+[JsonSerializable(typeof(AiSettingsDto))]
+[JsonSerializable(typeof(AiSettingsDocument))]
+[JsonSerializable(typeof(UpdateAiSettingsRequest))]
+[JsonSerializable(typeof(AiProvidersDocument))]
+[JsonSerializable(typeof(UpsertAiProviderRequest))]
+[JsonSerializable(typeof(SelectAiProviderRequest))]
+[JsonSerializable(typeof(UpdateAiBindingRequest))]
 [JsonSerializable(typeof(BookRecognitionRequest))]
 [JsonSerializable(typeof(CurrentUserDto[]))]
 [JsonSerializable(typeof(AuthStatusDto))]

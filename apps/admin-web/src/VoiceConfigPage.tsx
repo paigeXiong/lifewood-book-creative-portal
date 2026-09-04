@@ -4,7 +4,6 @@ import { adminService, localizedApiError, optionService } from "@lifewood/api-cl
 import type { AdminVoiceReference, SupportedLocale } from "@lifewood/domain";
 import { useTranslation } from "react-i18next";
 import { ModalFrame } from "./ModalFrame";
-import "./voice-config.css";
 import { SettingsTabs } from "./SettingsTabs";
 import { showAdminToast } from "./Toast";
 import { useUnsavedClose } from "./useUnsavedClose";

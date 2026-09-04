@@ -456,8 +456,11 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 }
 
 /* Book intake and character references must shrink within nested grid columns. */
-.book-recognition { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:12px 0 18px; padding:12px; border:1px solid var(--border, #d8e3dc); border-radius:10px; }
-.book-recognition > div { flex:1 1 280px; min-width:0; }
+.book-recognition { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:4px 0 18px; padding:0 0 12px; border-bottom:1px solid var(--border, #e1e7e3); }
+.book-recognition-title { flex:1 1 auto; min-width:0; font-size:13px; font-weight:600; color:var(--lw-castleton); }
+.book-recognition-actions { display:flex; align-items:center; flex-wrap:wrap; gap:6px; max-width:100%; }
+.book-recognition .button { min-height:36px; padding:8px 12px; font-size:12px; max-width:100%; white-space:normal; text-decoration:none; }
+.book-recognition a.button:visited { color:var(--lw-castleton); }
 .book-recognition p { margin:4px 0; font-size:13px; line-height:1.5; }
 .book-recognition > p { flex-basis:100%; }
 .form-grid input[readonly] { background:#f0f4f1; color:#52635a; }
@@ -465,3 +468,10 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .character-preset-preview img { width:120px; height:120px; object-fit:cover; border-radius:10px; flex-shrink:0; }
 .character-preset-preview figcaption { font-size:13px; color:#607167; }
 @media(max-width:480px) { .character-preset-preview { flex-wrap:wrap; } }
+
+/* Touch and compact layouts show only the file-picker instruction. */
+.upload-hint-desktop { display: none; }
+@media (min-width: 769px) and (hover: hover) and (pointer: fine) {
+  .upload-hint-touch { display: none; }
+  .upload-hint-desktop { display: inline; }
+}

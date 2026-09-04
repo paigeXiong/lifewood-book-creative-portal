@@ -1,3 +1,4 @@
+import { createId } from "../create-id";
 import { EnumField } from "../components/EnumField";
 import { ChoiceRow } from "../components/ChoiceRow";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -49,7 +50,7 @@ function VoiceSamplesSection({ form, voices, maxSelected, playingVoice, voiceTag
   </section>;
 }
 
-function ReferencesSection({ form, categories, locale, uploadCategory, transfers, uploadError, onUpload, onRemoveAsset, onCancelUpload, onRetryUpload }: { form: UseFormReturn<VoiceFormValues>; categories: DisplayReferenceCategory[]; locale: string; uploadCategory?: string; transfers: TransferItem[]; uploadError?: string; onUpload: (category: ReferenceCategory, files: FileList | null) => Promise<void>; onRemoveAsset: (id: string) => Promise<void>; onCancelUpload: (id: string) => void; onRetryUpload: (item: TransferItem) => Promise<void> }) {
+function ReferencesSection({ form, categories, locale, uploadCategory, transfers, uploadError, onUpload, onRemoveAsset, onCancelUpload, onRetryUpload }: { form: UseFormReturn<VoiceFormValues>; categories: DisplayReferenceCategory[]; locale: string; uploadCategory?: string; transfers: TransferItem[]; uploadError?: string; onUpload: (category: ReferenceCategory, files: FileList | readonly File[] | null) => Promise<void>; onRemoveAsset: (id: string) => Promise<void>; onCancelUpload: (id: string) => void; onRetryUpload: (item: TransferItem) => Promise<void> }) {
   const { t } = useTranslation();
   const [assets, competitorUrls] = useWatch({ control: form.control, name: ["assets", "competitorUrls"] });
   const linksEnabled = categories.some((category) => category.allowsUrl && !category.unavailable);
@@ -263,21 +264,22 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
       }
     } finally { if (activeUploadRef.current?.id === item.id) activeUploadRef.current = null; }
   };
-  const upload = async (category: ReferenceCategory, files: FileList | null) => {
+  const upload = async (category: ReferenceCategory, files: FileList | readonly File[] | null) => {
     if (!files?.length || uploadingRef.current) return;
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
     uploadingRef.current = true; setUploadError(undefined); setUploadCategory(category.id);
     const available = Math.max(0, category.maxFiles - form.getValues("assets").filter((asset) => asset.categoryId === category.id).length);
-    const queue = Array.from(files).slice(0, available).map((file) => ({ id: crypto.randomUUID(), categoryId: category.id, file, status: "uploading" as const }));
     try {
+    const queue = Array.from(files).slice(0, available).map((file) => ({ id: createId(), categoryId: category.id, file, status: "uploading" as const }));
     if (saveInFlightRef.current && !await savePromiseRef.current) return;
     setTransfers((current) => [...current, ...queue]);
     for (const item of queue) {
       if (cancelledTransferIdsRef.current.delete(item.id)) continue;
       await uploadOne(item);
     }
-    } finally { uploadingRef.current = false; setUploadCategory(undefined); }
+    } catch (error) { setUploadError(localizedApiError(error, t)); }
+    finally { uploadingRef.current = false; setUploadCategory(undefined); }
   };
   const retryUpload = async (item: TransferItem) => {
     if (uploadingRef.current) return;

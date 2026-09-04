@@ -65,6 +65,7 @@ const AuditPage = lazy(() => import("./AuditPage").then((module) => ({ default: 
 const FormOptionConfigPage = lazy(() => import("./FormOptionConfigPage").then((module) => ({ default: module.FormOptionConfigPage })));
 const FileCategoryConfigPage = lazy(() => import("./FileCategoryConfigPage").then((module) => ({ default: module.FileCategoryConfigPage })));
 const VoiceConfigPage = lazy(() => import("./VoiceConfigPage").then((module) => ({ default: module.VoiceConfigPage })));
+const AiSettingsPage = lazy(() => import("./AiSettingsPage").then(module => ({ default: module.AiSettingsPage })));
 const SystemRuntimePage = lazy(() => import("./SystemRuntimePage").then((module) => ({ default: module.SystemRuntimePage })));
 
 type AdminNavIconName = "home" | "overview" | "projects" | "users" | "organizations" | "audit" | "settings";
@@ -1812,6 +1813,7 @@ function AdminRoot() {
         <Route path="users" element={<UsersPage locale={locale} />} />
         <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
         <Route path="audit" element={<AuditPage locale={locale} />} />
+        <Route path="settings/ai" element={<AiSettingsPage locale={locale} />} />
         <Route path="settings" element={<Navigate replace to="options" />} />
         <Route
           path="settings/options"

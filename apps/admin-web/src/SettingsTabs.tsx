@@ -8,6 +8,7 @@ export function SettingsTabs({ locale }: { locale: SupportedLocale }) {
     <NavLink to={`/${locale}/settings/options`}>{t("admin.settings.formOptions")}</NavLink>
     <NavLink to={`/${locale}/settings/files`}>{t("admin.settings.fileCategories")}</NavLink>
     <NavLink to={`/${locale}/settings/voices`}>{t("admin.settings.voices")}</NavLink>
+    <NavLink to={`/${locale}/settings/ai`}>{t("admin.settings.ai")}</NavLink>
     <NavLink to={`/${locale}/settings/runtime`}>{t("admin.settings.runtime")}</NavLink>
   </nav>;
 }

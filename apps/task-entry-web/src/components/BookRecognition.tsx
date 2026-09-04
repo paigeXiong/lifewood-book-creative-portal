@@ -40,10 +40,13 @@ export function BookRecognition({ taskId, locale, enabled, assets, form, busy }:
   };
   if (!enabled) return null;
   return <div className="book-recognition">
-    <div><strong>{t("bookIntake.recognitionTitle")}</strong><p>{t("bookIntake.recognitionHint")}</p></div>
-    {enabled && <><button type="button" disabled={pending || busy || covers.length === 0} onClick={() => void recognize()}>{t(pending ? "bookIntake.recognizing" : "bookIntake.recognize")}</button>
-      {covers.length === 0 && <a href="#source-upload-book-cover">{t("bookIntake.uploadFirst")}</a>}
-      {pending && <button type="button" onClick={() => { controller.current?.abort(); controller.current = null; setPending(false); }}>{t("voice.cancelUpload")}</button>}</>}
+    <strong className="book-recognition-title">{t("bookIntake.recognitionTitle")}</strong>
+    <div className="book-recognition-actions">
+      {covers.length === 0
+        ? <a className="button button-secondary" href="#source-upload-book-cover">{t("bookIntake.uploadCover")}</a>
+        : <button className="button button-secondary" type="button" disabled={pending || busy} onClick={() => void recognize()}>{t(pending ? "bookIntake.recognizing" : "bookIntake.recognizeShort")}</button>}
+      {pending && <button className="button button-quiet" type="button" onClick={() => { controller.current?.abort(); controller.current = null; setPending(false); }}>{t("common.cancel")}</button>}
+    </div>
     {message && <p role="status">{message}</p>}{error && <p className="inline-error" role="alert">{error}</p>}
   </div>;
 }

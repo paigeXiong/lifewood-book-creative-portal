@@ -385,7 +385,28 @@ export interface AuditEventListQuery {
   pageSize?: number;
 }
 
+export interface AiProvider {
+  id: string; name: string; protocol: string; endpoint: string; model: string; hasApiKey: boolean; models: string[];
+}
+export interface AiProviderInput {
+  id?: string; name: string; protocol: string; endpoint: string; model: string; apiKey: string; clearApiKey: boolean; models: string[];
+}
+export interface AiBinding { featureId: string; label: string; providerId: string | null; model: string; enabled: boolean; }
+export interface AiSettings {
+  bindings: AiBinding[]; activeProviderId: string | null; providers: AiProvider[];
+  protocols: { id: string; label: string; endpointPlaceholder: string }[];
+  labels: Record<string, string>;
+}
 export const adminService = {
+  getAiSettings: (locale: SupportedLocale) => request<AiSettings>("/admin/ai-settings", { locale }),
+  upsertAiProvider: (settings: AiProviderInput, locale: SupportedLocale) =>
+    request<AiSettings>("/admin/ai-settings/providers", { method: "POST", locale, body: JSON.stringify(settings) }),
+  updateAiBinding: (binding: Omit<AiBinding, "label">, locale: SupportedLocale) =>
+    request<AiSettings>("/admin/ai-settings/bindings", { method: "PUT", locale, body: JSON.stringify(binding) }),
+  selectAiProvider: (providerId: string | null, locale: SupportedLocale) =>
+    request<AiSettings>("/admin/ai-settings/active", { method: "PUT", locale, body: JSON.stringify({ providerId }) }),
+  deleteAiProvider: (id: string, locale: SupportedLocale) =>
+    request<AiSettings>('/admin/ai-settings/providers/' + encodeURIComponent(id), { method: "DELETE", locale }),
   getOverview: () => request<AdminOverview>("/admin/overview"),
   getRuntimeSettings: () => request<RuntimeSettings>("/admin/runtime-settings"),
   updateRuntimeSettings: (settings: { scheme: "http" | "https"; listenAddress: string; port: number }) =>

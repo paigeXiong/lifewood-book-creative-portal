@@ -1,6 +1,8 @@
-import { useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReferenceAsset, ReferenceCategory } from "@lifewood/domain";
+import { PhotoError, preparePhoto } from "../prepare-photo";
+import { interruptedPhotoAttempt, markPhotoAttempt } from "../photo-attempt";
 
 type DisplayCategory = ReferenceCategory & { unavailable?: boolean };
 
@@ -25,6 +27,7 @@ export function FileDropCard({
   className,
   showFileList = true,
   camera = false,
+  feedback,
   onUpload,
   onRemove,
 }: {
@@ -38,7 +41,8 @@ export function FileDropCard({
   className?: string;
   showFileList?: boolean;
   camera?: boolean;
-  onUpload: (category: ReferenceCategory, files: FileList | null) => Promise<void>;
+  feedback?: ReactNode;
+  onUpload: (category: ReferenceCategory, files: FileList | readonly File[] | null) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -48,9 +52,36 @@ export function FileDropCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const [dragging, setDragging] = useState(false);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string>();
+  const [interrupted, setInterrupted] = useState(() => camera ? interruptedPhotoAttempt(inputId) : undefined);
+  useEffect(() => {
+    const input = cameraRef.current;
+    const cancel = () => markPhotoAttempt(inputId);
+    input?.addEventListener("cancel", cancel);
+    return () => input?.removeEventListener("cancel", cancel);
+  }, [inputId, camera]);
   const atLimit = files.length >= category.maxFiles;
-  const disabled = Boolean(busyCategory) || Boolean(category.unavailable) || atLimit;
+  const disabled = preparingPhoto || Boolean(busyCategory) || Boolean(category.unavailable) || atLimit;
   const uploading = busyCategory === category.id;
+  const uploadFiles = async (selectedFiles: FileList | readonly File[] | null) => {
+    if (!selectedFiles?.length) { if (camera) markPhotoAttempt(inputId); return; }
+    if (!camera) { await onUpload(category, selectedFiles); return; }
+    setPhotoError(undefined);
+    setInterrupted(undefined);
+    markPhotoAttempt(inputId, "processing");
+    setPreparingPhoto(true);
+    try {
+      const prepared: File[] = [];
+      for (const file of Array.from(selectedFiles).slice(0, Math.max(0, category.maxFiles - files.length))) {
+        prepared.push(await preparePhoto(file, category));
+      }
+      markPhotoAttempt(inputId, "uploading");
+      await onUpload(category, prepared);
+    }
+    catch (error) { setPhotoError(t(`bookIntake.${error instanceof PhotoError ? error.key : "photoUploadFailed"}`)); }
+    finally { markPhotoAttempt(inputId); setPreparingPhoto(false); }
+  };
 
   const openPicker = () => {
     if (!disabled) inputRef.current?.click();
@@ -89,18 +120,20 @@ export function FileDropCard({
     event.preventDefault();
     dragDepthRef.current = 0;
     setDragging(false);
-    if (!disabled && event.dataTransfer.files.length) void onUpload(category, event.dataTransfer.files);
+    if (!disabled && event.dataTransfer.files.length) void uploadFiles(event.dataTransfer.files);
   };
 
   const prompt = dragging
     ? t("uploadZone.dropActive")
+    : preparingPhoto
+      ? t("bookIntake.preparingPhoto")
     : uploading
       ? t("voice.uploading")
       : category.unavailable
         ? t("uploadZone.unavailable")
         : atLimit
           ? t("uploadZone.limitReached")
-          : t("uploadZone.dropHint");
+          : <><span className="upload-hint-touch">{t("uploadZone.tapHint")}</span><span className="upload-hint-desktop">{t("uploadZone.dropHint")}</span></>;
 
   return <div
     className={`upload-card upload-drop-card${className ? ` ${className}` : ""}${dragging ? " is-dragging" : ""}${disabled ? " is-disabled" : ""}${files.length ? " has-files" : ""}`}
@@ -138,25 +171,31 @@ export function FileDropCard({
       disabled={disabled}
       onChange={(event) => {
         const input = event.currentTarget;
-        void onUpload(category, input.files).finally(() => {
+        void uploadFiles(input.files).finally(() => {
           input.value = "";
         });
       }}
     />
     {camera && <>
-      <button className="button button-secondary upload-camera-button" type="button" disabled={disabled} onClick={() => cameraRef.current?.click()}>
+      <button className="button button-secondary upload-camera-button" type="button" disabled={disabled} onClick={() => { markPhotoAttempt(inputId, "camera"); cameraRef.current?.click(); }}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M8 5 6 8H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2l-2-3H8Z" />
           <circle cx="12" cy="14" r="4" />
         </svg>
-        <span>{t("bookIntake.takePhoto")}</span>
+        <span>{t(preparingPhoto ? "bookIntake.preparingPhoto" : "bookIntake.takePhoto")}</span>
       </button>
-      <input ref={cameraRef} type="file" hidden aria-label={t("bookIntake.takePhoto")} accept={category.accept.join(",")} capture="environment" disabled={disabled} onChange={event => { const input = event.currentTarget; void onUpload(category, input.files).finally(() => { input.value = ""; }); }} />
+      <input ref={cameraRef} type="file" hidden aria-label={t("bookIntake.takePhoto")} accept="image/*" capture="environment" disabled={disabled} onChange={event => {
+        const input = event.currentTarget;
+        void uploadFiles(input.files).finally(() => { input.value = ""; });
+      }} />
+      {photoError && <div className="inline-error" role="alert">{photoError}</div>}
+      {interrupted && <div className="inline-error" role="alert">{t(`bookIntake.photoInterrupted_${interrupted}`)}</div>}
     </>}
     {showFileList && files.length > 0 && <ul className="uploaded-files">{files.map((asset) => <li key={asset.id}>
       <span title={asset.fileName}>{asset.fileName}</span>
       <small>{formatBytes(asset.sizeBytes, locale)}</small>
       <button type="button" aria-label={t("sourceFiles.removeFile", { fileName: asset.fileName })} disabled={Boolean(busyCategory)} onClick={() => void onRemove(asset.id)}>{t("voice.remove")}</button>
     </li>)}</ul>}
+    {feedback}
   </div>;
 }

@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { i18n } from "@lifewood/i18n";
 import "./i18n";
 
+function flatten(value: Record<string, unknown>, prefix = ""): Record<string, string> {
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    return typeof entry === "string" ? [[path, entry]] : entry && typeof entry === "object" ? Object.entries(flatten(entry as Record<string, unknown>, path)) : [];
+  }));
+}
+const sourceFiles = import.meta.glob<string>(["./**/*.{ts,tsx}", "../../task-entry-web/src/**/*.{ts,tsx}", "!**/*.test.*"], { query: "?raw", import: "default", eager: true });
+
 const requiredKeys = [
   "admin.nav.home",
   "admin.workflow.new",
@@ -55,6 +63,40 @@ const requiredKeys = [
 ];
 
 describe("administrator locale resources", () => {
+  it("has matching keys and interpolation parameters in both languages", () => {
+    const zh = flatten(i18n.getResourceBundle("zh-CN", "translation"));
+    const en = flatten(i18n.getResourceBundle("en-US", "translation"));
+    const baseKey = (key: string) => key.replace(/_(?:zero|one|two|few|many|other)$/, "");
+    expect([...new Set(Object.keys(zh).map(baseKey))].sort()).toEqual([...new Set(Object.keys(en).map(baseKey))].sort());
+    const params = (value: string) => [...value.matchAll(/{{\s*([^},]+)(?:,[^}]+)?}}/g)].map(match => match[1].trim()).sort();
+    for (const key of Object.keys(zh)) {
+      expect(en[key].trim(), key).not.toBe("");
+      expect(params(zh[key]), key).toEqual(params(en[key]));
+    }
+    for (const key of Object.keys(en)) expect(params(en[key]), key).toEqual(params(zh[key] ?? zh[baseKey(key)]));
+  });
+  it("translates dynamic photo failures and reference-image counts", () => {
+    for (const locale of ["zh-CN", "en-US"]) {
+      for (const key of ["photoFormat", "photoSize", "photoUnreadable", "photoTimeout", "photoUploadFailed", "photoInterrupted_camera", "photoInterrupted_processing", "photoInterrupted_uploading"]) {
+        expect(i18n.getResource(locale, "translation", `bookIntake.${key}`), `${locale}: ${key}`).toBeTypeOf("string");
+      }
+    }
+    expect(i18n.t("creative.referenceAdded", { lng: "en-US", count: 1 })).toBe("1 reference image added");
+    expect(i18n.t("creative.referenceAdded", { lng: "en-US", count: 2 })).toBe("2 reference images added");
+    expect(i18n.t("creative.referenceAdded", { lng: "zh-CN", count: 2 })).toBe("已添加 2 张参考图片");
+  });
+  it("resolves literal translation keys used by both frontends without fallback", () => {
+    const missing: string[] = [];
+    expect(Object.keys(sourceFiles).length).toBeGreaterThan(50);
+    for (const [file, source] of Object.entries(sourceFiles)) {
+      for (const match of source.matchAll(/\bt\(\s*["']([^"']+)["']/g)) {
+        for (const locale of ["zh-CN", "en-US"]) {
+          if (typeof i18n.getResource(locale, "translation", match[1]) !== "string") missing.push(`${file}: ${locale}: ${match[1]}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
   for (const locale of ["zh-CN", "en-US"] as const) {
     it(`contains required ${locale} strings`, () => {
       for (const key of requiredKeys) expect(i18n.getResource(locale, "translation", key), key).toBeTypeOf("string");

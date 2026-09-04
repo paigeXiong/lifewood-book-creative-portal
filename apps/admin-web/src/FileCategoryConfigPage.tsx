@@ -7,7 +7,6 @@ import { ModalFrame } from "./ModalFrame";
 import { SettingsTabs } from "./SettingsTabs";
 import { showAdminToast } from "./Toast";
 import { useUnsavedClose } from "./useUnsavedClose";
-import "./voice-config.css";
 
 type Scope = "source" | "reference";
 
