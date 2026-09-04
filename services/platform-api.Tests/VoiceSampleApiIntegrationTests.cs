@@ -14,7 +14,7 @@ using Xunit;
 
 namespace Lifewood.PlatformApi.Tests;
 
-public sealed class VoiceSampleApiIntegrationTests : IDisposable
+public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
 {
     private const string VoiceId = "warm-storyteller";
     private const string OrphanUploadId = "11111111111111111111111111111111";
@@ -1188,11 +1188,19 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         return document.RootElement.GetProperty("code").GetString();
     }
 
-    public void Dispose()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
     {
         ownerClient.Dispose();
-        factory.Dispose();
+        await factory.DisposeAsync();
         SqliteConnection.ClearAllPools();
-        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        // The in-process entry point can finish its using declarations just after
+        // host shutdown. Wait briefly for Windows to release those file handles.
+        for (var attempt = 0; Directory.Exists(root); attempt++)
+        {
+            try { Directory.Delete(root, recursive: true); break; }
+            catch (IOException) when (attempt < 39) { await Task.Delay(50); }
+        }
     }
 }
