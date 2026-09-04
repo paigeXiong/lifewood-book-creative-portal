@@ -5,7 +5,17 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { ProjectCoverImage } from "../components/ProjectCoverImage";
+import { TaskFilters } from "../components/TaskFilters";
 import { buildPagination } from "../pagination";
+
+function TaskStatIcon({ kind }: { kind: "total" | "drafts" | "active" | "completed" }) {
+  return <svg className="reference-stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    {kind === "total" && <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>}
+    {kind === "drafts" && <><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="m16 3 5 5-9 9-6 1 1-6 9-9Z M13 6l5 5" /></>}
+    {kind === "active" && <><path d="M20 10a8 8 0 0 0-14-4L3 9m0-5v5h5M4 14a8 8 0 0 0 14 4l3-3m0 5v-5h-5" /></>}
+    {kind === "completed" && <><circle cx="12" cy="12" r="9" /><path d="m7.5 12 3 3 6-6" /></>}
+  </svg>;
+}
 
 function presentValue(value: string | null | undefined) {
   const normalized = value?.trim();
@@ -37,7 +47,6 @@ export function TaskListPage() {
   const requestedSort = searchParams.get("sort");
   const sort: TaskSortField = taskSortFields.includes(requestedSort as TaskSortField) ? requestedSort as TaskSortField : "updated";
   const direction: SortDirection = searchParams.get("direction") === "asc" ? "asc" : "desc";
-  const [searchInput, setSearchInput] = useState(search);
   const [showMobileCreate, setShowMobileCreate] = useState(false);
   const createButtonRef = useRef<HTMLButtonElement>(null);
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
@@ -78,7 +87,6 @@ export function TaskListPage() {
   const totalPages = Math.max(1, Math.ceil((tasks.data?.total ?? 0) / (tasks.data?.pageSize ?? 10)));
   const formatter = useMemo(() => new Intl.DateTimeFormat(validLocale, { dateStyle: "medium", timeStyle: "short" }), [validLocale]);
 
-  useEffect(() => setSearchInput(search), [search]);
   useEffect(() => {
     if (!tasks.isSuccess || page <= totalPages) return;
     setSearchParams((current) => {
@@ -141,41 +149,16 @@ export function TaskListPage() {
 
   return (
     <div className={`page page-list reference-dashboard${showMobileCreate ? " mobile-create-visible" : ""}`}>
-      <div className="page-header page-header-row">
-        <div>
-          <h1>{t("tasks.title")}</h1>
-          <p>{t("tasks.subtitle")}</p>
-        </div>
-        <button ref={createButtonRef} className="button button-primary header-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
-          {!createDraft.isPending && <span aria-hidden="true">＋</span>}
-          {createDraft.isPending ? t("common.creating") : t("common.createTask")}
-        </button>
-      </div>
+      <h1 className="sr-only">{t("tasks.title")}</h1>
 
       <section className="reference-stat-row" aria-label={t("tasks.stats.label")}>
-        <div className="reference-stat-card"><span>{t("tasks.stats.total")}</span><strong>{stats.data?.total ?? "—"}</strong></div>
-        <div className="reference-stat-card"><span>{t("tasks.stats.drafts")}</span><strong>{stats.data?.drafts ?? "—"}</strong></div>
-        <div className="reference-stat-card"><span>{t("tasks.stats.active")}</span><strong>{stats.data?.active ?? "—"}</strong></div>
-        <div className="reference-stat-card"><span>{t("tasks.stats.completed")}</span><strong>{stats.data?.completed ?? "—"}</strong></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.total")}</span><strong>{stats.data?.total ?? "—"}</strong><TaskStatIcon kind="total" /></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.drafts")}</span><strong>{stats.data?.drafts ?? "—"}</strong><TaskStatIcon kind="drafts" /></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.active")}</span><strong>{stats.data?.active ?? "—"}</strong><TaskStatIcon kind="active" /></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.completed")}</span><strong>{stats.data?.completed ?? "—"}</strong><TaskStatIcon kind="completed" /></div>
       </section>
 
       {stats.isError && <div className="inline-error stat-error" role="alert">{localizedApiError(stats.error, t)} <button className="button button-secondary" type="button" onClick={() => void stats.refetch()}>{t("common.retry")}</button></div>}
-
-      <section className="list-toolbar reference-toolbar" aria-label={t("nav.tasks")}>
-        <form className="search-form" role="search" onSubmit={(event) => { event.preventDefault(); updateFilters({ q: searchInput.trim(), page: 1 }); }}>
-          <label className="sr-only" htmlFor="task-search">{t("tasks.searchLabel")}</label>
-          <input id="task-search" name="q" type="search" autoComplete="off" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder={t("tasks.searchPlaceholder")} />
-          <button className="button button-secondary" type="submit">{t("tasks.searchAction")}</button>
-        </form>
-        <label className="filter-control">
-          <span className="sr-only">{t("tasks.filterLabel")}</span>
-          <select name="status" autoComplete="off" value={status} onChange={(event) => updateFilters({ status: event.target.value, page: 1 })}>
-            <option value="">{t("common.all")}</option>
-            {options.data?.taskStatuses.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-          </select>
-        </label>
-        <span className="result-count" aria-live="polite">{t("tasks.count", { count: tasks.data?.total ?? 0 })}</span>
-      </section>
 
       <section className="task-surface main-panel reference-table-panel" aria-busy={tasks.isPending}>
         {createDraft.isError && <div className="inline-error" role="alert">{localizedApiError(createDraft.error, t)}</div>}
@@ -183,21 +166,37 @@ export function TaskListPage() {
         {options.isError && <div className="inline-error" role="alert">{localizedApiError(options.error, t)} <button className="button button-secondary" type="button" onClick={() => void options.refetch()}>{t("common.retry")}</button></div>}
         {tasks.isPending && <span className="sr-only" role="status">{t("common.loading")}</span>}
         {tasks.isError && <div className="inline-error" role="alert">{localizedApiError(tasks.error, t)} <button className="button button-secondary" type="button" onClick={() => void tasks.refetch()}>{t("common.retry")}</button></div>}
-        {!tasks.isPending && tasks.data?.items.length === 0 && (
-          <div className="empty-state">
-            <div className="empty-folio" aria-hidden="true">01</div>
-            <div><h2>{t("tasks.emptyTitle")}</h2><p>{t("tasks.emptyDescription")}</p></div>
-            <button className="button button-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>{createDraft.isPending ? t("common.creating") : t("common.createTask")}</button>
-          </div>
-        )}
-        {(tasks.data?.items.length ?? 0) > 0 && (
           <div className="table-scroll">
             <table className="task-table data-table">
               <thead><tr>
                 {sortHeader("project", t("tasks.columns.project"))}{sortHeader("author", t("tasks.columns.book"))}{sortHeader("status", t("tasks.columns.status"))}
-                {sortHeader("updated", t("tasks.columns.updated"))}<th><span className="sr-only">{t("tasks.columns.action")}</span></th>
+                {sortHeader("updated", t("tasks.columns.updated"))}
+                <th className="task-create-heading">
+                  <span className="sr-only">{t("tasks.columns.action")}</span>
+                  <div className="task-table-controls">
+                  <TaskFilters search={search} status={status} statuses={options.data?.taskStatuses ?? []} total={tasks.data?.total} onApply={updateFilters} />
+                  <button ref={createButtonRef} className="button button-primary task-create-button" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
+                    {!createDraft.isPending && <span aria-hidden="true">＋</span>}
+                    {createDraft.isPending ? t("common.creating") : t("common.createTask")}
+                  </button>
+                  </div>
+                </th>
               </tr></thead>
-              <tbody>{tasks.data?.items.map((task) => {
+              <tbody>
+                {tasks.isPending && Array.from({ length: 4 }, (_, row) => (
+                  <tr key={`loading-${row}`} className="task-loading-row" aria-hidden="true">
+                    {Array.from({ length: 5 }, (_, column) => <td key={column}><span className="task-loading-placeholder" /></td>)}
+                  </tr>
+                ))}
+                {!tasks.isPending && tasks.data?.items.length === 0 && (
+                  <tr className="task-empty-row"><td colSpan={5}>
+                    <div className="empty-state">
+                      <div className="empty-folio" aria-hidden="true">01</div>
+                      <div><h2>{t("tasks.emptyTitle")}</h2><p>{t("tasks.emptyDescription")}</p></div>
+                    </div>
+                  </td></tr>
+                )}
+                {tasks.data?.items.map((task) => {
                 const statusId = task.status === "draft" ? task.status : (task.workflowStatus ?? task.status);
                 const statusOption = statusMap.get(statusId);
                 const target = task.status === "draft" ? `/tasks/${task.id}/edit/project` : `/tasks/${task.id}`;
@@ -217,7 +216,6 @@ export function TaskListPage() {
               })}</tbody>
             </table>
           </div>
-        )}
       </section>
 
       {totalPages > 1 && <nav className="pagination" aria-label={t("common.paginationLabel")}>

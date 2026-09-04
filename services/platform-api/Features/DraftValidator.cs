@@ -5,7 +5,7 @@ namespace Lifewood.PlatformApi.Features;
 
 internal static class DraftValidator
 {
-    public static FieldErrorDto[] Validate(SaveDraftRequest? request, FormOptionRepository options, FileCategoryRepository fileCategories, TaskDraftDto? current = null)
+    public static FieldErrorDto[] Validate(SaveDraftRequest? request, FormOptionRepository options, FileCategoryRepository fileCategories, TaskDraftDto? current = null, bool allowPastDeadline = false)
     {
         var errors = new List<FieldErrorDto>();
         if (request is null) return [Error("request", "required")];
@@ -49,7 +49,7 @@ internal static class DraftValidator
         if (!string.IsNullOrWhiteSpace(request.Project.Deadline) &&
             !DateOnly.TryParseExact(request.Project.Deadline, "yyyy-MM-dd", out _))
             errors.Add(Error("project.deadline", "date"));
-        else if (DateOnly.TryParseExact(request.Project.Deadline, "yyyy-MM-dd", out var deadline) && deadline < DateOnly.FromDateTime(DateTime.Today))
+        else if (!allowPastDeadline && DateOnly.TryParseExact(request.Project.Deadline, "yyyy-MM-dd", out var deadline) && deadline < DateOnly.FromDateTime(DateTime.Today))
             errors.Add(Error("project.deadline", "past_date"));
 
         var previousProject = current?.Project;

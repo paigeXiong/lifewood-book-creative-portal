@@ -1,6 +1,7 @@
+import { EnumField } from "../components/EnumField";
+import { ChoiceRow } from "../components/ChoiceRow";
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -15,7 +16,8 @@ import {
 } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
+import { useWizardNavigate as useNavigate } from "../wizard-motion";
 import {
   ApiError,
   localizedApiError,
@@ -32,31 +34,26 @@ import type {
 } from "@lifewood/domain";
 import { Field } from "../components/Field";
 import { FieldIcon } from "../components/FieldIcon";
+import { StylePreviewImage } from "../components/StylePreviewImage";
+import { ColorToneChoice } from "../components/ColorToneChoice";
 import { ChoiceField } from "../components/ChoiceField";
 import { StepProgress } from "../components/StepProgress";
+import { getHighestReachableStep } from "../workflow-progress";
 import { ScreenError } from "../components/ScreenError";
+import { FileDropCard } from "../components/FileDropCard";
 import {
   createCreativeDraftSchema,
-  createCreativeStepSchema,
+  createCharactersStepSchema,
+  createStyleStepSchema,
   emptyCharacter,
+  isCharactersComplete,
   type CreativeFormValues,
 } from "./creativeFormSchema";
+import { isVoicePreferencesComplete } from "./voiceFormSchema";
 import {
   mergeLegacyOptions,
-  type DisplayConfigOption,
 } from "../legacy-options";
 
-function Options({ items }: { items: DisplayConfigOption[] }) {
-  return (
-    <>
-      {items.map((item) => (
-        <option key={item.id} value={item.id} disabled={item.unavailable}>
-          {item.label}
-        </option>
-      ))}
-    </>
-  );
-}
 
 function toCreativeInfo(values: CreativeFormValues): CreativeInfo {
   return {
@@ -82,6 +79,7 @@ function toCreativeFormValues(creative: CreativeInfo): CreativeFormValues {
   return {
     characters: creative.characters.map((character) => ({
       id: character.id,
+      presetId: character.presetId,
       roleTypeId: character.roleTypeId ?? "",
       name: character.name,
       storyRole: character.storyRole,
@@ -105,23 +103,18 @@ function toCreativeFormValues(creative: CreativeInfo): CreativeFormValues {
 }
 
 function CharacterIdentity({
-  control,
-  index,
+  character,
   roleTypes,
 }: {
-  control: Control<CreativeFormValues>;
-  index: number;
+  character: CreativeFormValues["characters"][number] | undefined;
   roleTypes: ConfigOption[];
 }) {
   const { t } = useTranslation();
-  const character = useWatch({ control, name: `characters.${index}` });
+  const roleLabel = roleTypes.find((item) => item.id === character?.roleTypeId)?.label ?? t("creative.rolePending");
   return (
     <div>
       <strong>{character?.name || t("creative.unnamedCharacter")}</strong>
-      <span>
-        {roleTypes.find((item) => item.id === character?.roleTypeId)?.label ??
-          t("creative.rolePending")}
-      </span>
+      {roleLabel !== character?.name && <span>{roleLabel}</span>}
     </div>
   );
 }
@@ -142,78 +135,47 @@ function ReferenceImageField({
   onRemove: (asset: ReferenceAsset) => Promise<void>;
 }) {
   const { t, i18n } = useTranslation();
-  const inputId = useId();
   if (!category)
     return (
       <div className="reference-image-field unavailable">
         <p>{t("creative.referencesUnavailable")}</p>
       </div>
     );
-  const limitReached = assets.length >= category.maxFiles;
   return (
-    <div className="reference-image-field">
-      <div className="reference-image-heading">
-        <div>
-          <strong>{category.label}</strong>
-          <small>{category.description}</small>
-        </div>
-        <label
-          className={`button button-secondary ${busy || limitReached ? "disabled" : ""}`}
-          aria-disabled={busy || limitReached}
-          htmlFor={inputId}
-        >
-          {busy ? t("voice.uploading") : t("creative.addReferenceImages")}
-        </label>
-        <input
-          id={inputId}
-          name={inputId}
-          className="visually-hidden"
-          type="file"
-          accept={category.accept.join(",")}
-          multiple
-          disabled={busy || limitReached}
-          onChange={(event) => {
-            void onUpload(event.currentTarget.files);
-            event.currentTarget.value = "";
-          }}
-        />
-      </div>
-      <small className="reference-image-limit">
-        {t("creative.referenceLimit", {
-          count: category.maxFiles,
-          size: new Intl.NumberFormat(i18n.language, {
-            maximumFractionDigits: 1,
-          }).format(category.maxBytes / 1_000_000),
-        })}
-      </small>
-      {assets.length > 0 && (
-        <ul className="reference-image-grid">
-          {assets.map((asset) => (
-            <li key={asset.id}>
-              <a href={asset.url} target="_blank" rel="noreferrer">
-                <img
-                  src={asset.url}
-                  alt={asset.fileName}
-                  width="112"
-                  height="84"
-                  loading="lazy"
-                />
-              </a>
-              <button
-                type="button"
-                disabled={busy}
-                aria-label={t("creative.removeReferenceImage", {
-                  name: asset.fileName,
-                })}
-                onClick={() => void onRemove(asset)}
-              >
-                ×
-              </button>
-              <span title={asset.fileName}>{asset.fileName}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <div className="reference-image-upload">
+      <FileDropCard
+        inputId={`reference-upload-${category.id}`}
+        category={category}
+        files={assets}
+        locale={i18n.language}
+        busyCategory={busy ? category.id : undefined}
+        className="character-reference-drop-card"
+        showFileList={false}
+        preview={<div className="reference-image-preview" aria-live="polite">
+          {assets.length > 0 ? <>
+            <ul className="reference-image-grid">
+              {assets.map((asset) => (
+                <li key={asset.id}>
+                  <a href={asset.url} target="_blank" rel="noreferrer">
+                    <img src={asset.url} alt={asset.fileName} width="112" height="84" loading="lazy" />
+                  </a>
+                  <button type="button" disabled={busy} aria-label={t("creative.removeReferenceImage", { name: asset.fileName })} onClick={() => void onRemove(asset)}>×</button>
+                  <span title={asset.fileName}>{asset.fileName}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="reference-image-status"><span aria-hidden="true">✓</span>{t("creative.referenceAdded", { count: assets.length })}</p>
+          </> : <div className="reference-image-empty">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3" /><path d="M5.5 19c.7-4 3-6 6.5-6s5.8 2 6.5 6" /></svg>
+            <span>{t("creative.referenceEmpty")}</span>
+          </div>}
+        </div>}
+        onUpload={async (_category, files) => onUpload(files)}
+        onRemove={async (id) => {
+          const asset = assets.find((item) => item.id === id);
+          if (asset) await onRemove(asset);
+        }}
+      />
       {error && (
         <div className="field-error" role="alert">
           {error}
@@ -224,22 +186,29 @@ function ReferenceImageField({
 }
 
 function CreativeSummary({
+  stage,
   control,
   visualStyles,
   roleTypes,
   styleTagMap,
+  activeCharacter,
+  onNext,
+  nextDisabled,
 }: {
+  stage: "characters" | "style";
   control: Control<CreativeFormValues>;
   visualStyles: ConfigOption[];
   roleTypes: ConfigOption[];
   styleTagMap: Map<string, string>;
+  activeCharacter?: CreativeFormValues["characters"][number];
+  onNext: () => void;
+  nextDisabled: boolean;
 }) {
   const { t } = useTranslation();
-  const [characters, visualStyleId, moodTagIds, imageStyleTagIds, paceTagIds] =
+  const [visualStyleId, moodTagIds, imageStyleTagIds, paceTagIds] =
     useWatch({
       control,
       name: [
-        "characters",
         "visualStyleId",
         "moodTagIds",
         "imageStyleTagIds",
@@ -247,43 +216,18 @@ function CreativeSummary({
       ],
     });
   const selectedStyle = visualStyles.find((item) => item.id === visualStyleId);
+  const portrait = activeCharacter?.referenceImages[0]?.url ?? activeCharacter?.referenceImageUrls[0] ??
+    (activeCharacter?.presetId ? `/character-presets/${activeCharacter.presetId}.png` : undefined);
   return (
     <aside className="creative-summary">
-      <div className="casting-card">
-        <span className="folio-label">{t("creative.summary.casting")}</span>
-        <strong>
-          {t("creative.summary.characterCount", { count: characters.length })}
-        </strong>
-        <div className="casting-stack">
-          {characters.slice(0, 5).map((character, index) => (
-            <div key={character.id}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <div>
-                <strong>
-                  {character.name || t("creative.unnamedCharacter")}
-                </strong>
-                <small>
-                  {roleTypes.find((item) => item.id === character.roleTypeId)
-                    ?.label ?? "—"}
-                </small>
-              </div>
-            </div>
-          ))}
-        </div>
-        {characters.length > 5 && (
-          <small>
-            {t("creative.summary.more", { count: characters.length - 5 })}
-          </small>
-        )}
-      </div>
-      <div className="style-summary-card">
+      {stage === "characters" && activeCharacter && <figure className="focused-character-card">
+        {portrait ? <img key={portrait} src={portrait} alt={t("creative.characterPortraitAlt", { name: activeCharacter.name || t("creative.unnamedCharacter") })} width={640} height={640} /> :
+          <div className="focused-character-empty"><FieldIcon name="person" /><span>{t("creative.referenceEmpty")}</span></div>}
+        <figcaption><CharacterIdentity character={activeCharacter} roleTypes={roleTypes} /></figcaption>
+      </figure>}
+      {stage === "style" && <div className="style-summary-card">
         <span className="folio-label">{t("creative.summary.direction")}</span>
-        <div
-          className="summary-swatch"
-          style={{ backgroundColor: selectedStyle?.previewColor ?? "#e7e7e1" }}
-        >
-          <i />
-        </div>
+        <StylePreviewImage option={selectedStyle} className="summary-swatch" />
         <strong>{selectedStyle?.label ?? t("creative.summary.noStyle")}</strong>
         <p>
           {[...moodTagIds, ...imageStyleTagIds, ...paceTagIds]
@@ -291,28 +235,27 @@ function CreativeSummary({
             .filter(Boolean)
             .join(" · ") || t("creative.summary.noTags")}
         </p>
-      </div>
-      <div className="next-card">
+      </div>}
+      <button className="next-card next-card-button" type="button" disabled={nextDisabled} onClick={onNext}>
         <span className="next-mark" aria-hidden="true">
           →
         </span>
         <div>
-          <h3>{t("creative.summary.nextTitle")}</h3>
-          <p>{t("creative.summary.nextBody")}</p>
+          <h3>{t(`creative.summary.${stage === "characters" ? "nextVoiceTitle" : "nextReferencesTitle"}`)}</h3>
         </div>
-      </div>
+      </button>
     </aside>
   );
 }
 
-export function CreativeFormPage() {
+export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   const { t } = useTranslation();
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
   const [saveState, setSaveState] = useState<
-    "idle" | "pending" | "saving" | "saved" | "invalid" | "error"
+    "idle" | "invalid" | "error"
   >("idle");
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>();
   const [uploadTarget, setUploadTarget] = useState<string>();
@@ -320,14 +263,21 @@ export function CreativeFormPage() {
   const [uploadErrorTarget, setUploadErrorTarget] = useState<string>();
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const saveInFlightRef = useRef(false);
+  const savePromiseRef = useRef<Promise<boolean> | undefined>(undefined);
+  const savedSnapshotRef = useRef<string | undefined>(undefined);
+  const [navigating, setNavigating] = useState(false);
   const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
-  const draftSchema = useMemo(() => createCreativeDraftSchema(t), [t]);
-  const stepSchema = useMemo(() => createCreativeStepSchema(t), [t]);
   const draftQuery = useQuery({
     queryKey: ["project", taskId],
     queryFn: () => projectService.getProject(taskId!, validLocale),
     enabled: Boolean(taskId),
   });
+  const previousToneIds = draftQuery.data?.creative.imageStyleTagIds;
+  const draftSchema = useMemo(() => createCreativeDraftSchema(t, previousToneIds), [t, previousToneIds]);
+  const stepSchema = useMemo(
+    () => stage === "characters" ? createCharactersStepSchema(t, previousToneIds) : createStyleStepSchema(t, previousToneIds),
+    [stage, t, previousToneIds],
+  );
   const optionsQuery = useQuery({
     queryKey: ["form-options", validLocale],
     queryFn: () => optionService.getFormOptions(validLocale),
@@ -415,7 +365,7 @@ export function CreativeFormPage() {
       values: CreativeFormValues;
       continueAfter: boolean;
     }) => {
-      setSaveState("saving");
+
       const current =
         queryClient.getQueryData<TaskDraft>(["project", taskId]) ??
         draftQuery.data!;
@@ -427,14 +377,14 @@ export function CreativeFormPage() {
       );
       return { saved, continueAfter, values };
     },
-    onSuccess: ({ saved, continueAfter, values }) => {
+    onSuccess: async ({ saved, continueAfter, values }) => {
       queryClient.setQueryData(["project", taskId], saved);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      form.reset(values, { keepValues: true });
+      form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values);
       failedSaveSnapshotRef.current = undefined;
-      setSaveState("saved");
+      setSaveState("idle");
       if (continueAfter)
-        navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/voice`));
+        await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "characters" ? "voice" : "references"}`));
     },
     onError: (_error, variables) => {
       failedSaveSnapshotRef.current = JSON.stringify(variables.values);
@@ -451,32 +401,31 @@ export function CreativeFormPage() {
     explicit: boolean,
   ) => {
     const snapshot = JSON.stringify(values);
-    if (
-      saveInFlightRef.current ||
-      (!explicit && failedSaveSnapshotRef.current === snapshot)
-    )
-      return;
+    if (saveInFlightRef.current) return savePromiseRef.current ?? Promise.resolve(false);
+    if (!explicit && failedSaveSnapshotRef.current === snapshot) return Promise.resolve(false);
     if (autosaveTimerRef.current !== undefined)
       window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
     if (explicit) failedSaveSnapshotRef.current = undefined;
     saveInFlightRef.current = true;
-    saveCreative.mutate({ values, continueAfter });
+    const pending = saveCreative.mutateAsync({ values, continueAfter }).then(() => true, () => false);
+    savePromiseRef.current = pending;
+    return pending;
   };
 
   useEffect(() => {
-    if (!form.formState.isDirty || saveCreative.isPending) return;
+    if (!form.formState.isDirty || saveCreative.isPending || uploadTarget || navigating) return;
     const checked = draftSchema.safeParse(autosaveValues);
     if (!checked.success) {
       setSaveState("invalid");
       return;
     }
     const snapshot = JSON.stringify(checked.data);
-    if (failedSaveSnapshotRef.current === snapshot) return;
-    setSaveState("pending");
+    if (failedSaveSnapshotRef.current === snapshot || savedSnapshotRef.current === snapshot) return;
+
     autosaveTimerRef.current = window.setTimeout(
       () => runSave(checked.data, false, false),
-      2_000,
+      0,
     );
     return () => {
       if (autosaveTimerRef.current !== undefined)
@@ -487,6 +436,8 @@ export function CreativeFormPage() {
     autosaveValues,
     form.formState.isDirty,
     saveCreative.isPending,
+    uploadTarget,
+    navigating,
     draftSchema,
   ]);
   if (!taskId || !isSupportedLocale(locale)) return null;
@@ -507,6 +458,10 @@ export function CreativeFormPage() {
     return (
       <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />
     );
+  if (stage === "style" && !isCharactersComplete(draftQuery.data.creative))
+    return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} />;
+  if (stage === "style" && !isVoicePreferencesComplete(draftQuery.data.voiceAndReferences))
+    return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/voice`)} />;
 
   const options = optionsQuery.data;
   const previous = draftQuery.data.creative;
@@ -540,6 +495,7 @@ export function CreativeFormPage() {
     options.imageStyleTags,
     previous.imageStyleTagIds,
     unavailable,
+    options.legacyImageStyleTags,
   );
   const paceOptions = mergeLegacyOptions(
     options.paceTags,
@@ -571,8 +527,8 @@ export function CreativeFormPage() {
     setSelectedCharacterId(character.id);
   };
   const ensureCreativeSaved = async () => {
-    if (saveCreative.isPending || saveInFlightRef.current)
-      throw new Error(t("common.saving"));
+    if (saveInFlightRef.current && !await savePromiseRef.current)
+      throw new Error(t("wizard.saveFailed"));
     if (autosaveTimerRef.current !== undefined)
       window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
@@ -583,7 +539,7 @@ export function CreativeFormPage() {
       draftQuery.data!;
     if (!form.formState.isDirty) return current;
     saveInFlightRef.current = true;
-    setSaveState("saving");
+
     try {
       current = await projectService.saveCreative(
         current.id,
@@ -592,7 +548,7 @@ export function CreativeFormPage() {
       );
       queryClient.setQueryData(["project", taskId], current);
       form.reset(toCreativeFormValues(current.creative));
-      setSaveState("saved");
+      setSaveState("idle");
       return current;
     } finally {
       saveInFlightRef.current = false;
@@ -604,6 +560,10 @@ export function CreativeFormPage() {
     characterId?: string,
   ) => {
     if (!category || !files?.length || uploadTarget) return;
+    // FileList is a live view of the file input. FileDropCard clears the input
+    // after dispatching this async handler, so snapshot the selected files
+    // before the first await or the upload queue can become empty silently.
+    const selectedFiles = Array.from(files);
     const target = characterId ? `character:${characterId}` : "style";
     setUploadTarget(target);
     setUploadError(undefined);
@@ -615,7 +575,7 @@ export function CreativeFormPage() {
             (character) => character.id === characterId,
           )?.referenceImages ?? [])
         : (current.creative.styleReferenceImages ?? []);
-      const queue = Array.from(files).slice(
+      const queue = selectedFiles.slice(
         0,
         Math.max(0, category.maxFiles - stored.length),
       );
@@ -633,7 +593,7 @@ export function CreativeFormPage() {
         queryClient.setQueryData(["project", taskId], current);
         form.reset(toCreativeFormValues(current.creative));
       }
-      setSaveState("saved");
+      setSaveState("idle");
     } catch (error) {
       setUploadError(localizedApiError(error, t));
       setUploadErrorTarget(target);
@@ -664,7 +624,7 @@ export function CreativeFormPage() {
       );
       queryClient.setQueryData(["project", taskId], saved);
       form.reset(toCreativeFormValues(saved.creative));
-      setSaveState("saved");
+      setSaveState("idle");
     } catch (error) {
       setUploadError(localizedApiError(error, t));
       setUploadErrorTarget(target);
@@ -677,8 +637,7 @@ export function CreativeFormPage() {
     const character = form.getValues(`characters.${index}`);
     if (
       !character ||
-      saveCreative.isPending ||
-      saveInFlightRef.current ||
+      uploadTarget ||
       !window.confirm(t("creative.deleteConfirm"))
     )
       return;
@@ -687,6 +646,7 @@ export function CreativeFormPage() {
     setUploadError(undefined);
     setUploadErrorTarget(undefined);
     try {
+      if (saveInFlightRef.current && !await savePromiseRef.current) return;
       if (autosaveTimerRef.current !== undefined)
         window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = undefined;
@@ -709,7 +669,7 @@ export function CreativeFormPage() {
         ),
       };
       saveInFlightRef.current = true;
-      setSaveState("saving");
+
       const saved = await projectService.saveCreative(
         current.id,
         { ...current, creative: toCreativeInfo(nextValues) },
@@ -718,7 +678,7 @@ export function CreativeFormPage() {
       queryClient.setQueryData(["project", taskId], saved);
       form.reset(toCreativeFormValues(saved.creative));
       setSelectedCharacterId(next?.id);
-      setSaveState("saved");
+      setSaveState("idle");
     } catch (error) {
       setUploadError(localizedApiError(error, t));
       setUploadErrorTarget(target);
@@ -731,23 +691,28 @@ export function CreativeFormPage() {
   const conflict =
     saveCreative.error instanceof ApiError &&
     saveCreative.error.details.code === "project.version_conflict";
-  const statusText =
-    saveState === "pending"
-      ? t("common.savePending")
-      : saveState === "saving"
-        ? t("common.saving")
-        : saveState === "saved"
-          ? t("common.saved")
-          : saveState === "invalid"
-            ? t("common.saveNeedsAttention")
-            : saveState === "error"
-              ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed")
-              : "";
-  const guardLink = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (form.formState.isDirty && !window.confirm(t("wizard.unsavedChanges")))
-      event.preventDefault();
+  const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
+  const navigateWithSave = async (path: string) => {
+    if (navigating || uploadTarget) return;
+    setNavigating(true);
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    try {
+      if (saveInFlightRef.current && !await savePromiseRef.current) return;
+      const checked = draftSchema.safeParse(form.getValues());
+      if (!checked.success) { setSaveState("invalid"); await form.trigger(); return; }
+      const needsSave = savedSnapshotRef.current === undefined ? form.formState.isDirty : savedSnapshotRef.current !== JSON.stringify(checked.data);
+      if (needsSave && !await runSave(checked.data, false, true)) return;
+      await navigate(path);
+    } finally { setNavigating(false); }
   };
-  const continueStep = form.handleSubmit((values) => {
+  const guardLink = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void navigateWithSave(event.currentTarget.pathname);
+  };
+  const continueStep = form.handleSubmit(async (values) => {
+    if (navigating || uploadTarget) return;
     const checked = stepSchema.safeParse(values);
     if (!checked.success) {
       checked.error.issues.forEach((issue) =>
@@ -776,41 +741,37 @@ export function CreativeFormPage() {
         );
       return;
     }
-    runSave(checked.data, true, true);
+    setNavigating(true);
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    try {
+      if (saveInFlightRef.current && !await savePromiseRef.current) return;
+      await runSave(checked.data, true, true);
+    } finally { setNavigating(false); }
   });
 
   return (
     <div className="wizard-page creative-page">
       <div className="wizard-heading">
-        <div>
-          <h1>{t("wizard.pageTitles.characters")}</h1>
-          <p>{t("wizard.pageSubtitles.characters")}</p>
-        </div>
-        <span
-          className={`save-state save-${saveState}`}
-          role={saveState === "error" ? "alert" : "status"}
-        >
-          {statusText}
-        </span>
+        <h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1>
+        {statusText && <span className={`save-state save-${saveState}`} role="alert">{statusText}</span>}
       </div>
-      <StepProgress current={2} />
+      <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "characters" ? 2 : 4} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadTarget)} />
       <form
         autoComplete="off"
         onSubmit={continueStep}
         inert={
           Boolean(uploadTarget) ||
-          (saveCreative.isPending &&
-            Boolean(saveCreative.variables?.continueAfter))
+          navigating
         }
         aria-busy={
           Boolean(uploadTarget) ||
-          (saveCreative.isPending &&
-            Boolean(saveCreative.variables?.continueAfter))
+          navigating
         }
       >
         <div className="creative-layout">
           <div className="form-stack">
-            <section
+            {stage === "characters" && <section
               className="form-panel character-section"
               id="characters-error-target"
               tabIndex={-1}
@@ -821,7 +782,6 @@ export function CreativeFormPage() {
                     <span>2.1</span>
                     {t("creative.sections.characters")}
                   </h2>
-                  <p>{t("creative.characterHint")}</p>
                 </div>
                 <button
                   className="button button-secondary"
@@ -863,7 +823,7 @@ export function CreativeFormPage() {
                   >
                     {characters.fields.map((character, index) => {
                       const value = watchedCharacters[index];
-                      const thumbnail = value?.referenceImages?.[0];
+                      const thumbnail = value?.referenceImages?.[0] ?? (value?.presetId ? { url: `/character-presets/${value.presetId}.png` } : undefined);
                       return (
                         <button
                           type="button"
@@ -884,26 +844,24 @@ export function CreativeFormPage() {
                             />
                           ) : (
                             <span
-                              className="character-number"
+                              className="character-avatar-placeholder"
                               aria-hidden="true"
                             >
-                              {String(index + 1).padStart(2, "0")}
+                              <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" /><path d="M5.5 19c.7-4 3-6 6.5-6s5.8 2 6.5 6" /></svg>
                             </span>
                           )}
                           <CharacterIdentity
-                            control={form.control}
-                            index={index}
+                            character={value}
                             roleTypes={roleOptions}
                           />
                         </button>
                       );
                     })}
                   </nav>
-                  <article className="character-editor">
+                  <article className="character-editor" key={`${activeCharacter.id}:${activeCharacterIndex}`}>
                     <div className="character-card-heading">
                       <CharacterIdentity
-                        control={form.control}
-                        index={activeCharacterIndex}
+                        character={activeCharacter}
                         roleTypes={roleOptions}
                       />
                       <div className="character-actions">
@@ -943,7 +901,7 @@ export function CreativeFormPage() {
                           type="button"
                           className="danger-link"
                           disabled={
-                            Boolean(uploadTarget) || saveCreative.isPending
+                            Boolean(uploadTarget) || navigating
                           }
                           onClick={() =>
                             void deleteCharacter(activeCharacterIndex)
@@ -954,7 +912,7 @@ export function CreativeFormPage() {
                       </div>
                     </div>
                     <div className="form-grid character-grid">
-                      <Field
+                      <EnumField
                         label={t("creative.fields.roleType")}
                         icon={<FieldIcon name="role" />}
                         htmlFor={`roleType-${activeCharacter.id}`}
@@ -964,17 +922,9 @@ export function CreativeFormPage() {
                             activeCharacterIndex
                           ]?.roleTypeId?.message
                         }
-                      >
-                        <select
-                          id={`roleType-${activeCharacter.id}`}
-                          {...form.register(
+                       items={roleOptions} registration={form.register(
                             `characters.${activeCharacterIndex}.roleTypeId`,
-                          )}
-                        >
-                          <option value="" />
-                          <Options items={roleOptions} />
-                        </select>
-                      </Field>
+                          )} />
                       <Field
                         label={t("creative.fields.characterName")}
                         icon={<FieldIcon name="person" />}
@@ -1054,36 +1004,20 @@ export function CreativeFormPage() {
                           )}
                         />
                       </Field>
-                      <Field
+                      <EnumField
                         label={t("creative.fields.ageRange")}
                         icon={<FieldIcon name="age" />}
                         htmlFor={`ageRange-${activeCharacter.id}`}
-                      >
-                        <select
-                          id={`ageRange-${activeCharacter.id}`}
-                          {...form.register(
+                       items={ageOptions} registration={form.register(
                             `characters.${activeCharacterIndex}.ageRangeId`,
-                          )}
-                        >
-                          <option value="" />
-                          <Options items={ageOptions} />
-                        </select>
-                      </Field>
-                      <Field
+                          )} />
+                      <EnumField
                         label={t("creative.fields.gender")}
                         icon={<FieldIcon name="gender" />}
                         htmlFor={`gender-${activeCharacter.id}`}
-                      >
-                        <select
-                          id={`gender-${activeCharacter.id}`}
-                          {...form.register(
+                       items={genderOptions} registration={form.register(
                             `characters.${activeCharacterIndex}.genderId`,
-                          )}
-                        >
-                          <option value="" />
-                          <Options items={genderOptions} />
-                        </select>
-                      </Field>
+                          )} />
                       <Field
                         label={t("creative.fields.clothing")}
                         icon={<FieldIcon name="clothing" />}
@@ -1141,10 +1075,10 @@ export function CreativeFormPage() {
                         />
                       </Field>
                     </div>
-                    <ReferenceImageField
+                      <ReferenceImageField
                       category={characterReferenceCategory}
                       assets={activeCharacter.referenceImages}
-                      busy={Boolean(uploadTarget) || saveCreative.isPending}
+                      busy={Boolean(uploadTarget) || navigating}
                       error={
                         uploadErrorTarget ===
                           `character:${activeCharacter.id}` ||
@@ -1168,11 +1102,11 @@ export function CreativeFormPage() {
                   </article>
                 </div>
               )}
-            </section>
+            </section>}
 
-            <section className="form-panel style-section">
+            {stage === "style" && <section className="form-panel style-section">
               <h2>
-                <span>2.2</span>
+                    <span>4.1</span>
                 {t("creative.sections.style")}
               </h2>
               <fieldset
@@ -1205,15 +1139,7 @@ export function CreativeFormPage() {
                         disabled={item.unavailable}
                         {...form.register("visualStyleId")}
                       />
-                      <span
-                        className="style-swatch"
-                        style={{
-                          backgroundColor: item.previewColor ?? "#d8d4c7",
-                        }}
-                        aria-hidden="true"
-                      >
-                        <i />
-                      </span>
+                      <StylePreviewImage option={item} className="style-swatch" />
                       <strong>{item.label}</strong>
                     </label>
                   ))}
@@ -1234,7 +1160,7 @@ export function CreativeFormPage() {
                 id="mood-tags"
                 error={form.formState.errors.moodTagIds?.message}
               >
-                <div className="choice-row">
+                <ChoiceRow>
                   {moodOptions.map((item) => (
                     <label className="choice-chip" key={item.id}>
                       <input
@@ -1249,38 +1175,21 @@ export function CreativeFormPage() {
                       <span>{item.label}</span>
                     </label>
                   ))}
-                </div>
+                </ChoiceRow>
               </ChoiceField>
-              <ChoiceField
-                label={t("creative.fields.imageTags")}
-                icon={<FieldIcon name="image" />}
-                id="image-tags"
+              <ColorToneChoice
+                options={imageStyleOptions}
+                value={selectedImageStyleTagIds}
+                onChange={(value) => form.setValue("imageStyleTagIds", value, { shouldDirty: true, shouldValidate: true })}
                 error={form.formState.errors.imageStyleTagIds?.message}
-              >
-                <div className="choice-row">
-                  {imageStyleOptions.map((item) => (
-                    <label className="choice-chip" key={item.id}>
-                      <input
-                        type="checkbox"
-                        value={item.id}
-                        disabled={
-                          item.unavailable &&
-                          !selectedImageStyleTagIds.includes(item.id)
-                        }
-                        {...form.register("imageStyleTagIds")}
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </ChoiceField>
+              />
               <ChoiceField
                 label={t("creative.fields.paceTags")}
                 icon={<FieldIcon name="pace" />}
                 id="pace-tags"
                 error={form.formState.errors.paceTagIds?.message}
               >
-                <div className="choice-row">
+                <ChoiceRow>
                   {paceOptions.map((item) => (
                     <label className="choice-chip" key={item.id}>
                       <input
@@ -1295,12 +1204,12 @@ export function CreativeFormPage() {
                       <span>{item.label}</span>
                     </label>
                   ))}
-                </div>
+                </ChoiceRow>
               </ChoiceField>
               <ReferenceImageField
                 category={styleReferenceCategory}
                 assets={selectedStyleReferenceImages}
-                busy={Boolean(uploadTarget) || saveCreative.isPending}
+                busy={Boolean(uploadTarget) || navigating}
                 error={
                   uploadErrorTarget === "style" ||
                   selectedStyleReferenceImages.some(
@@ -1314,35 +1223,37 @@ export function CreativeFormPage() {
                 }
                 onRemove={removeReference}
               />
-            </section>
+            </section>}
           </div>
 
           <CreativeSummary
+            stage={stage}
             control={form.control}
             visualStyles={visualStyleOptions}
             roleTypes={roleOptions}
             styleTagMap={styleTagMap}
+            activeCharacter={activeCharacter}
+            onNext={() => void continueStep()}
+            nextDisabled={navigating || Boolean(uploadTarget)}
           />
         </div>
         <div className="sticky-actions">
           <Link
             className="button button-secondary"
-            to={localizedPath(validLocale, `/tasks/${taskId}/edit/project`)}
+            to={localizedPath(validLocale, `/tasks/${taskId}/edit/${stage === "characters" ? "project" : "voice"}`)}
             onClick={guardLink}
           >
-            {t("wizard.actions.backUpload")}
+            {t(stage === "characters" ? "wizard.actions.backUpload" : "wizard.actions.backVoice")}
           </Link>
-          <p className="sticky-note">{t("wizard.footerNotes.characters")}</p>
+
           <div>
             <button
               className="button button-quiet"
               type="button"
-              disabled={saveCreative.isPending || Boolean(uploadTarget)}
-              onClick={form.handleSubmit((values) =>
-                runSave(values, false, true),
-              )}
+              disabled={navigating || Boolean(uploadTarget)}
+              onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}
             >
-              {saveCreative.isPending ? t("common.saving") : t("common.saveNow")}
+              {t("common.backHome")}
             </button>
             {conflict && (
               <button
@@ -1360,11 +1271,9 @@ export function CreativeFormPage() {
             <button
               className="button button-primary"
               type="submit"
-              disabled={saveCreative.isPending || Boolean(uploadTarget)}
+              disabled={navigating || Boolean(uploadTarget)}
             >
-              {saveCreative.isPending
-                ? t("common.saving")
-                : t("wizard.actions.toVoice")}
+              {t(stage === "characters" ? "wizard.actions.toVoice" : "wizard.actions.toReferences")}
               <span aria-hidden="true">→</span>
             </button>
           </div>

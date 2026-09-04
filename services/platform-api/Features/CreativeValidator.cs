@@ -21,6 +21,7 @@ internal static class CreativeValidator
                 var character = creative.Characters[index];
                 var prefix = $"creative.characters.{index}";
                 if (character is null) { errors.Add(Error(prefix, "required")); continue; }
+                if (character.PresetId is not null && !FormOptionCatalog.RoleTypeIds.Contains(character.PresetId)) errors.Add(Error($"{prefix}.presetId", "invalid"));
                 var previousCharacter = previous?.Characters.FirstOrDefault(item => item.Id == character.Id);
                 if (string.IsNullOrWhiteSpace(character.Id) || character.Id.Length > 80 || !ids.Add(character.Id)) errors.Add(Error($"{prefix}.id", "invalid"));
                 Text(errors, $"{prefix}.name", character.Name, 80);
@@ -41,6 +42,11 @@ internal static class CreativeValidator
         Option(errors, "creative.visualStyleId", creative.VisualStyleId, Allowed(options, FormOptionGroups.VisualStyles, previous?.VisualStyleId), true);
         Options(errors, "creative.moodTagIds", creative.MoodTagIds, AllowedMany(options, FormOptionGroups.MoodTags, previous?.MoodTagIds), 6);
         Options(errors, "creative.imageStyleTagIds", creative.ImageStyleTagIds, AllowedMany(options, FormOptionGroups.ImageStyleTags, previous?.ImageStyleTagIds), 6);
+        // Existing multi-selections may be retained or reduced, but no new combinations can be created.
+        if (creative.ImageStyleTagIds is { Length: > 1 } tones &&
+            (previous?.ImageStyleTagIds is not { Length: > 1 } prior ||
+             tones.Any(id => !prior.Contains(id, StringComparer.Ordinal))))
+            errors.Add(Error("creative.imageStyleTagIds", "too_many"));
         Options(errors, "creative.paceTagIds", creative.PaceTagIds, AllowedMany(options, FormOptionGroups.PaceTags, previous?.PaceTagIds), 4);
         Urls(errors, "creative.styleReferenceImageUrls", creative.StyleReferenceImageUrls, 6);
         Assets(errors, "creative.styleReferenceImages", creative.StyleReferenceImages, previous?.StyleReferenceImages, 50);

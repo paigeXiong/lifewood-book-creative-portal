@@ -8,6 +8,8 @@ namespace Lifewood.PlatformApi.Serialization;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(CurrentUserDto))]
 [JsonSerializable(typeof(HealthDto))]
+[JsonSerializable(typeof(BookRecognitionDto))]
+[JsonSerializable(typeof(BookRecognitionRequest))]
 [JsonSerializable(typeof(CurrentUserDto[]))]
 [JsonSerializable(typeof(AuthStatusDto))]
 [JsonSerializable(typeof(CsrfTokenDto))]

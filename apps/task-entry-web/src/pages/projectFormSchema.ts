@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { TaskDraft } from "@lifewood/domain";
+import type { TaskDraft, ProjectInfo } from "@lifewood/domain";
 
 export type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -18,22 +18,16 @@ export function createDraftSchema(t: Translate) {
 export function createStepSchema(t: Translate, customDurationOptionIds: string[] = []) {
   return createDraftSchema(t).superRefine((values, context) => {
     const required: Array<[keyof typeof values, string]> = [
-      ["clientName", "clientName"], ["contactName", "contactName"], ["email", "email"],
-      ["projectName", "projectName"], ["videoGoalId", "videoGoal"], ["title", "bookTitle"],
-      ["authorName", "authorName"], ["genreId", "genre"], ["sellingPoint", "sellingPoint"],
-      ["synopsis", "synopsis"], ["contentLanguageId", "contentLanguage"], ["videoDurationId", "duration"],
+      ["title", "bookTitle"],
+      ["authorName", "authorName"], ["genreId", "genre"],
+      ["contentLanguageId", "contentLanguage"], ["videoDurationId", "duration"],
     ];
     required.forEach(([field, label]) => {
       if (!String(values[field]).trim()) context.addIssue({ code: "custom", path: [field], message: t("wizard.validation.required", { field: t(`wizard.fields.${label}`) }) });
     });
-    if (!values.audienceIds.length) context.addIssue({ code: "custom", path: ["audienceIds"], message: t("wizard.validation.chooseOne") });
     if (customDurationOptionIds.includes(values.videoDurationId) && !values.customVideoDuration.trim())
       context.addIssue({ code: "custom", path: ["customVideoDuration"], message: t("wizard.validation.customDuration") });
-    if (values.deadline) {
-      const today = new Date();
-      const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-      if (values.deadline < localToday) context.addIssue({ code: "custom", path: ["deadline"], message: t("wizard.validation.futureDate") });
-    }
+
   });
 }
 
@@ -41,11 +35,12 @@ export type ProjectFormValues = z.infer<ReturnType<typeof createDraftSchema>>;
 
 export function isProjectStepComplete(draft: TaskDraft): boolean {
   return Boolean(
-    draft.project.clientName.trim() && draft.project.contactName.trim() && draft.project.email.trim() &&
-    draft.project.projectName.trim() && draft.project.videoGoalId && draft.project.audienceIds.length &&
-    draft.book.title.trim() && draft.book.authorName.trim() && draft.book.genreId && draft.book.sellingPoint.trim() &&
-    draft.book.synopsis.trim() && draft.book.contentLanguageId && draft.book.videoDurationId &&
-    draft.book.sourceAssets.some((asset) => asset.categoryId === "book-cover") &&
-    draft.book.sourceAssets.some((asset) => asset.categoryId === "manuscript")
+    draft.book.title.trim() && draft.book.authorName.trim() && draft.book.genreId &&
+    draft.book.contentLanguageId && draft.book.videoDurationId &&
+    draft.book.sourceAssets.some((asset) => asset.categoryId === "book-cover")
   );
+}
+
+export function isProjectBasicsComplete(project: ProjectInfo): boolean {
+  return Boolean(project.videoGoalId && project.audienceIds.length);
 }

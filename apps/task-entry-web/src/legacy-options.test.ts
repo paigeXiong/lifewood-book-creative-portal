@@ -4,6 +4,11 @@ import { effectiveVoiceContentLanguage } from "./voice-content-language";
 import { mergeLegacyCategories } from "./legacy-categories";
 
 describe("legacy configurable options", () => {
+  it("uses historical labels only for already selected retired values", () => {
+    expect(mergeLegacyOptions([], ["vintage"], "Unavailable", [
+      { id: "vintage", label: "复古" }, { id: "modern", label: "现代" },
+    ])).toEqual([{ id: "vintage", label: "复古", unavailable: true }]);
+  });
   it("keeps a stored disabled value visible without duplicating enabled values", () => {
     const result = mergeLegacyOptions(
       [{ id: "fiction", label: "Fiction" }],

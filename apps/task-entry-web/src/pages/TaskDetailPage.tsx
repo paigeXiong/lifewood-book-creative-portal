@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
+import { getNarrationEnabled } from "@lifewood/domain";
 import { FinalDeliverySection } from "../components/FinalDeliverySection";
 import { ReferenceLinks } from "../components/ReferenceLinks";
 import { ScreenError } from "../components/ScreenError";
@@ -21,9 +22,11 @@ export function TaskDetailPage() {
     queryKey: ["form-options", validLocale],
     queryFn: () => optionService.getFormOptions(validLocale),
   });
+  const needsVoices = task.data ? getNarrationEnabled(task.data.voiceAndReferences.voiceover) === true : false;
   const voices = useQuery({
     queryKey: ["voices", validLocale],
     queryFn: () => optionService.getVoices(validLocale),
+    enabled: needsVoices,
   });
   const statusMap = useMemo(
     () =>
@@ -36,14 +39,14 @@ export function TaskDetailPage() {
     [options.data],
   );
   if (!taskId || !isSupportedLocale(locale)) return null;
-  if (task.isPending || options.isPending || voices.isPending)
+  if (task.isPending || options.isPending || (needsVoices && voices.isPending))
     return (
       <div className="screen-status" aria-busy="true">
         {t("common.loading")}
       </div>
     );
-  if (task.isError || options.isError || voices.isError || !task.data)
-    return <ScreenError error={task.error ?? options.error ?? voices.error} onRetry={() => Promise.all([task.refetch(), options.refetch(), voices.refetch()])} />;
+  if (task.isError || options.isError || (needsVoices && voices.isError) || !task.data)
+    return <ScreenError error={task.error ?? options.error ?? (needsVoices ? voices.error : undefined)} onRetry={() => Promise.all([task.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])} />;
   if (task.data.status === "draft")
     return (
       <Navigate
@@ -310,7 +313,7 @@ export function TaskDetailPage() {
                 <dt>{t("creative.fields.imageTags")}</dt>
                 <dd>
                   {optionLabels(
-                    catalog.imageStyleTags,
+                    [...catalog.imageStyleTags, ...(catalog.legacyImageStyleTags ?? [])],
                     task.data.creative.imageStyleTagIds,
                   )}
                 </dd>
@@ -337,7 +340,7 @@ export function TaskDetailPage() {
                 <div className="data-wide receipt-character" key={character.id}>
                   <dt>{t("taskDetail.character", { index: index + 1 })}</dt>
                   <dd>
-                    <strong>{character.name || "—"}</strong> ·{" "}
+                    <>{character.presetId && <img src={`/character-presets/${character.presetId}.png`} alt={t("bookIntake.presetImage", { name: character.name })} width="96" height="96" loading="lazy" />}</><strong>{character.name || "—"}</strong> ·{" "}
                     {optionLabel(catalog.roleTypes, character.roleTypeId)}
                     <br />
                     {character.storyRole || "—"}
@@ -380,6 +383,11 @@ export function TaskDetailPage() {
               {t("taskDetail.voice")}
             </h2>
             <dl className="data-grid">
+              <div className="data-wide">
+                <dt>{t("voice.narration.question")}</dt>
+                <dd>{t(getNarrationEnabled(task.data.voiceAndReferences.voiceover) === true ? "voice.narration.required" : getNarrationEnabled(task.data.voiceAndReferences.voiceover) === false ? "voice.narration.notRequired" : "voice.narration.unselected")}</dd>
+              </div>
+              {getNarrationEnabled(task.data.voiceAndReferences.voiceover) === true && <>
               <div>
                 <dt>{t("voice.fields.contentLanguage")}</dt>
                 <dd>
@@ -475,6 +483,7 @@ export function TaskDetailPage() {
                     .customVoiceDescription || "—"}
                 </dd>
               </div>
+              </>}
               <div className="data-wide">
                 <dt>{t("taskDetail.referenceFiles")}</dt>
                 <dd>

@@ -1,5 +1,6 @@
 import type {
   AppErrorShape,
+  BookRecognition,
   AuditEvent,
   ConfigOption,
   AdminOverview,
@@ -216,6 +217,8 @@ export interface TaskListQuery {
 }
 
 export const projectService = {
+  recognizeBook: (projectId: string, assetIds: string[], locale: SupportedLocale, signal?: AbortSignal) =>
+    request<BookRecognition>(`/projects/${encodeURIComponent(projectId)}/recognize-book`, { method: "POST", locale, signal, body: JSON.stringify({ assetIds }) }),
   listProjects: ({ locale, status, search, page = 1, pageSize = 10, sort = "updated", direction = "desc" }: TaskListQuery) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (status) query.set("status", status);
@@ -243,11 +246,11 @@ export const projectService = {
       locale,
       body: JSON.stringify({ version: draft.version, creative: draft.creative }),
     }),
-  saveVoiceAndReferences: (projectId: string, draft: TaskDraft, locale: SupportedLocale, requireComplete = false) =>
+  saveVoiceAndReferences: (projectId: string, draft: TaskDraft, locale: SupportedLocale, requireComplete = false, includeProject = false) =>
     request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}/voice-and-references`, {
       method: "PUT",
       locale,
-      body: JSON.stringify({ version: draft.version, voiceAndReferences: draft.voiceAndReferences, requireComplete }),
+      body: JSON.stringify({ version: draft.version, voiceAndReferences: draft.voiceAndReferences, requireComplete, project: includeProject ? draft.project : undefined }),
     }),
   validateProject: (projectId: string, version: number, locale: SupportedLocale) =>
     request<ProjectValidationResult>(`/projects/${encodeURIComponent(projectId)}/validate`, {

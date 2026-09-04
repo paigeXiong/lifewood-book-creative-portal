@@ -95,6 +95,7 @@ $opsTarget = Join-Path $payloadRoot "ops"
 New-Item -ItemType Directory -Path $opsTarget | Out-Null
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts\backup-platform.ps1") -Destination $opsTarget
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts\restore-platform.ps1") -Destination $opsTarget
+Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts\open-portal.ps1") -Destination $opsTarget
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "backup-platform.bat") -Destination $opsTarget
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "restore-platform.bat") -Destination $opsTarget
 Copy-Item -LiteralPath (Join-Path $repositoryRoot "docs\deployment-and-backup.md") -Destination (Join-Path $opsTarget "README.md")

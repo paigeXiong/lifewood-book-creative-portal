@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { createCreativeDraftSchema, createCreativeStepSchema, emptyCharacter, isCreativeComplete } from "./pages/creativeFormSchema";
+import {
+  createCharactersStepSchema,
+  createCreativeDraftSchema,
+  createCreativeStepSchema,
+  createStyleStepSchema,
+  emptyCharacter,
+  isCharactersComplete,
+  isCreativeComplete,
+  isStyleComplete,
+} from "./pages/creativeFormSchema";
 
 const t = (key: string) => key;
 const empty = { characters: [], visualStyleId: "", moodTagIds: [], imageStyleTagIds: [], paceTagIds: [], styleReferenceImageUrls: [], styleReferenceImages: [] };
 
 describe("creative form validation", () => {
+  it("permits one color tone and preserves only pre-existing multiple selections", () => {
+    const parse = (ids: string[], previous: string[] = []) => createCreativeDraftSchema(t, previous).safeParse({ ...empty, imageStyleTagIds: ids }).success;
+    expect(parse(["warm-tone"])).toBe(true);
+    expect(parse(["warm-tone", "cool-tone"])).toBe(false);
+    expect(parse(["vintage", "modern"], ["vintage", "modern"])).toBe(true);
+    expect(parse(["vintage", "warm-tone"], ["vintage", "modern"])).toBe(false);
+    expect(parse(["vintage", "vintage"], ["vintage", "modern"])).toBe(false);
+  });
   it("allows an incomplete creative draft", () => {
     expect(createCreativeDraftSchema(t).safeParse(empty).success).toBe(true);
   });
@@ -21,6 +38,14 @@ describe("creative form validation", () => {
   it("accepts a complete character and configured style id shape", () => {
     const character = { ...emptyCharacter(), roleTypeId: "protagonist", name: "Mara", storyRole: "Leads the journey", personality: "Curious", appearance: "Traveler" };
     expect(createCreativeStepSchema(t).safeParse({ ...empty, characters: [character], visualStyleId: "cinematic" }).success).toBe(true);
+  });
+
+  it("validates characters and visual style as independent workflow domains", () => {
+    const character = { ...emptyCharacter(), roleTypeId: "protagonist", name: "Mara", storyRole: "Leads", personality: "Curious", appearance: "Traveler" };
+    expect(createCharactersStepSchema(t).safeParse({ ...empty, characters: [character] }).success).toBe(true);
+    expect(createCharactersStepSchema(t).safeParse({ ...empty, visualStyleId: "cinematic" }).success).toBe(false);
+    expect(createStyleStepSchema(t).safeParse({ ...empty, visualStyleId: "cinematic" }).success).toBe(true);
+    expect(createStyleStepSchema(t).safeParse({ ...empty, characters: [character] }).success).toBe(false);
   });
 
   it("accepts stored character and style reference image metadata", () => {
@@ -40,5 +65,13 @@ describe("creative form validation", () => {
     const complete = { ...emptyCharacter(), roleTypeId: "protagonist", name: "Mara", storyRole: "Leads", personality: "Curious", appearance: "Traveler" };
     expect(isCreativeComplete({ ...empty, characters: [complete], visualStyleId: "cinematic" })).toBe(true);
     expect(isCreativeComplete({ ...empty, characters: [complete, emptyCharacter()], visualStyleId: "cinematic" })).toBe(false);
+  });
+
+  it("reports independent completion for route guards and future domain returns", () => {
+    const complete = { ...emptyCharacter(), roleTypeId: "protagonist", name: "Mara", storyRole: "Leads", personality: "Curious", appearance: "Traveler" };
+    expect(isCharactersComplete({ ...empty, characters: [complete] })).toBe(true);
+    expect(isStyleComplete({ ...empty, visualStyleId: "cinematic" })).toBe(true);
+    expect(isCharactersComplete({ ...empty, visualStyleId: "cinematic" })).toBe(false);
+    expect(isStyleComplete({ ...empty, characters: [complete] })).toBe(false);
   });
 });

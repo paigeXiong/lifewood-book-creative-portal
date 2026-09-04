@@ -153,7 +153,42 @@ internal sealed class ProjectRepository(string connectionString)
             markMigration.ExecuteNonQuery();
         }
 
+        UpgradeLegacyCharacterPresets(connection, transaction);
         transaction.Commit();
+    }
+
+    private static void UpgradeLegacyCharacterPresets(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var check = connection.CreateCommand();
+        check.Transaction = transaction;
+        check.CommandText = "SELECT COUNT(*) FROM schema_migrations WHERE version = 7;";
+        if (Convert.ToInt32(check.ExecuteScalar()) != 0) return;
+
+        var drafts = new List<(string Id, CreativeInfoDto Creative)>();
+        using (var read = connection.CreateCommand())
+        {
+            read.Transaction = transaction;
+            read.CommandText = "SELECT id, creative_json FROM projects WHERE status = 'draft';";
+            using var reader = read.ExecuteReader();
+            while (reader.Read()) drafts.Add((reader.GetString(0), DeserializeCreative(reader.GetString(1))));
+        }
+        foreach (var (id, creative) in drafts)
+        {
+            var upgraded = creative.Characters.Select(CharacterPresetCatalog.UpgradeLegacy).ToArray();
+            if (upgraded.SequenceEqual(creative.Characters)) continue;
+            using var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = "UPDATE projects SET creative_json=$creative, version=version+1, updated_at=$now WHERE id=$id;";
+            update.Parameters.AddWithValue("$creative", JsonSerializer.Serialize(creative with { Characters = upgraded }, AppJsonContext.Default.CreativeInfoDto));
+            update.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            update.Parameters.AddWithValue("$id", id);
+            update.ExecuteNonQuery();
+        }
+        using var mark = connection.CreateCommand();
+        mark.Transaction = transaction;
+        mark.CommandText = "INSERT INTO schema_migrations(version,applied_at) VALUES(7,$now);";
+        mark.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        mark.ExecuteNonQuery();
     }
 
     public PagedProjectsDto List(string ownerId, string? status, string? search, int page, int pageSize, string? sortBy = null, string? sortDirection = null)
@@ -218,14 +253,14 @@ internal sealed class ProjectRepository(string connectionString)
         return new ProjectStatsDto(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3));
     }
 
-    public TaskDraftDto Create(string ownerId, string clientName = "", string contactName = "", string email = "", string? phone = null)
+    public TaskDraftDto Create(string ownerId, string clientName = "", string contactName = "", string email = "", string? phone = null, string locale = "zh-CN")
     {
         var now = DateTimeOffset.UtcNow;
         var draft = new TaskDraftDto(
             Guid.NewGuid().ToString("N"), null, "draft", 1,
             new ProjectInfoDto(clientName, contactName, email, phone, null, "", null, null, []),
             new BookInfoDto("", null, "", null, "", "", null, null, [], []),
-            EmptyCreative(),
+            EmptyCreative() with { Characters = CharacterPresetCatalog.Create(locale) },
             EmptyVoiceAndReferences(),
             now, now);
         Insert(ownerId, draft);
@@ -356,15 +391,20 @@ internal sealed class ProjectRepository(string connectionString)
 
     public SaveResult SaveVoiceAndReferences(string ownerId, string id, SaveVoiceAndReferencesRequest request)
     {
+        request = request with { VoiceAndReferences = request.VoiceAndReferences with
+        {
+            Voiceover = NarrationSettings.Normalize(request.VoiceAndReferences.Voiceover)
+        } };
         var now = DateTimeOffset.UtcNow;
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE projects
-            SET voice_json = $voice, version = version + 1, updated_at = $updatedAt
+            SET voice_json = $voice, project_json = COALESCE($project, project_json), version = version + 1, updated_at = $updatedAt
             WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version
             RETURNING task_number, status, version, project_json, book_json, creative_json, created_at, updated_at;
             """;
+        command.Parameters.AddWithValue("$project", request.Project is null ? DBNull.Value : JsonSerializer.Serialize(request.Project, AppJsonContext.Default.ProjectInfoDto));
         command.Parameters.AddWithValue("$voice", JsonSerializer.Serialize(request.VoiceAndReferences, AppJsonContext.Default.VoiceAndReferencesInfoDto));
         command.Parameters.AddWithValue("$updatedAt", now.ToString("O"));
         command.Parameters.AddWithValue("$ownerId", ownerId);
@@ -454,6 +494,9 @@ internal sealed class ProjectRepository(string connectionString)
         command.CommandText = """
             UPDATE projects
             SET task_number = $taskNumber, status = 'submitted', submission_key = $idempotencyKey, version = version + 1,
+                project_json = CASE WHEN TRIM(COALESCE(json_extract(project_json, '$.projectName'), '')) = ''
+                    THEN json_set(project_json, '$.projectName', TRIM(COALESCE(json_extract(book_json, '$.title'), '')))
+                    ELSE project_json END,
                 submission_snapshot_json = $snapshot, updated_at = $updatedAt, workflow_status = 'new', priority = 'normal', assignee_user_id = NULL, workflow_updated_at = $updatedAt
             WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version
             RETURNING id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status;

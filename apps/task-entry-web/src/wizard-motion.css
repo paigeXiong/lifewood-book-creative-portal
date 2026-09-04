@@ -1,0 +1,29 @@
+/* Native snapshots isolate the form from the stationary navigation and footer. */
+.wizard-page > form, .wizard-page > .review-layout { view-transition-name: wizard-content; }
+.step-progress { view-transition-name: wizard-steps; }
+.step-current .step-marker { view-transition-name: wizard-current-marker; }
+.wizard-page .sticky-actions { view-transition-name: wizard-actions; }
+.reference-topbar { view-transition-name: portal-header; }
+
+::view-transition-group(*) { animation-duration: 350ms; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+::view-transition-old(root), ::view-transition-new(root),
+::view-transition-old(portal-header), ::view-transition-new(portal-header),
+::view-transition-old(wizard-steps), ::view-transition-new(wizard-steps),
+::view-transition-old(wizard-actions), ::view-transition-new(wizard-actions) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(wizard-content), ::view-transition-new(wizard-content) { mix-blend-mode: normal; }
+html[data-wizard-direction="forward"] { --wizard-enter: 40px; --wizard-exit: -40px; }
+html[data-wizard-direction="back"] { --wizard-enter: -40px; --wizard-exit: 40px; }
+html[data-wizard-direction]::view-transition-old(wizard-content) {
+  animation: wizard-exit 180ms ease-in both;
+}
+html[data-wizard-direction]::view-transition-new(wizard-content) {
+  animation: wizard-enter 350ms cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes wizard-exit { to { opacity: 0; transform: translateX(var(--wizard-exit)); } }
+@keyframes wizard-enter { from { opacity: 0; transform: translateX(var(--wizard-enter)); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

@@ -5,11 +5,41 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+function Get-InstalledDataDirectory {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return $null }
+    try {
+        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::LocalMachine,
+            [Microsoft.Win32.RegistryView]::Registry64)
+        try {
+            $productKey = $baseKey.OpenSubKey("Software\Lifewood\BookCreativePortal")
+            if ($null -eq $productKey) { return $null }
+            try {
+                $recorded = $productKey.GetValue("DataDirectory") -as [string]
+                if ([string]::IsNullOrWhiteSpace($recorded)) { return $null }
+                return [IO.Path]::GetFullPath($recorded)
+            }
+            finally { $productKey.Dispose() }
+        }
+        finally { $baseKey.Dispose() }
+    }
+    catch { return $null }
+}
+$installedDataDirectory = Get-InstalledDataDirectory
+$isPortablePackage = (Test-Path -LiteralPath (Join-Path $repositoryRoot "start-server.bat") -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $repositoryRoot "server\Lifewood.BookPortal.Server.exe") -PathType Leaf)
 $dataDirectory = if (-not [string]::IsNullOrWhiteSpace($DataDirectory)) { [IO.Path]::GetFullPath($DataDirectory) }
     elseif (-not [string]::IsNullOrWhiteSpace($env:Lifewood__DataDirectory)) { [IO.Path]::GetFullPath($env:Lifewood__DataDirectory) }
-    elseif (Test-Path -LiteralPath (Join-Path $repositoryRoot "server")) { Join-Path $repositoryRoot "data" }
+    elseif ($isPortablePackage) { Join-Path $repositoryRoot "data" }
+    elseif (-not [string]::IsNullOrWhiteSpace($installedDataDirectory)) { $installedDataDirectory }
     else { Join-Path $repositoryRoot "services\platform-api\data" }
-$backupRoot = if ([string]::IsNullOrWhiteSpace($Destination)) { Join-Path $repositoryRoot "backups" } else { $Destination }
+$isInstalledDataDirectory = -not [string]::IsNullOrWhiteSpace($installedDataDirectory) -and
+    [IO.Path]::GetFullPath($dataDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar).Equals(
+        [IO.Path]::GetFullPath($installedDataDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar),
+        [StringComparison]::OrdinalIgnoreCase)
+$backupRoot = if (-not [string]::IsNullOrWhiteSpace($Destination)) { $Destination }
+    elseif ($isInstalledDataDirectory) { Join-Path (Split-Path -Parent $dataDirectory) "backups" }
+    else { Join-Path $repositoryRoot "backups" }
 
 if (-not (Test-Path -LiteralPath $dataDirectory)) {
     throw "Platform data directory was not found: $dataDirectory"

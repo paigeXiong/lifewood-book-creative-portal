@@ -1,0 +1,79 @@
+.login-book-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.login-page .login-form-side > .login-panel {
+  position: relative;
+  z-index: 1;
+}
+
+.login-page .login-story { z-index: 1; }
+
+.login-book-grid {
+  --book-cell: clamp(108px, 9vw, 150px);
+  position: absolute;
+  top: calc(-1 * var(--book-cell));
+  left: calc(-2 * var(--book-cell));
+  display: grid;
+  grid-template-rows: repeat(12, var(--book-cell));
+  align-items: center;
+  opacity: .21;
+}
+
+.login-book-row {
+  --row-shift: var(--book-cell);
+  display: flex;
+  width: max-content;
+  animation: login-book-row-travel 20s cubic-bezier(.65, 0, .35, 1) infinite;
+}
+
+.login-book-row:nth-child(even) { --row-shift: calc(-1 * var(--book-cell)); }
+
+.login-floating-book {
+  --column-shift: var(--book-cell);
+  flex: 0 0 var(--book-cell);
+  width: var(--book-cell);
+  padding: 14px;
+  color: #466c59;
+  animation: login-book-column-travel 20s cubic-bezier(.65, 0, .35, 1) infinite;
+}
+.login-floating-book:nth-child(even) { --column-shift: calc(-1 * var(--book-cell)); }
+
+.login-book-row:nth-child(3n) .login-floating-book:nth-child(even) { color: #a68143; }
+.login-floating-book svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  animation: login-book-turn 16s cubic-bezier(.45, 0, .55, 1) infinite;
+  animation-delay: var(--book-phase);
+}
+
+/* Move rows, then columns, then undo each move; all pieces return without a loop jump. */
+@keyframes login-book-row-travel {
+  0%, 5%, 75%, 100% { transform: translate3d(0, 0, 0); }
+  25%, 55% { transform: translate3d(var(--row-shift), 0, 0); }
+}
+
+@keyframes login-book-column-travel {
+  0%, 30%, 100% { transform: translate3d(0, 0, 0); }
+  50%, 80% { transform: translate3d(0, var(--column-shift), 0); }
+}
+
+@keyframes login-book-turn {
+  0%, 100% { transform: perspective(400px) rotateY(-18deg) rotate(-24deg); }
+  50% { transform: perspective(400px) rotateY(22deg) rotate(38deg); }
+}
+
+@media (max-width: 900px) {
+  .login-book-grid { --book-cell: 108px; opacity: .16; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-book-row, .login-floating-book, .login-floating-book svg { animation: none; }
+  .login-floating-book svg { transform: rotate(-12deg); }
+  .login-book-row:nth-child(even) svg { transform: rotate(12deg); }
+}

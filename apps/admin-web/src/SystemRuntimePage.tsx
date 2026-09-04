@@ -9,10 +9,22 @@ import { showAdminToast } from "./Toast";
 
 type RuntimeAction = "restart" | "shutdown";
 
-function endpoint(scheme: "http" | "https", address: string, port: number) {
-  const displayAddress = address === "0.0.0.0" || address === "::" ? window.location.hostname : address;
-  const host = displayAddress.includes(":") ? `[${displayAddress}]` : displayAddress;
+function endpoint(scheme: "http" | "https", address: string, port: number, currentHostname?: string) {
+  const displayAddress =
+    address === "0.0.0.0" || address === "::" ? (currentHostname ?? window.location.hostname) : address;
+  const normalizedAddress = displayAddress.startsWith("[") && displayAddress.endsWith("]")
+    ? displayAddress.slice(1, -1)
+    : displayAddress;
+  const host = normalizedAddress.includes(":") ? `[${normalizedAddress}]` : normalizedAddress;
   return `${scheme}://${host}:${port}`;
+}
+
+export function runtimeAdminUrl(
+  settings: Pick<RuntimeSettings, "scheme" | "listenAddress" | "port">,
+  locale: SupportedLocale,
+  currentHostname?: string,
+) {
+  return endpoint(settings.scheme, settings.listenAddress, settings.port, currentHostname) + "/admin/" + locale + "/settings/runtime";
 }
 
 export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
@@ -46,6 +58,10 @@ export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
     onSuccess: (_response, value) => {
       setConfirmAction(undefined);
       showAdminToast(t(value === "restart" ? "admin.runtime.restartAccepted" : "admin.runtime.shutdownAccepted"));
+      if (value === "restart" && current) {
+        const target = runtimeAdminUrl(current, locale);
+        window.setTimeout(() => window.location.assign(target), 15_000);
+      }
     },
   });
 

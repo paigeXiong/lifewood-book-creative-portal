@@ -14,7 +14,7 @@ using Xunit;
 
 namespace Lifewood.PlatformApi.Tests;
 
-public sealed class VoiceSampleApiIntegrationTests : IDisposable
+public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
 {
     private const string VoiceId = "warm-storyteller";
     private const string OrphanUploadId = "11111111111111111111111111111111";
@@ -949,6 +949,74 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         Assert.Equal(5088, stored.RootElement.GetProperty("port").GetInt32());
     }
 
+    [Fact]
+    public async Task BookIntakeLocksCreatorFieldsAndPreservesDeletedPresets()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var create = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new {}));
+        var draft = (await create.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        Assert.Equal(7, draft.Creative.Characters.Length);
+        using var optionsJson = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/form-options"));
+        Assert.False(optionsJson.RootElement.GetProperty("bookRecognitionEnabled").GetBoolean());
+        Assert.Equal(3, optionsJson.RootElement.GetProperty("sourceCategories").GetArrayLength());
+        Assert.Equal(6, optionsJson.RootElement.GetProperty("sourceCategories")[0].GetProperty("maxFiles").GetInt32());
+        using var disabled = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{draft.Id}/recognize-book", csrf, JsonContent.Create(new { assetIds = new[] {"not-a-file"} }));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, disabled.StatusCode);
+        var tampered = draft.Project with { ClientName="Impersonation", ContactName="Other person", Email="other@example.test", Phone="999", ProjectName="Book project" };
+        using var save = await Send(ownerClient, HttpMethod.Put, $"/api/projects/{draft.Id}/draft", csrf, JsonContent.Create(new SaveDraftRequest(draft.Version,tampered,draft.Book)));
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        var saved=(await save.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        Assert.Equal(draft.Project.ClientName,saved.Project.ClientName);
+        Assert.Equal(draft.Project.ContactName,saved.Project.ContactName);
+        Assert.Equal(draft.Project.Email,saved.Project.Email);
+        Assert.Equal(draft.Project.Phone,saved.Project.Phone);
+        Assert.Equal("Book project",saved.Project.ProjectName);
+        using var remove = await Send(ownerClient, HttpMethod.Put, $"/api/projects/{draft.Id}/creative", csrf, JsonContent.Create(new SaveCreativeRequest(saved.Version,saved.Creative with { Characters=[] })));
+        Assert.Equal(HttpStatusCode.OK,remove.StatusCode);
+        var reloaded = await ownerClient.GetFromJsonAsync<TaskDraftDto>($"/api/projects/{draft.Id}");
+        Assert.Empty(reloaded!.Creative.Characters);
+    }
+
+    [Theory]
+    [InlineData("Step five project", "Step five project")]
+    [InlineData("", "Default book title")]
+    public async Task StepFiveSavesProjectBasicsAtomicallyAndKeepsCreatorIdentity(string projectName, string expectedName)
+    {
+        await BootstrapOwner();
+        var csrf=await GetCsrf(ownerClient);
+        using var create=await Send(ownerClient,HttpMethod.Post,"/api/projects",csrf,JsonContent.Create(new {}));
+        var draft=(await create.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        using var bookSave=await Send(ownerClient,HttpMethod.Put,$"/api/projects/{draft.Id}/draft",csrf,
+            JsonContent.Create(new SaveDraftRequest(draft.Version,draft.Project,draft.Book with { Title="Default book title" })));
+        Assert.Equal(HttpStatusCode.OK, bookSave.StatusCode);
+        draft=(await bookSave.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        Assert.Equal("Default book title",draft.Project.ProjectName);
+        var options=(await ownerClient.GetFromJsonAsync<FormOptionsDto>("/api/form-options"))!;
+        var basics=draft.Project with { ProjectName=projectName, BrandId=options.Brands[0].Id,
+            VideoGoalId=options.VideoGoals[0].Id, AudienceIds=[options.Audiences[0].Id], Email="spoof@example.test" };
+        var voice=draft.VoiceAndReferences with {
+            Voiceover=draft.VoiceAndReferences.Voiceover with { NarrationEnabled=false },
+            CreativeDirection=draft.VoiceAndReferences.CreativeDirection with { CoreMessage="Test direction" }
+        };
+        var body=new SaveVoiceAndReferencesRequest(draft.Version,voice,true,basics);
+        using var save=await Send(ownerClient,HttpMethod.Put,$"/api/projects/{draft.Id}/voice-and-references",csrf,JsonContent.Create(body));
+        Assert.Equal(HttpStatusCode.OK,save.StatusCode);
+        var saved=(await save.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        Assert.Equal(draft.Version+1,saved.Version);
+        Assert.Equal(expectedName,saved.Project.ProjectName);
+        Assert.Equal(draft.Project.Email,saved.Project.Email);
+        Assert.Equal("Test direction",saved.VoiceAndReferences.CreativeDirection.CoreMessage);
+        using var stale=await Send(ownerClient,HttpMethod.Put,$"/api/projects/{draft.Id}/voice-and-references",csrf,JsonContent.Create(body with { Project=basics with { ProjectName="Stale overwrite" }}));
+        Assert.Equal(HttpStatusCode.Conflict,stale.StatusCode);
+        var read=(await ownerClient.GetFromJsonAsync<TaskDraftDto>($"/api/projects/{draft.Id}"))!;
+        Assert.Equal(saved.Project, read.Project with { AudienceIds=saved.Project.AudienceIds });
+        using var voiceOnly=await Send(ownerClient,HttpMethod.Put,$"/api/projects/{draft.Id}/voice-and-references",csrf,JsonContent.Create(new SaveVoiceAndReferencesRequest(saved.Version,voice)));
+        Assert.Equal(HttpStatusCode.OK,voiceOnly.StatusCode);
+        var updated=(await voiceOnly.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        Assert.Equal(expectedName,updated.Project.ProjectName);
+    }
+
     private async Task BootstrapOwner()
     {
         var csrf = await GetCsrf(ownerClient);
@@ -1120,11 +1188,19 @@ public sealed class VoiceSampleApiIntegrationTests : IDisposable
         return document.RootElement.GetProperty("code").GetString();
     }
 
-    public void Dispose()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
     {
         ownerClient.Dispose();
-        factory.Dispose();
+        await factory.DisposeAsync();
         SqliteConnection.ClearAllPools();
-        if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        // The in-process entry point can finish its using declarations just after
+        // host shutdown. Wait briefly for Windows to release those file handles.
+        for (var attempt = 0; Directory.Exists(root); attempt++)
+        {
+            try { Directory.Delete(root, recursive: true); break; }
+            catch (IOException) when (attempt < 39) { await Task.Delay(50); }
+        }
     }
 }

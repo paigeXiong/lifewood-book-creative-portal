@@ -73,6 +73,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
       </section>
       {Boolean(organizations.error) && <div className="message error" role="alert">{localizedApiError(organizations.error, t)}</div>}
       <section className="table-card">
+        <div className="management-table-scroll" aria-busy={organizations.isFetching}>
         <table>
           <thead><tr>
             <th>{t("admin.organizations.name")}</th>
@@ -92,6 +93,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
           ))}</tbody>
         </table>
         {!organizations.isPending && !organizations.data?.items.length && <div className="empty">{t("admin.organizations.empty")}</div>}
+        </div>
         <nav className="pager">
           <button type="button" disabled={page <= 1} onClick={() => { const next = page - 1; setPage(next); setListState(next); }}>{t("common.previous")}</button>
           <span>{t("common.pageOf", { page, pages })}</span>

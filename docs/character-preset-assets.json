@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-09-03",
+  "tool": "image_gen",
+  "assets": [
+    {
+      "role": "protagonist",
+      "path": "C:\\Users\\11915\\.codex\\generated_images\\01a06501-bb98-7c81-b858-6dc9e4b93d4a\\exec-2d959f3f-0102-4985-808c-65b1c3d8a279.png",
+      "destination": "apps/task-entry-web/public/character-presets/protagonist.png",
+      "prompt": "Use case: illustration-story. Asset: one square default character reference portrait for a book-to-video project form. Subject: Young adult woman traveler, short dark wavy hair, olive field jacket and cream shirt, canvas satchel, curious determined friendly expression. Refined hand-painted storybook concept illustration, semi-realistic proportions, soft daylight, subtle paper texture, restrained natural colors, warm off-white plain studio background. Centered waist-up portrait, eye level, face clear and legible in a thumbnail. Original fictional person, no particular franchise or book. ONE character ONE image, 1:1 square. No text, lettering, labels, logos, watermark, collage or panels."
+    },
+    {
+      "role": "supporting",
+      "path": "C:\\Users\\11915\\.codex\\generated_images\\01a06501-bb98-7c81-b858-6dc9e4b93d4a\\exec-341dbb88-080a-4b3c-b95d-3c7d28937bdf.png",
+      "destination": "apps/task-entry-web/public/character-presets/supporting.png",
+      "prompt": "Use case: illustration-story. Asset: one square default character reference portrait for a book-to-video project form. Subject: Adult man companion, curly brown hair, blue work shirt and tan vest, approachable smile, reliable and resourceful demeanor. Refined hand-painted storybook concept illustration, semi-realistic proportions, soft daylight, subtle paper texture, restrained natural colors, warm off-white plain studio background. Centered waist-up portrait, eye level, face clear and legible in a thumbnail. Original fictional person, no particular franchise or book. ONE character ONE image, 1:1 square. No text, lettering, labels, logos, watermark, collage or panels."
+    },
+    {
+      "role": "narrator",
+      "path": "C:\\Users\\11915\\.codex\\generated_images\\01a06501-bb98-7c81-b858-6dc9e4b93d4a\\exec-6d0a4951-4ab9-406a-88ca-8fce3cd52666.png",
+      "destination": "apps/task-entry-web/public/character-presets/narrator.png",
+      "prompt": "Use case: illustration-story. Asset: one square default character reference portrait for a book-to-video project form. Subject: Middle-aged woman storyteller, dark brown skin, silver-streaked short hair, burgundy cardigan and simple cream blouse, holding a closed plain book, calm expressive eyes. Refined hand-painted storybook concept illustration, semi-realistic proportions, soft daylight, subtle paper texture, restrained natural colors, warm off-white plain studio background. Centered waist-up portrait, eye level, face clear and legible in a thumbnail. Original fictional person, no particular franchise or book. ONE character ONE image, 1:1 square. No text, lettering, labels, logos, watermark, collage or panels."
+    },
+    {
+      "role": "mentor",
+      "path": "C:\\Users\\11915\\.codex\\generated_images\\01a06501-bb98-7c81-b858-6dc9e4b93d4a\\exec-b13befca-4802-4928-a2ec-e1d05eed4838.png",
+      "destination": "apps/task-entry-web/public/character-presets/mentor.png",
+      "prompt": "Use case: illustration-story. Asset: one square default character reference portrait for a book-to-video project form. Subject: Older East Asian man mentor, salt-and-pepper hair and short beard, plain beige linen jacket, gentle wise expression. Refined hand-painted storybook concept illustration, semi-realistic proportions, soft daylight, subtle paper texture, restrained natural colors, warm off-white plain studio background. Centered waist-up portrait, eye level, face clear and legible in a thumbnail. Original fictional person, no particular franchise or book. ONE character ONE image, 1:1 square. No text, lettering, labels, logos, watermark, collage or panels."
+    },
+    {
+      "role": "antagonist",
+      "path": "C:\\Users\\11915\\.codex\\generated_images\\01a06501-bb98-7c81-b858-6dc9e4b93d4a\\exec-3603ed12-942a-49ff-97de-6c6b4ce8e893.png",
+      "destination": "apps/task-entry-web/public/character-presets/antagonist.png",
+      "prompt": "Use case: illustration-story. Asset: one square default character reference portrait for a book-to-video project form. Subject: Adult woman fictional antagonist, neat black hair, charcoal tailored coat, composed stern expression, confident upright posture, morally complex, no weapons or menacing violence. Refined hand-painted storybook concept illustration, semi-realistic proportions, soft daylight, subtle paper texture, restrained natural colors, warm off-white plain studio background. Centered waist-up portrait, eye level, face clear and legible in a thumbnail. Original fictional person, no particular franchise or book. ONE character ONE image, 1:1 square. No text, lettering, labels, logos, watermark, collage or panels."
+    },
+    {
+      "role": "child",
+      "path": "C:\\Users\\11915\\.codex\\generated_images\\01a06501-bb98-7c81-b858-6dc9e4b93d4a\\exec-3f7cfa03-32d6-4696-bfe5-29e667e08c83.png",
+      "destination": "apps/task-entry-web/public/character-presets/child.png",
+      "prompt": "Use case: illustration-story. Asset: one square default character reference portrait for a book-to-video project form. Subject: Wholesome child age about nine, curly dark hair, mustard sweater and denim overalls, curious cheerful expression, age-appropriate fully clothed, holding small notebook. Refined hand-painted storybook concept illustration, semi-realistic proportions, soft daylight, subtle paper texture, restrained natural colors, warm off-white plain studio background. Centered waist-up portrait, eye level, face clear and legible in a thumbnail. Original fictional person, no particular franchise or book. ONE character ONE image, 1:1 square. No text, lettering, labels, logos, watermark, collage or panels."
+    },
+    {
+      "role": "background",
+      "path": "C:\\Users\\11915\\.codex\\generated_images\\01a06501-bb98-7c81-b858-6dc9e4b93d4a\\exec-a51bc6a6-d0f5-4811-ae49-7c91081b7d9b.png",
+      "destination": "apps/task-entry-web/public/character-presets/background.png",
+      "prompt": "Use case: illustration-story. Asset: one square default character reference portrait for a book-to-video project form. Subject: Adult background town resident, auburn hair tied back, sage apron over cream shirt, neutral friendly expression, understated everyday appearance. Refined hand-painted storybook concept illustration, semi-realistic proportions, soft daylight, subtle paper texture, restrained natural colors, warm off-white plain studio background. Centered waist-up portrait, eye level, face clear and legible in a thumbnail. Original fictional person, no particular franchise or book. ONE character ONE image, 1:1 square. No text, lettering, labels, logos, watermark, collage or panels."
+    }
+  ]
+}

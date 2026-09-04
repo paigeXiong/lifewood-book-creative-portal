@@ -21,6 +21,12 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
 
+if (DatabaseIntegrityCommand.TryRun(args, out var databaseValidationExitCode))
+{
+    Environment.ExitCode = databaseValidationExitCode;
+    return;
+}
+
 RestartWaiter.Wait(args);
 var serviceMode = OperatingSystem.IsWindows() && WindowsServiceHelpers.IsWindowsService();
 var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
@@ -35,6 +41,9 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddOpenApi();
+builder.Services.AddSingleton(BookRecognitionSettings.FromConfiguration(builder.Configuration));
+builder.Services.AddHttpClient<BookRecognitionService>(client => client.Timeout = TimeSpan.FromSeconds(60))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 var trustedProxyAddresses = new HashSet<IPAddress>();
 foreach (var value in builder.Configuration.GetSection("Network:TrustedProxies")
              .GetChildren().Select(item => item.Value).Where(value => !string.IsNullOrWhiteSpace(value)))
@@ -70,6 +79,10 @@ var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db
 var voiceSampleDirectory = Path.Combine(dataDirectory, "voice-samples");
 var voiceSampleLocks = new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.Ordinal);
 var projectWriteLocks = new AsyncKeyedLock();
+using var restoreStartupLock = RestoreStartupLock.Acquire(
+    dataDirectory,
+    builder.Configuration["Lifewood:CoordinationDirectory"],
+    TimeSpan.FromSeconds(120));
 Directory.CreateDirectory(dataDirectory);
 var runtimeSettings = new RuntimeSettingsStore(dataDirectory, builder.Configuration["urls"]);
 builder.WebHost.UseUrls(runtimeSettings.ActiveUrl);
@@ -78,6 +91,7 @@ builder.Services.AddSingleton(serviceProvider =>
     new RuntimeLifecycle(serviceProvider.GetRequiredService<IHostApplicationLifetime>(), serviceMode));
 var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
 using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+restoreStartupLock.Release();
 CleanupInterruptedUploads(dataDirectory);
 Directory.CreateDirectory(voiceSampleDirectory);
 CleanupOrphanedVoiceUploads(voiceSampleDirectory);
@@ -134,6 +148,9 @@ builder.Services.AddRateLimiter(options =>
             new ApiErrorDto("rate_limit.exceeded", "errors.rateLimit.exceeded", "Too many requests. Wait briefly and try again.", null, true, rejected.HttpContext.TraceIdentifier),
             AppJsonContext.Default.ApiErrorDto);
     };
+    options.AddPolicy("book-recognition", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 6, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("authentication", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -479,11 +496,12 @@ api.MapPost("/me/password", async (ChangePasswordRequest? request, HttpContext c
     return Results.NoContent();
 }).RequireRateLimiting("authentication");
 
-api.MapGet("/form-options", (HttpContext context, FormOptionRepository options, FileCategoryRepository categories) =>
+api.MapGet("/form-options", (HttpContext context, FormOptionRepository options, FileCategoryRepository categories, BookRecognitionService recognition) =>
 {
     var locale = Locale(context);
     return Results.Ok(options.ForLocale(locale) with
     {
+        BookRecognitionEnabled = recognition.Enabled,
         SourceCategories = categories.ForLocale(FileCategoryScopes.Source, locale),
         ReferenceCategories = categories.ForLocale(FileCategoryScopes.Reference, locale)
     });
@@ -980,7 +998,7 @@ api.MapPost("/projects", async (HttpContext context, ProjectRepository projects,
             user.ClientName ?? user.Organization?.Name ?? user.DisplayName,
             user.DisplayName,
             user.Email ?? "",
-            user.Phone));
+            user.Phone, Locale(context)));
     }
 });
 
@@ -1041,7 +1059,7 @@ api.MapGet("/projects/{id}", (string id, HttpContext context, ProjectRepository 
     var project = projects.Get(user.Id, id);
     return project is null
         ? Error(context, 404, "project.not_found", "errors.project.notFound", "The task was not found.", false)
-        : Results.Ok(project);
+        : Results.Ok(project.Status == "draft" ? project with { Project = CreatorInfo.FillMissing(project.Project, user) } : project);
 });
 
 api.MapDelete("/projects/{id}", async (string id, int version, HttpContext context, ProjectRepository projects) =>
@@ -1098,6 +1116,45 @@ api.MapGet("/projects/{id}/submission-snapshot", (string id, HttpContext context
         ? Error(context, 404, "submission.snapshot_not_found", "errors.http.notFound", "The submission configuration snapshot was not found.", false)
         : Results.Ok(snapshot);
 });
+api.MapPost("/projects/{id}/recognize-book", async (string id, BookRecognitionRequest? request, HttpContext context,
+    ProjectRepository projects, FormOptionRepository options, BookRecognitionService recognition) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
+    var project = projects.Get(user.Id, id);
+    if (project is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The project was not found.", false);
+    if (project.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This project is read-only.", false);
+    if (!recognition.Enabled) return Error(context, 503, "recognition.disabled", "bookIntake.recognitionDisabled", "Book recognition is not configured.", false);
+    if (request?.AssetIds is not { Length: >= 1 and <= BookRecognitionService.MaxImages } ids || ids.Distinct(StringComparer.Ordinal).Count() != ids.Length)
+        return Error(context, 400, "recognition.images", "bookIntake.recognitionImages", "Choose between one and six cover photos.", false);
+    var assets = (project.Book.SourceAssets ?? []).Where(asset => ids.Contains(asset.Id) && asset.CategoryId == "book-cover").ToArray();
+    if (assets.Length != ids.Length || assets.Sum(asset => asset.SizeBytes) > BookRecognitionService.MaxTotalBytes ||
+        assets.Any(asset => asset.ContentType is not ("image/jpeg" or "image/png" or "image/webp") || !Guid.TryParseExact(asset.Id, "N", out _)))
+        return Error(context, 400, "recognition.images", "bookIntake.recognitionImages", "Invalid cover photos.", false);
+    try
+    {
+        var images = new List<RecognitionImage>();
+        // Read only authenticated project uploads, never provider/client-supplied URLs or paths.
+        var folder = Path.Combine(dataDirectory, "uploads", user.Id, project.Id);
+        foreach (var asset in assets)
+        {
+            var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{asset.Id}_*").Where(IsStoredFile).SingleOrDefault() : null;
+            if (path is null || new FileInfo(path).Length != asset.SizeBytes || asset.SizeBytes > 10_000_000)
+                return Error(context, 400, "recognition.images", "bookIntake.recognitionImages", "Cover photo is unavailable.", false);
+            images.Add(new(asset.ContentType, await File.ReadAllBytesAsync(path, context.RequestAborted)));
+        }
+        var result = await recognition.RecognizeAsync([.. images], options.ForLocale(Locale(context)).Genres, Locale(context), context.RequestAborted);
+        return Results.Ok(result);
+    }
+    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested) { return Results.StatusCode(499); }
+    catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException or OperationCanceledException)
+    {
+        // Provider payloads may contain private book text; do not log them or forward them to the client.
+        return Error(context, 502, "recognition.failed", "bookIntake.recognitionFailed", "Book recognition failed. Try again or enter the information manually.", true);
+    }
+}).RequireRateLimiting("book-recognition");
+
 api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpContext context, ProjectRepository projects, FormOptionRepository options, FileCategoryRepository fileCategories) =>
 {
     var user = CurrentUser(context);
@@ -1108,7 +1165,14 @@ api.MapPut("/projects/{id}/draft", (string id, SaveDraftRequest? request, HttpCo
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The task was not found.", false);
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This task is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This draft was changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
-    var fieldErrors = DraftValidator.Validate(request, options, fileCategories, current);
+    var creatorInfo = CreatorInfo.FillMissing(current.Project, user);
+    if (request.Project is not null)
+        request = request with { Project = request.Project with {
+            ClientName = creatorInfo.ClientName, ContactName = creatorInfo.ContactName,
+            Email = creatorInfo.Email, Phone = creatorInfo.Phone,
+            ProjectName = string.IsNullOrWhiteSpace(request.Project.ProjectName) ? request.Book?.Title?.Trim() ?? "" : request.Project.ProjectName
+        } };
+    var fieldErrors = DraftValidator.Validate(request, options, fileCategories, current, allowPastDeadline: true);
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);
     if (!AssetsMatch(current.Book.SourceAssets ?? [], request.Book.SourceAssets ?? []))
@@ -1170,6 +1234,27 @@ api.MapPut("/projects/{id}/voice-and-references", (string id, SaveVoiceAndRefere
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (request is not null && current.Version != request.Version)
         return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before saving again.", false, currentVersion: current.Version);
+    if (request?.Project is not null)
+    {
+        var creator = CreatorInfo.FillMissing(current.Project, user);
+        request = request with { Project = request.Project with {
+            ClientName=creator.ClientName, ContactName=creator.ContactName, Email=creator.Email, Phone=creator.Phone,
+            ProjectName=string.IsNullOrWhiteSpace(request.Project.ProjectName) ? current.Book.Title.Trim() : request.Project.ProjectName
+        } };
+        var basicErrors = DraftValidator.Validate(new SaveDraftRequest(request.Version, request.Project, current.Book), options, fileCategories, current,
+            allowPastDeadline: !request.RequireComplete);
+        if (basicErrors.Length > 0)
+            return Error(context, 400, "validation.failed", "errors.validation.failed", "Some project fields are invalid.", false, basicErrors);
+    }
+    if (request?.RequireComplete == true)
+    {
+        var basic = request.Project ?? current.Project;
+        var basicErrors = new List<FieldErrorDto>();
+        if (string.IsNullOrWhiteSpace(basic.VideoGoalId)) basicErrors.Add(new("project.videoGoalId", "required", "errors.validation.required"));
+        if (basic.AudienceIds.Length == 0) basicErrors.Add(new("project.audienceIds", "required", "errors.validation.required"));
+        if (basicErrors.Count > 0)
+            return Error(context, 400, "validation.failed", "errors.validation.failed", "Complete project basics before review.", false, [.. basicErrors]);
+    }
     var fieldErrors = VoiceAndReferencesValidator.Validate(request, voices.EnabledIds(), options, fileCategories, current);
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "Some fields are invalid.", false, fieldErrors);

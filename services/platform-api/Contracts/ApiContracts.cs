@@ -57,7 +57,9 @@ public sealed record ConfigOptionDto(
     string? Description = null,
     string? Tone = null,
     string? PreviewColor = null,
-    bool AllowsCustomValue = false);
+    bool AllowsCustomValue = false,
+    string? PreviewImageUrl = null,
+    string? PreviewVideoUrl = null);
 
 public sealed record ReferenceCategoryDto(
     string Id,
@@ -114,7 +116,9 @@ public sealed record AdminFormOptionDto(
     bool AllowsCustomValue,
     bool Enabled,
     int SortOrder,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? PreviewImageUrl = null,
+    string? PreviewVideoUrl = null);
 
 public sealed record AdminFileCategoryDto(
     string Scope,
@@ -163,7 +167,9 @@ public sealed record UpsertFormOptionRequest(
     bool Enabled,
     int SortOrder,
     DateTimeOffset? ExpectedUpdatedAt = null,
-    bool AllowsCustomValue = false);
+    bool AllowsCustomValue = false,
+    string? PreviewImageUrl = null,
+    string? PreviewVideoUrl = null);
 
 public sealed record FormOptionsDto(
     ConfigOptionDto[] Brands,
@@ -192,7 +198,9 @@ public sealed record FormOptionsDto(
     ReferenceCategoryDto[] ReferenceCategories,
     int MaxSelectedVoices,
     ConfigOptionDto[] WorkflowStatuses,
-    ConfigOptionDto[] ProjectPriorities);
+    ConfigOptionDto[] ProjectPriorities,
+    ConfigOptionDto[]? LegacyImageStyleTags = null,
+    bool BookRecognitionEnabled = false);
 
 public sealed record ProjectInfoDto(
     string ClientName,
@@ -231,7 +239,8 @@ public sealed record CharacterInfoDto(
     string? Emotion,
     string? VoiceHint,
     string[] ReferenceImageUrls,
-    ReferenceAssetDto[]? ReferenceImages = null);
+    ReferenceAssetDto[]? ReferenceImages = null,
+    string? PresetId = null);
 
 public sealed record CreativeInfoDto(
     CharacterInfoDto[] Characters,
@@ -261,7 +270,8 @@ public sealed record VoiceoverInfoDto(
     string? EmotionStyleId,
     string[] SelectedVoiceIds,
     string? PreferredVoiceId,
-    string? CustomVoiceDescription);
+    string? CustomVoiceDescription,
+    bool? NarrationEnabled = null);
 
 public sealed record CreativeDirectionDto(
     string CoreMessage,
@@ -364,7 +374,7 @@ public sealed record SaveDraftRequest(
 
 public sealed record SaveCreativeRequest(int Version, CreativeInfoDto Creative);
 
-public sealed record SaveVoiceAndReferencesRequest(int Version, VoiceAndReferencesInfoDto VoiceAndReferences, bool RequireComplete = false);
+public sealed record SaveVoiceAndReferencesRequest(int Version, VoiceAndReferencesInfoDto VoiceAndReferences, bool RequireComplete = false, ProjectInfoDto? Project = null);
 
 public sealed record ValidateProjectRequest(int Version);
 
@@ -384,3 +394,6 @@ public sealed record ApiErrorDto(
     bool Retryable,
     string? RequestId,
     int? CurrentVersion = null);
+
+public sealed record BookRecognitionRequest(string[] AssetIds);
+public sealed record BookRecognitionDto(string Title, string AuthorName, string Subtitle, string GenreId, string SellingPoint, string Synopsis);

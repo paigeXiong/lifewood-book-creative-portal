@@ -74,6 +74,8 @@ function FormOptionDialog({ option, busy, error, onClose, onSave }: { option: Ad
       enabled: data.get("enabled") === "on",
       sortOrder: Number(data.get("sortOrder")),
       previewColor: data.has("previewColor") ? String(data.get("previewColor")) : option.previewColor,
+      previewImageUrl: data.has("previewImageUrl") ? String(data.get("previewImageUrl")).trim() || undefined : option.previewImageUrl,
+      previewVideoUrl: data.has("previewVideoUrl") ? String(data.get("previewVideoUrl")).trim() || undefined : option.previewVideoUrl,
       allowsCustomValue: option.groupId === "video-durations" && data.get("allowsCustomValue") === "on",
     };
     if (option.enabled && !value.enabled && !window.confirm(t("admin.formOptions.disableConfirm"))) return;
@@ -90,6 +92,10 @@ function FormOptionDialog({ option, busy, error, onClose, onSave }: { option: Ad
         <label><span>{t("admin.formOptions.descriptionZh")}</span><textarea name="descriptionZhCn" defaultValue={option.descriptionZhCn} rows={2} maxLength={300} /></label>
         <label><span>{t("admin.formOptions.descriptionEn")}</span><textarea name="descriptionEnUs" defaultValue={option.descriptionEnUs} rows={2} maxLength={300} /></label>
         {option.groupId === "visual-styles" && <label><span>{t("admin.formOptions.previewColor")}</span><input name="previewColor" type="color" defaultValue={option.previewColor ?? "#1f6b50"} /></label>}
+        {option.groupId === "visual-styles" && <>
+          <label><span>{t("admin.formOptions.previewImageUrl")}</span><input name="previewImageUrl" defaultValue={option.previewImageUrl ?? ""} maxLength={2048} autoComplete="off" spellCheck={false} /></label>
+          <label><span>{t("admin.formOptions.previewVideoUrl")}</span><input name="previewVideoUrl" defaultValue={option.previewVideoUrl ?? ""} maxLength={2048} autoComplete="off" spellCheck={false} /></label>
+        </>}
       </div>
       {option.groupId === "video-durations" && <div className="toggle-row"><label><input type="checkbox" name="allowsCustomValue" defaultChecked={option.allowsCustomValue} /><span>{t("admin.formOptions.allowsCustomValue")}</span></label><small>{t("admin.formOptions.allowsCustomValueHint")}</small></div>}
       <div className="toggle-row"><label><input type="checkbox" name="enabled" defaultChecked={option.enabled} /><span>{t("admin.formOptions.enabled")}</span></label></div>

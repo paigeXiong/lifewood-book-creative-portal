@@ -34,6 +34,28 @@ internal sealed class FileCategoryRepository(string connectionString)
         using var transaction = connection.BeginTransaction();
         Seed(connection, transaction, FileCategoryScopes.Source, zh.SourceCategories, en.SourceCategories);
         Seed(connection, transaction, FileCategoryScopes.Reference, zh.ReferenceCategories, en.ReferenceCategories);
+        using (var migration = connection.CreateCommand())
+        {
+            migration.Transaction = transaction;
+            migration.CommandText = """
+                CREATE TABLE IF NOT EXISTS file_category_migrations (id TEXT PRIMARY KEY);
+                UPDATE file_categories SET enabled=0,required=0,updated_at=$now
+                WHERE scope='source' AND id IN ('key-chapters','brand-guidelines','authorization')
+                  AND NOT EXISTS (SELECT 1 FROM file_category_migrations WHERE id='basic-book-intake-v1');
+                UPDATE file_categories SET max_files=6,updated_at=$now
+                WHERE id='book-cover' AND max_files=1
+                  AND NOT EXISTS (SELECT 1 FROM file_category_migrations WHERE id='basic-book-intake-v1');
+                INSERT OR IGNORE INTO file_category_migrations(id) VALUES('basic-book-intake-v1');
+                UPDATE file_categories SET required=0,updated_at=$now,
+                  label_zh_cn=CASE WHEN label_zh_cn='全书或节选' THEN '全书或节选（可选）' ELSE label_zh_cn END,
+                  label_en_us=CASE WHEN label_en_us='Manuscript or excerpt' THEN 'Manuscript or excerpt (optional)' ELSE label_en_us END
+                WHERE scope='source' AND id='manuscript'
+                  AND NOT EXISTS (SELECT 1 FROM file_category_migrations WHERE id='optional-manuscript-v1');
+                INSERT OR IGNORE INTO file_category_migrations(id) VALUES('optional-manuscript-v1');
+                """;
+            migration.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            migration.ExecuteNonQuery();
+        }
         transaction.Commit();
     }
 
