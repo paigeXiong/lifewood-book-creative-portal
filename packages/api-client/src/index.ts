@@ -24,7 +24,7 @@ import type {
   UploadReferenceResult,
   VoiceReference,
 } from "@lifewood/domain";
-import type { AdminFileCategory, AdminFormOption, AdminVoiceReference } from "@lifewood/domain";
+import type { FormOptionSection, AdminFileCategory, AdminFormOption, AdminVoiceReference } from "@lifewood/domain";
 
 export class ApiError extends Error {
   readonly details: AppErrorShape;
@@ -474,6 +474,7 @@ export const adminService = {
     const { updatedAt, ...payload } = category;
     return request<AdminFileCategory>(`/admin/file-categories/${category.scope}/${encodeURIComponent(category.id)}`, { method: "PUT", body: JSON.stringify({ ...payload, expectedUpdatedAt: updatedAt }) });
   },
+  listFormOptionGroups: (locale: SupportedLocale) => request<FormOptionSection[]>("/admin/form-option-groups", { locale }),
   listFormOptions: (groupId: string) => request<AdminFormOption[]>(`/admin/form-options/${encodeURIComponent(groupId)}`),
   saveFormOption: (option: AdminFormOption) => {
     const { updatedAt, ...payload } = option;
@@ -491,4 +492,14 @@ export const adminService = {
   },
   removeVoiceSample: (id: string) =>
     request<AdminVoiceReference>(`/admin/voices/${encodeURIComponent(id)}/sample`, { method: "DELETE" }),
+};
+
+export interface RevisionReason { unit: string; body: string }
+export interface RevisionMessage { id: string; unit: string; body: string; authorId: string; authorName: string; avatarUrl?: string; isAdmin: boolean; createdAt: string }
+export interface RevisionRound { id: string; createdAt: string; submittedAt?: string; reasons: RevisionReason[]; messages: RevisionMessage[]; beforeSnapshot?: string; afterSnapshot?: string }
+export interface RevisionView { units: {id: string; label: string}[]; rounds: RevisionRound[]; hasMore: boolean; labels: Record<string,string> }
+export const revisionService = {
+  get: (id: string, locale: SupportedLocale, admin = false, page = 1) => request<RevisionView>(`/${admin ? "admin/" : ""}projects/${encodeURIComponent(id)}/revisions?page=${page}`, { locale }),
+  returnProject: (id: string, version: number, reasons: RevisionReason[], locale: SupportedLocale, expectedWorkflowUpdatedAt: string) => request<RevisionView>(`/admin/projects/${encodeURIComponent(id)}/return`, { method: "POST", locale, body: JSON.stringify({version, reasons, expectedWorkflowUpdatedAt}) }),
+  reply: (id: string, round: string, message: {id:string; unit:string; body:string}, locale: SupportedLocale, admin = false) => request<RevisionView>(`/${admin ? "admin/" : ""}projects/${encodeURIComponent(id)}/revisions/${encodeURIComponent(round)}/messages`, { method: "POST", locale, body: JSON.stringify(message) }),
 };

@@ -318,6 +318,31 @@ public sealed class PersistenceIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void InternalNotesRemainVisibleDuringReturnAndAfterRepeatedResubmission()
+    {
+        var projects=new ProjectRepository(ConnectionString);projects.Initialize();
+        var users=new UserRepository(ConnectionString,root);users.Initialize();
+        var admin=new AdminRepository(ConnectionString);admin.Initialize();
+        var owner=users.CreateOwner("Owner","notes@example.test","initial-password-123").User!;
+        var store=new RevisionStore(ConnectionString);
+        var draft=projects.Create(owner.Id);
+        var submitted=projects.Submit(owner.Id,draft.Id,draft.Version,"first",null).Draft!;
+        Assert.Equal(AdminWriteOutcome.Saved,admin.AddNote(draft.Id,owner.Id,new("Keep this internal note"),out var note).Outcome);
+        for(var i=0;i<2;i++) {
+            var detail=admin.GetProject(draft.Id)!;
+            Assert.True(store.Return(draft.Id,new(submitted.Version,[new("style","Clarify")],detail.WorkflowUpdatedAt),owner));
+            Assert.Equal(note!.Id,Assert.Single(admin.GetProject(draft.Id)!.Notes).Id);
+            draft=projects.Get(owner.Id,draft.Id)!;
+            submitted=projects.Submit(owner.Id,draft.Id,draft.Version,"resubmit-"+i,null).Draft!;
+            projects.Initialize();admin.Initialize();
+            Assert.Equal(note.Id,Assert.Single(admin.GetProject(draft.Id)!.Notes).Id);
+        }
+        Execute("ALTER TABLE projects DROP COLUMN first_submitted_at;");
+        projects.Initialize();
+        Assert.Equal(note!.Id,Assert.Single(admin.GetProject(draft.Id)!.Notes).Id);
+    }
+
+    [Fact]
     public void SubmissionResetsLegacyDraftFollowUpWithoutDeletingHistoricalData()
     {
         var projects = new ProjectRepository(ConnectionString);
@@ -599,7 +624,7 @@ public sealed class PersistenceIntegrationTests : IDisposable
     {
         var projects = new ProjectRepository(ConnectionString);
         projects.Initialize();
-        Execute("ALTER TABLE projects DROP COLUMN submission_snapshot_json;");
+        Execute("DROP TRIGGER revision_close; ALTER TABLE projects DROP COLUMN submission_snapshot_json;");
         Execute("DELETE FROM schema_migrations WHERE version = 5;");
 
         projects.Initialize();

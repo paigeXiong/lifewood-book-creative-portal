@@ -1,3 +1,4 @@
+import { RevisionNavigation } from "./revision-navigation";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
@@ -255,6 +256,34 @@ describe("workflow progress", () => {
     });
   }
 
+  for (const locale of ["zh-CN","en-US"]) it("routes returned project validation errors to references ("+locale+")",async()=>{
+    await i18n.changeLanguage(locale);
+    const draft=completeDraft();
+    draft.book.title="";
+    draft.project.audienceIds=[];
+    draft.voiceAndReferences.voiceover={narrationEnabled:false,selectedVoiceIds:[]};
+    const catalog:FormOptions={
+      brands:[],videoGoals:[],audiences:[],genres:[],contentLanguages:[],videoDurations:[],
+      publishingPlatforms:[],taskStatuses:[],roleTypes:[],ageRanges:[],genders:[],visualStyles:[],
+      moodTags:[],imageStyleTags:[],paceTags:[],narrationTones:[],speechRates:[],voiceGenders:[],
+      voiceAges:[],accents:[],voiceEmotions:[],voiceTags:[],sourceCategories:[],referenceCategories:[],
+      maxSelectedVoices:3,workflowStatuses:[],projectPriorities:[],
+    };
+    const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
+    client.setQueryData(["project",draft.id],draft);client.setQueryData(["form-options",locale],catalog);
+    const validate=vi.spyOn(projectService,"validateProject").mockResolvedValue({valid:false,fieldErrors:[{field:"project.audienceIds",code:"required"}]});
+    const submit=vi.spyOn(projectService,"submitProject");
+    const container=document.createElement("div");document.body.append(container);const root=createRoot(container);
+    try{
+      await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/"+locale+"/tasks/"+draft.id+"/edit/review"]}><Routes><Route path="/:locale/tasks/:taskId/edit/review" element={<RevisionNavigation.Provider value={["references","review"]}><UpcomingStepPage/></RevisionNavigation.Provider>}/></Routes></MemoryRouter></QueryClientProvider>));
+      const button=Array.from(container.querySelectorAll("button")).find(b=>b.textContent===i18n.t("clientUx.resubmit"))!;
+      expect(button).toBeTruthy();
+      await act(async()=>{button.click();await new Promise(r=>setTimeout(r,10));});
+      expect(validate).toHaveBeenCalledOnce();expect(submit).not.toHaveBeenCalled();
+      expect(container.querySelector(".validation-summary a")?.getAttribute("href")).toBe("/"+locale+"/tasks/"+draft.id+"/edit/references");
+      expect(container.querySelector('a[href$="/edit/project"]')).toBeNull();
+    }finally{await act(async()=>root.unmount());container.remove();client.clear();vi.restoreAllMocks();}
+  });
   for (const mode of ["review", "detail"] as const) {
     it(`opens ${mode} without narration even when the voice catalog has failed`, async () => {
       await i18n.changeLanguage("zh-CN");

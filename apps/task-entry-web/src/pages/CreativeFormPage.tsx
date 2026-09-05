@@ -1,3 +1,5 @@
+import { useRevisionNext, useRevisionPrevious, RevisionLink } from "../revision-navigation";
+import { toCreativeFormValues } from "../creative-form-values";
 import { EnumField } from "../components/EnumField";
 import { ChoiceRow } from "../components/ChoiceRow";
 import {
@@ -72,33 +74,6 @@ function toCreativeInfo(values: CreativeFormValues): CreativeInfo {
     paceTagIds: values.paceTagIds,
     styleReferenceImageUrls: values.styleReferenceImageUrls,
     styleReferenceImages: values.styleReferenceImages,
-  };
-}
-
-function toCreativeFormValues(creative: CreativeInfo): CreativeFormValues {
-  return {
-    characters: creative.characters.map((character) => ({
-      id: character.id,
-      presetId: character.presetId,
-      roleTypeId: character.roleTypeId ?? "",
-      name: character.name,
-      storyRole: character.storyRole,
-      personality: character.personality,
-      appearance: character.appearance,
-      ageRangeId: character.ageRangeId ?? "",
-      genderId: character.genderId ?? "",
-      clothing: character.clothing ?? "",
-      emotion: character.emotion ?? "",
-      voiceHint: character.voiceHint ?? "",
-      referenceImageUrls: character.referenceImageUrls,
-      referenceImages: character.referenceImages ?? [],
-    })),
-    visualStyleId: creative.visualStyleId ?? "",
-    moodTagIds: creative.moodTagIds,
-    imageStyleTagIds: creative.imageStyleTagIds,
-    paceTagIds: creative.paceTagIds,
-    styleReferenceImageUrls: creative.styleReferenceImageUrls,
-    styleReferenceImages: creative.styleReferenceImages ?? [],
   };
 }
 
@@ -205,6 +180,7 @@ function CreativeSummary({
   nextDisabled: boolean;
 }) {
   const { t } = useTranslation();
+  const next = useRevisionNext();
   const [visualStyleId, moodTagIds, imageStyleTagIds, paceTagIds] =
     useWatch({
       control,
@@ -241,7 +217,7 @@ function CreativeSummary({
           →
         </span>
         <div>
-          <h3>{t(`creative.summary.${stage === "characters" ? "nextVoiceTitle" : "nextReferencesTitle"}`)}</h3>
+          <h3>{t(next ? "wizard.steps."+next : `creative.summary.${stage === "characters" ? "nextVoiceTitle" : "nextReferencesTitle"}`)}</h3>
         </div>
       </button>
     </aside>
@@ -250,6 +226,8 @@ function CreativeSummary({
 
 export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   const { t } = useTranslation();
+  const revisionNext = useRevisionNext();
+  const revisionPrevious = useRevisionPrevious();
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -1238,13 +1216,13 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
           />
         </div>
         <div className="sticky-actions">
-          <Link
+          <RevisionLink hideWhenLocked
             className="button button-secondary"
-            to={localizedPath(validLocale, `/tasks/${taskId}/edit/${stage === "characters" ? "project" : "voice"}`)}
+            to={localizedPath(validLocale, `/tasks/${taskId}/edit/${revisionPrevious ?? (stage === "characters" ? "project" : "voice")}`)}
             onClick={guardLink}
           >
-            {t(stage === "characters" ? "wizard.actions.backUpload" : "wizard.actions.backVoice")}
-          </Link>
+            {revisionPrevious ? t("clientUx.backTo",{unit:t("wizard.steps."+revisionPrevious)}) : t(stage === "characters" ? "wizard.actions.backUpload" : "wizard.actions.backVoice")}
+          </RevisionLink>
 
           <div>
             <button
@@ -1273,7 +1251,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
               type="submit"
               disabled={navigating || Boolean(uploadTarget)}
             >
-              {t(stage === "characters" ? "wizard.actions.toVoice" : "wizard.actions.toReferences")}
+              {t(revisionNext ? `wizard.steps.${revisionNext}` : (stage === "characters" ? "wizard.actions.toVoice" : "wizard.actions.toReferences"))}
               <span aria-hidden="true">→</span>
             </button>
           </div>

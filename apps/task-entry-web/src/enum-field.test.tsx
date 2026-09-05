@@ -16,7 +16,7 @@ describe("catalog enum choices", () => {
     const root = createRoot(container);
     function Example({ items }: { items: DisplayConfigOption[] }) {
       const form = useForm({ defaultValues: { brand: "old" } });
-      return <><EnumField htmlFor="brand" label="Brand" items={items} registration={form.register("brand")} />
+      return <><EnumField htmlFor="brand" label="Brand" items={items} selectedId={form.watch("brand")} registration={form.register("brand")} />
         <output>{form.watch("brand")}</output>
         <button onClick={() => form.reset({ brand: "new" })}>Reset</button></>;
     }
@@ -32,6 +32,16 @@ describe("catalog enum choices", () => {
       await act(async () => container.querySelector<HTMLInputElement>('input[value=""]')!.click());
       expect(container.querySelector("output")?.textContent).toBe("");
       expect(container.textContent).toContain(locale === "zh-CN" ? "不指定" : "No preference");
+      await act(async () => root.render(<Example items={[...items,...Array.from({length:10},(_,i)=>({id:"item-"+i,label:"Option "+i}))]} />));
+      const search=container.querySelector<HTMLInputElement>('input[type="search"]')!;
+      await act(async()=>{
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(search,"Option 7");
+        search.dispatchEvent(new Event("input",{bubbles:true}));
+      });
+      expect(container.querySelector<HTMLInputElement>('input[value="old"]')!.closest("label")!.hidden).toBe(true);
+      expect(container.querySelector<HTMLInputElement>('input[value="item-7"]')!.closest("label")!.hidden).toBe(false);
+      expect(container.querySelector<HTMLInputElement>('input[value=""]')!.checked).toBe(true);
+      expect(container.querySelector<HTMLInputElement>('input[value=""]')!.closest("label")!.hidden).toBe(false);
       await act(async () => container.querySelector("button")!.click());
       expect(container.querySelector<HTMLInputElement>('input[value="new"]')?.checked).toBe(true);
       expect(container.querySelector("fieldset")?.classList.contains("field-wide")).toBe(true);

@@ -84,7 +84,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
           </tr></thead>
           <tbody>{organizations.data?.items.map((organization) => (
             <tr key={organization.id}>
-              <td data-label={t("admin.organizations.name")}><strong>{organization.name}</strong><small className="identifier">{organization.id}</small></td>
+              <td data-label={t("admin.organizations.name")}><strong>{organization.name}</strong></td>
               <td data-label={t("admin.organizations.members")}>{organization.memberCount}</td>
               <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
               <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>

@@ -1,7 +1,8 @@
+import { useRevisionNext, RevisionLink } from "../revision-navigation";
 import { createId } from "../create-id";
 import { EnumField } from "../components/EnumField";
 import { ChoiceRow } from "../components/ChoiceRow";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch, type Control } from "react-hook-form";
@@ -28,16 +29,15 @@ import { mergeLegacyCategories, type DisplayReferenceCategory } from "../legacy-
 
 type SourceTransfer = { id: string; categoryId: string; file: File; status: "uploading" | "error" | "cancelled"; error?: string };
 
-function SourceFilesSection({ categories, assets, locale, uploadCategory, transfers, uploadError, onUpload, onRemove, onCancel, onRetry }: {
+function SourceFilesSection({ categories, assets, locale, uploadCategory, transfers, uploadError, onUpload, onRemove, onCancel, onRetry, children }: {
+  children?: ReactNode;
   categories: DisplayReferenceCategory[]; assets: ReferenceAsset[]; locale: string; uploadCategory?: string; transfers: SourceTransfer[]; uploadError?: string;
   onUpload: (category: ReferenceCategory, files: FileList | readonly File[] | null) => Promise<void>; onRemove: (id: string) => Promise<void>; onCancel: (id: string) => void; onRetry: (item: SourceTransfer) => Promise<void>;
 }) {
   const { t } = useTranslation();
-  return <section className="form-panel source-files-panel">
-    <h2><span>1.2</span>{t("wizard.sections.sources")}</h2>
-    {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
-
-    <div className="upload-grid source-upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <FileDropCard
+  const primary = categories.filter(category=>category.required || category.id==="book-cover");
+  const optional = categories.filter(category=>!category.required && category.id!=="book-cover");
+  const renderCategory = (category: DisplayReferenceCategory) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <FileDropCard
       key={category.id}
       inputId={`source-upload-${category.id}`}
       category={category}
@@ -50,7 +50,16 @@ function SourceFilesSection({ categories, assets, locale, uploadCategory, transf
       preview={category.id === "book-cover" && files[0] ? <img className="source-cover-preview" src={files[0].url} alt={t("sourceFiles.coverAlt", { title: files[0].fileName })} width="320" height="128" /> : undefined}
       onUpload={onUpload}
       onRemove={onRemove}
-    />; })}</div>
+    />; };
+  return <section className="form-panel source-files-panel">
+    <h2><span>1.1</span>{t("wizard.sections.sources")}</h2>
+    {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
+    <div className="upload-grid source-upload-grid primary-uploads">{primary.map(renderCategory)}</div>
+    {children}
+    {optional.length>0 && <details className="optional-details" open={Boolean(uploadError || optional.some(category=>assets.some(asset=>asset.categoryId===category.id) || transfers.some(item=>item.categoryId===category.id)))}>
+      <summary>{t("clientUx.optionalFiles")}</summary>
+      <div className="upload-grid source-upload-grid">{optional.map(renderCategory)}</div>
+    </details>}
   </section>;
 }
 
@@ -64,6 +73,7 @@ function ProjectSummaryRail({ control, cover, assets, genres, statusLabel, creat
   locale: string;
 }) {
   const { t } = useTranslation();
+  const revisionNext = useRevisionNext();
   const [projectName, title, authorName, genreId, contentLanguageId] = useWatch({
     control,
     name: ["projectName", "title", "authorName", "genreId", "contentLanguageId"],
@@ -95,15 +105,16 @@ function ProjectSummaryRail({ control, cover, assets, genres, statusLabel, creat
     <div className="check-card"><h3>{t("wizard.summary.checklist")}</h3><ul>
       <li className={bookDone ? "done" : ""}><span>{bookDone ? "✓" : "○"}</span>{t("wizard.summary.book")}</li>
       <li className={cover ? "done" : ""}><span>{cover ? "✓" : "○"}</span>{t("wizard.summary.cover")}</li>
-      <li className={manuscriptDone ? "done" : ""}><span>{manuscriptDone ? "✓" : "○"}</span>{t("wizard.summary.manuscript")}</li>
+      {manuscriptDone && <li className="done"><span>✓</span>{t("clientUx.manuscriptOptional")}</li>}
       <li className={directionDone ? "done" : ""}><span>{directionDone ? "✓" : "○"}</span>{t("wizard.fields.contentLanguage")}</li>
     </ul></div>
-    <div className="next-card"><span className="next-mark" aria-hidden="true">→</span><div><h3>{t("wizard.summary.nextTitle")}</h3></div></div>
+    <div className="next-card"><span className="next-mark" aria-hidden="true">→</span><div><h3>{t(revisionNext ? `wizard.steps.${revisionNext}` : ("wizard.summary.nextTitle"))}</h3></div></div>
   </aside>;
 }
 
 export function ProjectFormPage() {
   const { t } = useTranslation();
+  const revisionNext = useRevisionNext();
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -393,10 +404,10 @@ export function ProjectFormPage() {
       <form autoComplete="off" onSubmit={continueStep} inert={returningHome || continuing} aria-busy={returningHome || continuing}>
         <div className="wizard-layout">
           <div className="form-stack">
+            <SourceFilesSection categories={sourceCategories} assets={sourceAssets} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemove={removeAsset} onCancel={cancelUpload} onRetry={retryUpload}><BookRecognition taskId={taskId!} locale={validLocale} enabled={Boolean(options.bookRecognitionEnabled)} assets={sourceAssets} form={form} busy={Boolean(uploadCategory)} /></SourceFilesSection>
             <section className="form-panel book-info-panel">
-              <h2><span>1.1</span>{t("wizard.sections.book")}</h2>
+              <h2><span>1.2</span>{t("wizard.sections.book")}</h2>
 
-              <BookRecognition taskId={taskId!} locale={validLocale} enabled={Boolean(options.bookRecognitionEnabled)} assets={sourceAssets} form={form} busy={Boolean(uploadCategory)} />
               <div className="form-grid">
                 <Field label={t("wizard.fields.bookTitle")} icon={<FieldIcon name="book" />} htmlFor="title" required error={form.formState.errors.title?.message}><input id="title" className="input-long" {...form.register("title")} /></Field>
                 <Field label={t("wizard.fields.subtitle")} icon={<FieldIcon name="title" />} htmlFor="subtitle"><input id="subtitle" className="input-long" {...form.register("subtitle")} /></Field>
@@ -407,18 +418,19 @@ export function ProjectFormPage() {
                     form.setValue("customVideoDuration", customValue, { shouldDirty: true, shouldValidate: true });
                   }} />
                 </Field>}
-                <Field label={t("wizard.fields.sellingPoint")} icon={<FieldIcon name="highlight" />} htmlFor="sellingPoint" className="field-wide" error={form.formState.errors.sellingPoint?.message}><textarea id="sellingPoint" rows={2} maxLength={150} {...form.register("sellingPoint")} /></Field>
-                <Field label={t("wizard.fields.synopsis")} icon={<FieldIcon name="summary" />} htmlFor="synopsis" className="field-wide" error={form.formState.errors.synopsis?.message}><textarea id="synopsis" rows={4} maxLength={600} {...form.register("synopsis")} /></Field>
-                <EnumField label={t("wizard.fields.genre")} icon={<FieldIcon name="genre" />} htmlFor="genreId" required error={form.formState.errors.genreId?.message} items={genreOptions} registration={form.register("genreId")} />
-                <EnumField label={t("wizard.fields.contentLanguage")} icon={<FieldIcon name="language" />} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message} items={languageOptions} registration={form.register("contentLanguageId")} />
+                <EnumField label={t("wizard.fields.genre")} icon={<FieldIcon name="genre" />} htmlFor="genreId" required error={form.formState.errors.genreId?.message} items={genreOptions} selectedId={form.watch("genreId")} registration={form.register("genreId")} />
+                <EnumField label={t("wizard.fields.contentLanguage")} icon={<FieldIcon name="language" />} htmlFor="contentLanguageId" required error={form.formState.errors.contentLanguageId?.message} items={languageOptions} selectedId={form.watch("contentLanguageId")} registration={form.register("contentLanguageId")} />
                 {customDurationOptionIds.length === 0 && <EnumField label={t("wizard.fields.duration")} icon={<FieldIcon name="duration" />} htmlFor="videoDurationInput" required error={form.formState.errors.videoDurationId?.message} items={durationOptions} registration={form.register("videoDurationId", { onChange: () => form.setValue("customVideoDuration", "", { shouldDirty: true, shouldValidate: true }) })} />}
                 <ChoiceField label={t("wizard.fields.platforms")} icon={<FieldIcon name="platform" />} id="platform-group"><ChoiceRow id="platform-group">{platformOptions.map((item) => <label className="choice-chip" key={item.id} aria-disabled={item.unavailable}><input type="checkbox" value={item.id} disabled={item.unavailable && !selectedPlatformIds.includes(item.id)} {...form.register("publishingPlatformIds")} /><span>{item.label}</span></label>)}</ChoiceRow></ChoiceField>
               </div>
+              <details className="optional-details" open={Boolean(form.formState.errors.sellingPoint || form.formState.errors.synopsis || form.watch("sellingPoint") || form.watch("synopsis"))}><summary>{t("clientUx.optionalBook")}</summary><div className="form-grid">
+                <Field label={t("wizard.fields.sellingPoint")} icon={<FieldIcon name="highlight" />} htmlFor="sellingPoint" className="field-wide" error={form.formState.errors.sellingPoint?.message}><textarea id="sellingPoint" rows={2} maxLength={150} {...form.register("sellingPoint")} /></Field>
+                <Field label={t("wizard.fields.synopsis")} icon={<FieldIcon name="summary" />} htmlFor="synopsis" className="field-wide" error={form.formState.errors.synopsis?.message}><textarea id="synopsis" rows={4} maxLength={600} {...form.register("synopsis")} /></Field>
+              </div></details>
             </section>
-            <SourceFilesSection categories={sourceCategories} assets={sourceAssets} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemove={removeAsset} onCancel={cancelUpload} onRetry={retryUpload} />
           </div>
 
-          <ProjectSummaryRail control={form.control} cover={cover} assets={sourceAssets} genres={genreOptions} statusLabel={options.taskStatuses.find((item) => item.id === draftQuery.data.status)?.label ?? draftQuery.data.status} createdAt={draftQuery.data.createdAt} locale={validLocale} />
+          <ProjectSummaryRail control={form.control} cover={cover} assets={sourceAssets} genres={genreOptions} statusLabel={draftQuery.data.workflowStatus === "awaiting_customer" ? t("clientUx.returnedStatus") : options.taskStatuses.find((item) => item.id === draftQuery.data.status)?.label ?? draftQuery.data.status} createdAt={draftQuery.data.createdAt} locale={validLocale} />
         </div>
 
         <div className="sticky-actions">
@@ -426,7 +438,7 @@ export function ProjectFormPage() {
 
           <div>
           {conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}
-          <button className="button button-primary" type="submit" disabled={continuing || returningHome || Boolean(uploadCategory)}>{t("wizard.actions.toCharacters")}<span aria-hidden="true">→</span></button></div>
+          <button className="button button-primary" type="submit" disabled={continuing || returningHome || Boolean(uploadCategory)}>{t(revisionNext ? `wizard.steps.${revisionNext}` : ("wizard.actions.toCharacters"))}<span aria-hidden="true">→</span></button></div>
         </div>
       </form>
     </div>

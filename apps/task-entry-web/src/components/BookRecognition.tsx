@@ -31,7 +31,8 @@ export function BookRecognition({ taskId, locale, enabled, assets, form, busy }:
       const current = { ...form.getValues() } satisfies RecognizedBook;
       const updates = recognitionUpdates(result, snapshot, current);
       recognizedFields.forEach(key => { if (updates[key]) form.setValue(key, updates[key], { shouldDirty: true, shouldValidate: true }); });
-      setMessage(t(Object.keys(updates).length ? "bookIntake.recognitionDone" : "bookIntake.recognitionNoChange"));
+      const fieldLabels: Record<string,string> = {title:"bookTitle",subtitle:"subtitle",authorName:"authorName",genreId:"genre",sellingPoint:"sellingPoint",synopsis:"synopsis"};
+      setMessage(Object.keys(updates).length ? t("clientUx.recognizedFields", {fields:Object.keys(updates).map(key=>t("wizard.fields."+fieldLabels[key])).join(" · ")}) : t("bookIntake.recognitionNoChange"));
     } catch (reason) {
       if (!active.signal.aborted) setError(localizedApiError(reason, t));
     } finally {

@@ -1,3 +1,4 @@
+import { RevisionWorkspace } from "./components/RevisionWorkspace";
 import { lazy, Suspense, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Navigate, Outlet, Route, createRoutesFromElements, useLocation, useParams, useRouteError } from "react-router-dom";
@@ -57,7 +58,7 @@ function ProtectedLayout() {
     return <ScreenError error={userQuery.error} onRetry={() => userQuery.refetch()} />;
   }
 
-  return <AppShell user={userQuery.data}><Suspense fallback={<ScreenLoading />}><Outlet context={{ locale, user: userQuery.data }} /></Suspense></AppShell>;
+  return <AppShell user={userQuery.data}><Suspense fallback={<ScreenLoading />}><RevisionWorkspace><Outlet context={{ locale, user: userQuery.data }} /></RevisionWorkspace></Suspense></AppShell>;
 }
 
 export const appRoutes = createRoutesFromElements(<>

@@ -118,7 +118,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .wizard-heading h1 { font-size: 20px; margin-bottom: 3px; }
 .wizard-heading p { margin: 0; color: var(--lw-text-secondary); font-size: 12px; }
 .save-state { font-size: 12px; color: var(--lw-text-secondary); }
-.save-error { color: var(--lw-error); }
+.save-error, .save-invalid { color: var(--lw-error); font-weight: 600; }
 .wizard-layout { display: grid; grid-template-columns: minmax(0, 1fr) 276px; gap: 12px; align-items: start; }
 .form-stack { display: grid; gap: 10px; min-width: 0; }
 .form-panel { background: rgb(255 255 255 / 94%); border-radius: var(--lw-radius-panel); padding: 12px 14px 14px; box-shadow: 0 10px 30px -30px rgb(19 48 32 / 42%); }
@@ -475,3 +475,54 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
   .upload-hint-touch { display: none; }
   .upload-hint-desktop { display: inline; }
 }
+
+.revision-messages{max-height:320px;overflow-y:auto;overscroll-behavior:contain}.revision-message{display:flex;gap:10px;padding:10px 0;align-items:flex-start}.revision-message img,.revision-avatar{width:32px;height:32px;flex:none;border-radius:50%;object-fit:cover;background:#e0eee7;color:#204c3c;display:grid;place-items:center;font-size:12px}.revision-message>div{min-width:0;flex:1}.revision-message time{display:block;font-size:11px;color:#69786f}.revision-message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0;font-size:13px}.revision-reason{margin:12px 0}.revision-reason label{display:flex;gap:8px;align-items:center}.revision-reason textarea,.revision-thread textarea{width:100%;min-height:70px;margin-top:8px}.revision-admin details{margin-top:12px}.revision-admin summary{cursor:pointer;font-size:13px}.revision-admin pre{overflow:auto;max-height:260px;font-size:11px}.revision-thread{background:#f3f6f3;padding:12px;margin:8px 0}.revision-thread h4{margin:0}
+
+.revision-float{position:fixed;right:20px;bottom:90px;z-index:90;max-width:calc(100vw - 24px)}.revision-toggle{box-shadow:0 4px 18px #153b2924}.revision-chat{margin-top:8px;width:360px;max-width:calc(100vw - 24px);padding:16px;background:white;border-radius:14px;box-shadow:0 10px 36px #163a2930}.revision-chat header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:13px}.revision-chat header button{border:0;background:none;font-size:24px}.revision-chat select,.revision-chat textarea{width:100%}.revision-chat textarea{min-height:74px;margin:8px 0}.revision-locked{margin:24px}.revision-locked a{display:inline-block;margin:8px}.revision-chat form .button{width:100%}@media(max-width:600px){.revision-float{right:12px;bottom:82px}.revision-messages{max-height:32vh}}
+
+.revision-unit-links,.revision-locked { display:flex; flex-wrap:wrap; gap:10px; }
+.revision-unit-links a,.revision-locked a { color:var(--lw-dark-green,#193f31); text-decoration:underline; text-underline-offset:3px; }
+.revision-locked p { flex-basis:100%; }
+
+/* Persistent revision communication, distinct from ordinary form controls. */
+.revision-float { right:24px; bottom:96px; display:flex; flex-direction:column-reverse; align-items:flex-end; gap:10px; }
+.revision-float .revision-toggle { display:flex; align-items:center; gap:10px; min-height:52px; padding:12px 18px; background:#194c37; color:white; border:0; border-radius:16px; font-size:15px; font-weight:650; box-shadow:0 8px 24px #163c3540; }
+.revision-toggle svg { width:24px; height:24px; }
+.revision-toggle b { display:grid; place-items:center; min-width:25px; height:25px; padding:0 6px; background:#e6b85c; color:#253b2e; border-radius:8px; font-size:12px; }
+.revision-float .revision-chat { width:380px; max-height:calc(100dvh - 230px); overflow:auto; margin:0; padding:0; border:1px solid #d5e3d9; box-shadow:0 14px 48px #183b3333; }
+.revision-chat header { padding:15px 18px; margin:0; background:#edf4ee; color:#244c39; }
+.revision-chat header strong { font-size:15px; }
+.revision-chat .revision-unit-links { padding:12px 16px 6px; font-size:12px; }
+.revision-chat>select { margin:8px 16px; width:calc(100% - 32px); }
+.revision-chat .revision-messages { padding:0 16px; max-height:30vh; }
+.revision-chat .revision-message { padding:12px 0; }
+.revision-chat .revision-message>div { background:#f3f5f1; border-radius:0 12px 12px; padding:10px 12px; }
+.revision-chat .from-admin>div { background:#eaf2ec; }
+.revision-chat .revision-message p { font-size:14px; line-height:1.6; margin-bottom:0; }
+.revision-chat>form { padding:8px 16px 16px; }
+.revision-chat form .button { background:#194c37; color:white; border-radius:9px; padding:10px; font-weight:600; }
+.revision-chat form .button:disabled { opacity:.45; }
+.step-content[aria-disabled=true],.sticky-actions [aria-disabled=true] { opacity:.38; cursor:not-allowed; }
+@media(max-width:600px) { .revision-float {right:12px; bottom:86px;} .revision-float .revision-chat {width:calc(100vw - 24px); max-height:calc(100dvh - 210px);} .revision-float .revision-toggle {min-height:48px; padding:10px 14px;} }
+
+
+.revision-refresh-error {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 12px 16px;
+  border: 1px solid #e6c78d;
+  border-radius: 12px;
+  background: #fff8eb;
+  color: #684814;
+  box-shadow: 0 4px 16px #163a291a;
+  font-size: 14px;
+}
+.revision-refresh-error .button { flex-shrink: 0; }

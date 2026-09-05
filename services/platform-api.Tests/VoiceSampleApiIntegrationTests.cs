@@ -1017,6 +1017,48 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         Assert.Equal(expectedName,updated.Project.ProjectName);
     }
 
+    [Fact]
+    public async Task RevisionRoundSupportsReplyOnlyResubmissionAndEnforcesAccess()
+    {
+        await BootstrapOwner();
+        var adminCsrf=await GetCsrf(ownerClient);
+        using var customer=await CreateCustomerClient(adminCsrf);
+        var csrf=await GetCsrf(customer);
+        var customerInfo=(await customer.GetFromJsonAsync<CurrentUserDto>("/api/me"))!;
+        using var create=await Send(customer,HttpMethod.Post,"/api/projects",csrf,JsonContent.Create(new {}));
+        var draft=(await create.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        var repository=new ProjectRepository($"Data Source={Path.Combine(root,"platform.db")}");
+        var submitted=repository.Submit(customerInfo.Id,draft.Id,draft.Version,Guid.NewGuid().ToString("N"),null).Draft!;
+        var route=$"/api/projects/{draft.Id}";
+        var adminDetail=(await ownerClient.GetFromJsonAsync<AdminProjectDetailDto>($"/api/admin/projects/{draft.Id}"))!;
+        var request=new {version=submitted.Version,expectedWorkflowUpdatedAt=adminDetail.WorkflowUpdatedAt,reasons=new[]{new {unit="style",body="Clarify"},new {unit="voice",body="Confirm narration"}}};
+        using var forbidden=await Send(customer,HttpMethod.Post,$"/api/admin/projects/{draft.Id}/return",csrf,JsonContent.Create(request));
+        Assert.Equal(HttpStatusCode.Forbidden,forbidden.StatusCode);
+        using var returned=await Send(ownerClient,HttpMethod.Post,$"/api/admin/projects/{draft.Id}/return",adminCsrf,JsonContent.Create(request));
+        Assert.Equal(HttpStatusCode.OK,returned.StatusCode);
+        using var foreign=await ownerClient.GetAsync(route+"/revisions");
+        Assert.Equal(HttpStatusCode.NotFound,foreign.StatusCode);
+        var view=(await customer.GetFromJsonAsync<Lifewood.PlatformApi.Features.RevisionView>(route+"/revisions"))!;
+        var round=Assert.Single(view.Rounds);
+        Assert.Null(round.BeforeSnapshot);
+        Assert.Equal(2,round.Reasons.Length);
+        using var avatar=await customer.GetAsync(round.Messages[0].AvatarUrl);
+        Assert.Equal(HttpStatusCode.OK,avatar.StatusCode);
+        using var replied=await Send(customer,HttpMethod.Post,route+$"/revisions/{round.Id}/messages",csrf,
+            JsonContent.Create(new {id=Guid.NewGuid().ToString("N"),unit="style",body="Please keep the current approach."}));
+        Assert.Equal(HttpStatusCode.OK,replied.StatusCode);
+        draft=(await customer.GetFromJsonAsync<TaskDraftDto>(route))!;
+        using var validate=await Send(customer,HttpMethod.Post,route+"/validate",csrf,JsonContent.Create(new {version=draft.Version}));
+        var validation=(await validate.Content.ReadFromJsonAsync<ValidationResultDto>())!;
+        Assert.Empty(validation.FieldErrors);
+        using var resubmit=await Send(customer,HttpMethod.Post,route+"/submit",csrf,
+            JsonContent.Create(new {version=draft.Version,idempotencyKey=Guid.NewGuid().ToString("N")}));
+        Assert.Equal(HttpStatusCode.OK,resubmit.StatusCode);
+        var history=(await ownerClient.GetFromJsonAsync<Lifewood.PlatformApi.Features.RevisionView>($"/api/admin/projects/{draft.Id}/revisions"))!;
+        Assert.NotNull(Assert.Single(history.Rounds).AfterSnapshot);
+        Assert.Equal(3,history.Rounds[0].Messages.Length);
+    }
+
     private async Task BootstrapOwner()
     {
         var csrf = await GetCsrf(ownerClient);

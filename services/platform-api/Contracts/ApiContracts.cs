@@ -104,6 +104,9 @@ public sealed record UpsertVoiceReferenceRequest(
     int SortOrder,
     string? ExpectedUpdatedAt);
 
+public sealed record FormOptionGroupDto(string Id, string Label);
+public sealed record FormOptionSectionDto(string Id, string Label, FormOptionGroupDto[] Groups);
+
 public sealed record AdminFormOptionDto(
     string GroupId,
     string Id,

@@ -1,8 +1,9 @@
+import { RevisionNavigation, RevisionLink, ReviewSection, useRevisionPrevious } from "../revision-navigation";
 import { createId } from "../create-id";
-import { useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   ApiError,
   localizedApiError,
@@ -22,6 +23,8 @@ import { isProjectStepComplete, isProjectBasicsComplete } from "./projectFormSch
 
 export function UpcomingStepPage() {
   const { t } = useTranslation();
+  const allowed = useContext(RevisionNavigation);
+  const previous = useRevisionPrevious();
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -93,35 +96,35 @@ export function UpcomingStepPage() {
     return <ScreenError error={project.error ?? options.error ?? (needsVoices ? voices.error : undefined)} onRetry={() => Promise.all([project.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])} />;
   if (project.data.status !== "draft")
     return <Navigate replace to={localizedPath(locale, `/tasks/${taskId}`)} />;
-  if (!isProjectStepComplete(project.data))
+  if (!allowed && (!isProjectStepComplete(project.data)))
     return (
       <Navigate
         replace
         to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}
       />
     );
-  if (!isCharactersComplete(project.data.creative))
+  if (!allowed && (!isCharactersComplete(project.data.creative)))
     return (
       <Navigate
         replace
         to={localizedPath(locale, `/tasks/${taskId}/edit/characters`)}
       />
     );
-  if (!isVoicePreferencesComplete(project.data.voiceAndReferences))
+  if (!allowed && (!isVoicePreferencesComplete(project.data.voiceAndReferences)))
     return (
       <Navigate
         replace
         to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}
       />
     );
-  if (!isStyleComplete(project.data.creative))
+  if (!allowed && (!isStyleComplete(project.data.creative)))
     return (
       <Navigate
         replace
         to={localizedPath(locale, `/tasks/${taskId}/edit/style`)}
       />
     );
-  if (!isProjectBasicsComplete(project.data.project) || !isReferencesStepComplete(project.data.voiceAndReferences))
+  if (!allowed && (!isProjectBasicsComplete(project.data.project) || !isReferencesStepComplete(project.data.voiceAndReferences)))
     return (
       <Navigate
         replace
@@ -153,7 +156,7 @@ export function UpcomingStepPage() {
     submit.error.details.code === "project.version_conflict";
   const validationGroups = [
     {
-      keys: ["project.", "book."],
+      keys: ["book."],
       label: t("wizard.steps.project"),
       path: "project",
     },
@@ -173,7 +176,7 @@ export function UpcomingStepPage() {
       path: "style",
     },
     {
-      keys: ["voiceAndReferences.assets", "voiceAndReferences.competitorUrls", "voiceAndReferences.creativeDirection"],
+      keys: ["project.", "voiceAndReferences.assets", "voiceAndReferences.competitorUrls", "voiceAndReferences.creativeDirection"],
       label: t("wizard.steps.references"),
       path: "references",
     },
@@ -213,7 +216,7 @@ export function UpcomingStepPage() {
           <ul>
             {validationGroups.map((group) => (
               <li key={group.path}>
-                <Link viewTransition
+                <RevisionLink hideWhenLocked viewTransition
                   to={localizedPath(
                     validLocale,
                     `/tasks/${taskId}/edit/${group.path}`,
@@ -223,7 +226,7 @@ export function UpcomingStepPage() {
                   <span>
                     {t("review.validationCount", { count: group.count })}
                   </span>
-                </Link>
+                </RevisionLink>
               </li>
             ))}
           </ul>
@@ -231,15 +234,15 @@ export function UpcomingStepPage() {
       )}
       <div className="review-layout">
         <div className="review-main-stack">
-          <section className="form-panel review-section">
+          <ReviewSection units={["references"]} className="">
             <div className="review-section-heading">
               <h2>
                 <span>1</span>
                 {t("taskDetail.project")}
               </h2>
-              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>
+              <RevisionLink hideWhenLocked viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}>
                 {t("review.edit")}
-              </Link>
+              </RevisionLink>
             </div>
             <dl className="data-grid">
               <div>
@@ -289,16 +292,16 @@ export function UpcomingStepPage() {
                 <dd>{labels(catalog.audiences, draft.project.audienceIds)}</dd>
               </div>
             </dl>
-          </section>
-          <section className="form-panel review-section">
+          </ReviewSection>
+          <ReviewSection units={["project"]} className="">
             <div className="review-section-heading">
               <h2>
                 <span>2</span>
                 {t("taskDetail.book")}
               </h2>
-              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>
+              <RevisionLink hideWhenLocked viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/project`)}>
                 {t("review.edit")}
-              </Link>
+              </RevisionLink>
             </div>
             <ProjectCoverImage coverUrl={bookCover?.url} coverAlt={t("sourceFiles.coverAlt", { title: draft.book.title })} placeholderAlt={t("sourceFiles.coverPendingAlt")} className="review-cover" width={130} height={170} />
             <dl className="data-grid">
@@ -364,18 +367,19 @@ export function UpcomingStepPage() {
                 </dd>
               </div>
             </dl>
-          </section>
-          <section className="form-panel review-section">
+          </ReviewSection>
+          <ReviewSection units={["characters", "style"]} className="">
             <div className="review-section-heading">
               <h2>
                 <span>3</span>
                 {t("taskDetail.creative")}
               </h2>
-              <Link viewTransition
+              <RevisionLink hideWhenLocked viewTransition
                 to={localizedPath(locale, `/tasks/${taskId}/edit/style`)}
               >
                 {t("review.edit")}
-              </Link>
+              </RevisionLink>
+              <RevisionLink hideWhenLocked to={localizedPath(locale, `/tasks/${taskId}/edit/characters`)}>{t("wizard.steps.characters")}</RevisionLink>
             </div>
             <dl className="data-grid">
               <div>
@@ -450,16 +454,16 @@ export function UpcomingStepPage() {
                 </div>
               ))}
             </dl>
-          </section>
-          <section className="form-panel review-section">
+          </ReviewSection>
+          <ReviewSection units={["voice", "references"]} className="">
             <div className="review-section-heading">
               <h2>
                 <span>4</span>
                 {t("taskDetail.voice")}
               </h2>
-              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>
+              <RevisionLink hideWhenLocked viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/voice`)}>
                 {t("review.edit")}
-              </Link>
+              </RevisionLink>
             </div>
             <dl className="data-grid">
               <div className="data-wide">
@@ -597,16 +601,16 @@ export function UpcomingStepPage() {
                 </dd>
               </div>
             </dl>
-          </section>
-          <section className="form-panel review-section review-wide">
+          </ReviewSection>
+          <ReviewSection units={["references"]} className="review-wide">
             <div className="review-section-heading">
               <h2>
                 <span>5</span>
                 {t("taskDetail.direction")}
               </h2>
-              <Link viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}>
+              <RevisionLink hideWhenLocked viewTransition to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}>
                 {t("review.edit")}
-              </Link>
+              </RevisionLink>
             </div>
             <dl className="data-grid">
               <div className="data-wide">
@@ -650,7 +654,7 @@ export function UpcomingStepPage() {
                 </dd>
               </div>
             </dl>
-          </section>
+          </ReviewSection>
         </div>
         <aside className="review-summary-rail">
           <div className="folio-card">
@@ -673,7 +677,7 @@ export function UpcomingStepPage() {
                 <dt>{t("wizard.summary.status")}</dt>
                 <dd>
                   <span className="status-badge">
-                    {label(catalog.taskStatuses, draft.status)}
+                    {allowed ? t("clientUx.returnedStatus") : label(catalog.taskStatuses, draft.status)}
                   </span>
                 </dd>
               </div>
@@ -711,18 +715,18 @@ export function UpcomingStepPage() {
           <div className="submit-notice">
             <div>
               <strong>{t("review.noticeTitle")}</strong>
-              <p>{t("review.noticeBody")}</p>
+              <p>{t(allowed ? "clientUx.revisionReviewHint" : "review.noticeBody")}</p>
             </div>
           </div>
         </aside>
       </div>
       <div className="sticky-actions">
-        <Link viewTransition
+        <RevisionLink hideWhenLocked viewTransition
           className="button button-secondary"
-          to={localizedPath(locale, `/tasks/${taskId}/edit/references`)}
+          to={localizedPath(locale, `/tasks/${taskId}/edit/${previous ?? "references"}`)}
         >
-          {t("wizard.actions.backReferences")}
-        </Link>
+          {previous ? t("clientUx.backTo", {unit: t("wizard.steps."+previous)}) : t("wizard.actions.backReferences")}
+        </RevisionLink>
 
         <div>
           <button
@@ -731,7 +735,7 @@ export function UpcomingStepPage() {
             disabled={submit.isPending}
             onClick={() => submit.mutate()}
           >
-            {submit.isPending ? t("review.submitting") : t("review.submit")}
+            {submit.isPending ? t("review.submitting") : t(allowed ? "clientUx.resubmit" : "review.submit")}
           </button>
         </div>
       </div>

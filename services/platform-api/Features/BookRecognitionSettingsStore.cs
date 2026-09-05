@@ -51,6 +51,23 @@ internal sealed class BookRecognitionSettingsStore
             if (initial.Endpoint is not null || initial.Model.Length > 0 || initial.ApiKey.Length > 0)
                 Migrate(initial.Enabled, initial.Endpoint?.AbsoluteUri ?? "", initial.Model, initial.ApiKey.Length == 0 ? "" : protector.Protect(initial.ApiKey));
         }
+        // Apply the same resolution to saved providers, not only newly entered addresses.
+        document = document with { Providers = document.Providers.Select(p =>
+            Uri.TryCreate(p.Endpoint, UriKind.Absolute, out var endpoint)
+                ? p with { Endpoint = ResolveEndpoint(endpoint, p.Protocol).AbsoluteUri } : p).ToArray() };
+    }
+    internal static Uri ResolveEndpoint(Uri endpoint, string protocol)
+    {
+        var path = endpoint.AbsolutePath.TrimEnd('/');
+        string? suffix = null;
+        if (path.Length == 0)
+            suffix = protocol == "anthropic" ? "/v1/messages" : endpoint.Host == "api.openai.com" ? "/v1/chat/completions" : "/chat/completions";
+        else if (path.EndsWith("/v1", StringComparison.Ordinal))
+            suffix = protocol == "anthropic" ? "/messages" : "/chat/completions";
+        else if (protocol == "anthropic" && path.EndsWith("/anthropic", StringComparison.Ordinal))
+            suffix = "/v1/messages";
+        // Full endpoints and custom paths remain unchanged.
+        return suffix is null ? endpoint : new UriBuilder(endpoint) { Path = path + suffix }.Uri;
     }
     private AiBindingDocument Cover => document.Bindings?.FirstOrDefault(b => b.FeatureId == "book-recognition")
         ?? new("book-recognition", document.ActiveProviderId, document.Providers.FirstOrDefault(p => p.Id == document.ActiveProviderId)?.Model ?? "", document.ActiveProviderId is not null);
@@ -100,13 +117,7 @@ internal sealed class BookRecognitionSettingsStore
         Uri? uri = null;
         if (endpoint.Length > 0 && (!Uri.TryCreate(endpoint, UriKind.Absolute, out uri) || uri.Scheme != "https" ||
             uri.UserInfo.Length > 0 || uri.Fragment.Length > 0 || uri.Query.Length > 0)) return false;
-        // Accept a base URL as well as a full endpoint, avoiding accidental requests to /.
-        if (uri is not null)
-        {
-            var pathPart = uri.AbsolutePath.TrimEnd('/');
-            if (pathPart.Length == 0) uri = new Uri(uri, request.Protocol == "anthropic" ? "/v1/messages" : uri.Host == "api.openai.com" ? "/v1/chat/completions" : "/chat/completions");
-            else if (pathPart == "/v1") uri = new Uri(uri.GetLeftPart(UriPartial.Authority) + "/v1/" + (request.Protocol == "anthropic" ? "messages" : "chat/completions"));
-        }
+        if (uri is not null) uri = ResolveEndpoint(uri, request.Protocol);
         endpoint = uri?.AbsoluteUri ?? "";
         var encrypted = request.ClearApiKey ? "" : suppliedKey.Length > 0 ? protector.Protect(suppliedKey) : previous?.ProtectedKey ?? "";
         if (previous is not null && (endpoint != previous.Endpoint || request.Protocol != previous.Protocol) && suppliedKey.Length == 0)
@@ -216,7 +227,7 @@ internal sealed class BookRecognitionSettingsStore
             ["edit"] = zh ? "配置接入" : "Configure",
             ["enabled"] = zh ? "启用封面识别" : "Enable cover recognition",
             ["on"] = zh ? "已启用" : "Enabled", ["off"] = zh ? "未启用" : "Disabled",
-            ["endpoint"] = zh ? "API 完整请求地址" : "Full API endpoint",
+            ["endpoint"] = zh ? "API 地址（基础地址或完整接口）" : "API base URL or full endpoint",
             ["endpointHint"] = zh ? "支持基础地址或完整 HTTPS 接口地址；更换地址或格式时请重新填写密钥。" : "Base URL or full HTTPS endpoint. Re-enter the key when changing the address or format.",
             ["models"] = zh ? "可用模型" : "Available models",
             ["modelsHint"] = zh ? "每行填写一个模型 ID；被业务使用的模型需先解除引用再删除。" : "One model ID per line. Unassign a model from features before removing it.",

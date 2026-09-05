@@ -1,3 +1,5 @@
+import { useContext, useId, useState } from "react";
+import { RevisionNavigation } from "../revision-navigation";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
@@ -9,33 +11,38 @@ const stepPaths = ["project", "characters", "voice", "style", "references", "rev
 export function StepProgress({ current, highestReachable, onNext, onNavigate, canContinue = false, busy = false }: {
   current: number; highestReachable: number; onNext?: () => void; onNavigate?: (path: string) => void; canContinue?: boolean; busy?: boolean;
 }) {
+  const [expanded,setExpanded]=useState(false);
+  const listId=useId();
+  const allowed = useContext(RevisionNavigation);
   const { t } = useTranslation();
   const { locale, taskId } = useParams();
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
   const confirmLeave = () => document.body.dataset.unsavedChanges !== "true" || window.confirm(t("wizard.unsavedChanges"));
   return (
-    <nav className="step-progress" aria-label={t("wizard.stepProgress", { current, total: workflowStepCount })}>
-      <span className="step-compact">{t("wizard.stepProgress", { current, total: workflowStepCount })}</span>
-      <ol>
+    <nav className={"step-progress"+(expanded?" steps-expanded":"")} aria-label={t("wizard.stepProgress", { current, total: workflowStepCount })}>
+      <div className="step-compact"><strong>{current}/{workflowStepCount} · {t("wizard.steps."+stepKeys[current-1])}</strong><button type="button" aria-expanded={expanded} aria-controls={listId} onClick={()=>setExpanded(!expanded)}>{t(expanded?"clientUx.hideSteps":"clientUx.allSteps")}</button></div>
+      <ol id={listId}>
         {stepKeys.map((key, index) => {
           const number = index + 1;
           const state = number === current ? "current" : number < highestReachable ? "complete" : "pending";
           const isNextAction = number === current + 1 && Boolean(onNext);
-          const reachable = isNextAction ? canContinue : number !== current && number <= highestReachable;
+          const permitted = !allowed || allowed.includes(key);
+          const reachable = permitted && (isNextAction ? canContinue : number !== current && number <= highestReachable);
           const completedLine = number < highestReachable || (number === current && canContinue);
           const content = <><span className="step-marker">{state === "complete" ? "✓" : number}</span><span className="step-label">{t(`wizard.steps.${key}`)}</span></>;
           return (
             <li className={`step-item step-${state}${reachable ? " step-reachable" : ""}${completedLine ? " step-line-complete" : ""}`} key={key} aria-current={state === "current" ? "step" : undefined}>
-              {isNextAction ? <button type="button" className="step-link step-button" disabled={!canContinue || busy} onClick={onNext}>{content}</button> : reachable && taskId ? (
+              {isNextAction && permitted ? <button type="button" className="step-link step-button" disabled={!canContinue || busy} onClick={()=>{setExpanded(false);onNext?.();}}>{content}</button> : reachable && taskId ? (
                 <Link viewTransition className="step-link" aria-disabled={busy || undefined} to={localizedPath(validLocale, `/tasks/${taskId}/edit/${stepPaths[index]}`)} onClick={(event) => {
                   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                   if (busy) { event.preventDefault(); return; }
+                  setExpanded(false);
                   if (onNavigate) { event.preventDefault(); onNavigate(event.currentTarget.pathname); }
                   else if (!confirmLeave()) event.preventDefault();
                 }}>
                   {content}
                 </Link>
-              ) : <span className="step-content">{content}</span>}
+              ) : <span className="step-content" aria-disabled={!permitted || undefined}>{content}</span>}
             </li>
           );
         })}

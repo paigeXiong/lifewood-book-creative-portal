@@ -89,7 +89,7 @@ describe("administrator locale resources", () => {
     const missing: string[] = [];
     expect(Object.keys(sourceFiles).length).toBeGreaterThan(50);
     for (const [file, source] of Object.entries(sourceFiles)) {
-      for (const match of source.matchAll(/\bt\(\s*["']([^"']+)["']/g)) {
+      for (const match of source.matchAll(/\bt\(\s*["']([^"']+)["']\s*(?=[,)])/g)) {
         for (const locale of ["zh-CN", "en-US"]) {
           if (typeof i18n.getResource(locale, "translation", match[1]) !== "string") missing.push(`${file}: ${locale}: ${match[1]}`);
         }

@@ -1,3 +1,5 @@
+import { readRevisionSnapshot } from "./revision-snapshot";
+import { ProjectReturns } from "./ProjectReturns";
 import {
   useEffect,
   useId,
@@ -21,6 +23,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useLocation,
   useParams,
   useSearchParams,
 } from "react-router-dom";
@@ -273,6 +276,13 @@ function AdminShell({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const currentArea = location.pathname.split("/")[2];
+  const areaTitles: Record<string, string> = {
+    overview: "admin.nav.overview", projects: "admin.nav.projects",
+    users: "admin.nav.users", organizations: "admin.nav.organizations",
+    audit: "admin.nav.audit", settings: "admin.nav.settings",
+  };
   const [accountOpen, setAccountOpen] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
@@ -403,7 +413,7 @@ function AdminShell({
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <span>{t("admin.internalWorkspace")}</span>
+          <span>{t(areaTitles[currentArea] ?? "admin.internalWorkspace")}</span>
           <div className="topbar-actions">
             <label>
               <span className="sr-only">{t("nav.language")}</span>
@@ -878,7 +888,8 @@ function ProjectDetail({
             ?.label ?? detail.workflowStatus}
         </span>
       </div>
-      <form
+      <ProjectReturns key={task.id} id={task.id} version={task.version} status={task.status} workflowUpdatedAt={detail.workflowUpdatedAt} locale={locale} renderSnapshot={snapshot=><RevisionSnapshotDetails snapshot={snapshot} task={task} locale={locale} />} />
+      {task.status === "submitted" && <form
         className="workflow-form"
         onSubmit={saveWorkflow}
         key={`${task.id}-${detail.workflowStatus}-${detail.priority}-${detail.assigneeUserId}`}
@@ -920,7 +931,7 @@ function ProjectDetail({
         <button className="primary" disabled={busy}>
           {t("common.save")}
         </button>
-      </form>
+      </form>}
       {Boolean(error) && (
         <div className="message error">{localizedApiError(error, t)}</div>
       )}
@@ -958,7 +969,7 @@ function ProjectDetail({
       </section>
       <section className="detail-section notes">
         <h3>{t("admin.projects.notes")}</h3>
-        <form onSubmit={saveNote}>
+        {task.status === "submitted" && <form onSubmit={saveNote}>
           <textarea
             name="body"
             rows={2}
@@ -967,7 +978,7 @@ function ProjectDetail({
             placeholder={t("admin.projects.notePlaceholder")}
           />
           <button disabled={busy}>{t("admin.projects.addNote")}</button>
-        </form>
+        </form>}
         {detail.notes.length ? (
           <ol>
             {detail.notes.map((note) => (
@@ -1032,11 +1043,21 @@ function ReferenceFiles({ projectId, assets, legacyUrls }: { projectId: string; 
   </ul>;
 }
 
-function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
+export function RevisionSnapshotDetails({ snapshot, task, locale }: {
+  snapshot: string;
+  task: AdminProjectDetail["project"];
+  locale: SupportedLocale;
+}) {
+  const saved = useMemo(() => readRevisionSnapshot(snapshot, locale), [snapshot, locale]);
+  return <ProjectSubmissionDetails task={{ ...task, ...saved.fields }} locale={locale} voiceReferences={[]} snapshotLabels={saved} />;
+}
+
+function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snapshotLabels }: {
   task: AdminProjectDetail["project"];
   locale: SupportedLocale;
   options?: FormOptions;
   voiceReferences: AdminVoiceReference[];
+  snapshotLabels?: ReturnType<typeof readRevisionSnapshot>;
 }) {
   const { t } = useTranslation();
   const optionMaps = useMemo(() => {
@@ -1069,7 +1090,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
     [locale, voiceReferences],
   );
   const listFormat = useMemo(() => new Intl.ListFormat(locale, { style: "short", type: "conjunction" }), [locale]);
-  const label = (group: string, id?: string) => id ? optionMaps.get(group)?.get(id) ?? id : undefined;
+  const label = (group: string, id?: string) => id ? (snapshotLabels?.optionMaps ?? optionMaps).get(group)?.get(id) ?? id : undefined;
   const labels = (group: string, ids: string[]) => ids.length ? listFormat.format(ids.map((id) => label(group, id) ?? id)) : undefined;
   const project = task.project;
   const book = task.book;
@@ -1077,7 +1098,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
   const voice = task.voiceAndReferences.voiceover;
   const narrationEnabled = getNarrationEnabled(voice);
   const direction = task.voiceAndReferences.creativeDirection;
-  const selectedVoices = voice.selectedVoiceIds.map((id) => voiceNames.get(id) ?? id);
+  const selectedVoices = voice.selectedVoiceIds.map((id) => (snapshotLabels?.voiceNames ?? voiceNames).get(id) ?? id);
   const characterPanelId = useId();
   const [characterSelection, setCharacterSelection] = useState<{
     projectId: string;
@@ -1247,7 +1268,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences }: {
           { label: t("voice.fields.voiceAge"), value: label("voiceAges", voice.voiceAgeId) },
           { label: t("voice.fields.accent"), value: label("accents", voice.accentId) },
           { label: t("voice.fields.emotionStyle"), value: label("voiceEmotions", voice.emotionStyleId) },
-          { label: t("admin.projects.preferredVoice"), value: voice.preferredVoiceId ? voiceNames.get(voice.preferredVoiceId) ?? voice.preferredVoiceId : undefined },
+          { label: t("admin.projects.preferredVoice"), value: voice.preferredVoiceId ? (snapshotLabels?.voiceNames ?? voiceNames).get(voice.preferredVoiceId) ?? voice.preferredVoiceId : undefined },
           { label: t("admin.projects.selectedVoices"), value: selectedVoices.length ? listFormat.format(selectedVoices) : undefined, wide: true },
           { label: t("voice.fields.customVoice"), value: voice.customVoiceDescription, wide: true },
           { label: t("voice.fields.pronunciationNotes"), value: voice.pronunciationNotes, wide: true },

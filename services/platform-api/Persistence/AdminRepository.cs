@@ -196,7 +196,7 @@ internal sealed class AdminRepository(string connectionString)
     {
         using var connection = Open();
         const string where = """
-            WHERE p.status = 'submitted'
+            WHERE (p.status = 'submitted' OR EXISTS(SELECT 1 FROM revision_rounds rr WHERE rr.project_id=p.id))
               AND ($workflow = '' OR p.workflow_status = $workflow)
               AND ($priority = '' OR p.priority = $priority)
               AND ($search = '' OR p.task_number LIKE '%' || $search || '%' COLLATE NOCASE OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.project_json, '$.projectName') LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE)
@@ -230,7 +230,7 @@ internal sealed class AdminRepository(string connectionString)
                    p.created_at, p.updated_at, p.owner_id, u.display_name, u.email, p.workflow_status, p.priority,
                    p.assignee_user_id, a.display_name, COALESCE(p.workflow_updated_at, p.updated_at)
             FROM projects p JOIN users u ON u.id = p.owner_id LEFT JOIN users a ON a.id = p.assignee_user_id
-            WHERE p.id = $id AND p.status = 'submitted';
+            WHERE p.id = $id AND (p.status = 'submitted' OR EXISTS(SELECT 1 FROM revision_rounds rr WHERE rr.project_id=p.id));
             """;
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
@@ -328,7 +328,7 @@ internal sealed class AdminRepository(string connectionString)
             FROM project_notes n
             JOIN users u ON u.id = n.author_user_id
             JOIN projects p ON p.id = n.project_id
-            WHERE n.project_id = $projectId AND n.created_at >= p.updated_at
+            WHERE n.project_id = $projectId AND n.created_at >= COALESCE(p.first_submitted_at, p.updated_at)
             ORDER BY n.created_at DESC;
             """;
         command.Parameters.AddWithValue("$projectId", projectId);

@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 const focusableSelector = [
   "a[href]",
+  "summary",
   "button:not([disabled])",
   "input:not([disabled])",
   "select:not([disabled])",
@@ -9,7 +10,7 @@ const focusableSelector = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-export function ModalFrame({ labelledBy, busy = false, onClose, children }: { labelledBy: string; busy?: boolean; onClose: () => void; children: ReactNode }) {
+export function ModalFrame({ labelledBy, className = "", busy = false, onClose, children }: { labelledBy: string; className?: string; busy?: boolean; onClose: () => void; children: ReactNode }) {
   const dialogRef = useRef<HTMLElement>(null);
   const busyRef = useRef(busy);
   const closeRef = useRef(onClose);
@@ -31,7 +32,7 @@ export function ModalFrame({ labelledBy, busy = false, onClose, children }: { la
         return;
       }
       if (event.key !== "Tab" || !dialog) return;
-      const items = [...dialog.querySelectorAll<HTMLElement>(focusableSelector)].filter((item) => !item.hasAttribute("disabled"));
+      const items = [...dialog.querySelectorAll<HTMLElement>(focusableSelector)].filter((item) => !item.hasAttribute("disabled") && item.getClientRects().length > 0);
       if (!items.length) {
         event.preventDefault();
         dialog.focus();
@@ -56,6 +57,6 @@ export function ModalFrame({ labelledBy, busy = false, onClose, children }: { la
   }, []);
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <section ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1}>{children}</section>
+    <section ref={dialogRef} className={"modal " + className} role="dialog" aria-modal="true" aria-labelledby={labelledBy} tabIndex={-1}>{children}</section>
   </div>;
 }

@@ -66,6 +66,7 @@ export function TaskFilters({ search, status, statuses, total, onApply }: {
         <label htmlFor={`${id}-status`}>{t("tasks.filterLabel")}</label>
         <select id={`${id}-status`} value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}>
           <option value="">{t("common.all")}</option>
+          <option value="action_required">{t("clientUx.actionRequired")}</option>
           {statuses.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
         </select>
         <div className="task-filter-footer">

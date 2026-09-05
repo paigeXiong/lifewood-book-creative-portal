@@ -1,8 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adminService } from "@lifewood/api-client";
+import { adminService, revisionService } from "@lifewood/api-client";
 
 describe("administrator API client", () => {
   beforeEach(() => vi.restoreAllMocks());
+
+  it("sends the observed workflow token with a return request", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => Promise.resolve(new Response(
+      JSON.stringify(url.endsWith("/auth/csrf") ? { token: "csrf-admin" } : { rounds: [], units: [], labels: {}, hasMore: false }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    )));
+    vi.stubGlobal("fetch", fetchMock);
+    const expected = "2026-09-05T00:00:00.0000000+00:00";
+    await revisionService.returnProject("project", 3, [{ unit: "style", body: "Clarify" }], "en-US", expected);
+    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/return"))!;
+    expect(JSON.parse(String((call[1] as RequestInit).body))).toEqual({
+      version: 3, reasons: [{ unit: "style", body: "Clarify" }], expectedWorkflowUpdatedAt: expected,
+    });
+  });
 
   it("loads the administrator overview from the server", async () => {
     const payload = { totalProjects: 3, unassignedProjects: 1, totalUsers: 2, activeUsers: 2, submissionStatuses: [], workflowStatuses: [], priorities: [] };

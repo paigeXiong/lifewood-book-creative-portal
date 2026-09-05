@@ -12,6 +12,7 @@ import { appRoutes, ScreenLoading, RouteError } from "./App";
 import "./styles.css";
 import "./reference-ui.css";
 import "./wizard-motion.css";
+import "./client-experience.css";
 import { wizardDirection } from "./wizard-motion";
 
 const queryClient = new QueryClient({

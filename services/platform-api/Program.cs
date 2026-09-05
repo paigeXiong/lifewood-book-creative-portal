@@ -180,6 +180,9 @@ builder.Services.AddRateLimiter(options =>
 var repository = new ProjectRepository(databaseConnection);
 repository.Initialize();
 builder.Services.AddSingleton(repository);
+var revisions = new RevisionStore(databaseConnection);
+revisions.Initialize();
+builder.Services.AddSingleton(revisions);
 var users = new UserRepository(databaseConnection, dataDirectory);
 users.Initialize();
 builder.Services.AddSingleton(users);
@@ -734,6 +737,43 @@ api.MapGet("/admin/projects/{id}", (string id, HttpContext context, AdminReposit
     return project is null ? Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false) : Results.Ok(project);
 });
 
+api.MapGet("/projects/{id}/revision-avatar/{messageId}", (string id,string messageId,HttpContext context,RevisionStore store,UserRepository accounts) => {
+    var user=CurrentUser(context);
+    if(user is null || (store.Owner(id)!=user.Id && !Can(user,"admin.projects.manage")))return Results.NotFound();
+    var actor=store.MessageAuthor(id,messageId);if(actor is null)return Results.NotFound();
+    context.Response.Headers.CacheControl="private, no-store";
+    var avatar=accounts.OpenAvatar(actor);
+    return avatar is null?Results.Text(AvatarImage.Create(actor,"?"),"image/svg+xml",Encoding.UTF8):Results.Stream(avatar.Stream,avatar.ContentType);
+});
+api.MapGet("/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store) => {
+    var user=CurrentUser(context);
+    if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in required.",false);
+    if(store.Owner(id)!=user.Id)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    return Results.Ok(store.View(id,false,Locale(context)));
+});
+api.MapGet("/admin/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store, int page=1) => {
+    var user=CurrentUser(context);
+    if(user is null || !Can(user,"admin.projects.manage"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
+    if(store.Owner(id) is null)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    return Results.Ok(store.View(id,true,Locale(context),page));
+});
+api.MapPost("/admin/projects/{id}/return", (string id, ReturnProjectRequest request, HttpContext context, RevisionStore store) => {
+    var user=CurrentUser(context);
+    if(user is null || !Can(user,"admin.projects.manage"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
+    return store.Return(id,request,user)?Results.Ok(store.View(id,true,Locale(context))):Error(context,409,"project.workflow_conflict","errors.project.workflowConflict","Return request is invalid or project changed.",true);
+});
+api.MapPost("/projects/{id}/revisions/{round}/messages", (string id,string round,RevisionReplyRequest request,HttpContext context,RevisionStore store) => {
+    var user=CurrentUser(context);
+    if(user is null || !Can(user,"tasks.write"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
+    if(store.Owner(id)!=user.Id)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    return store.Reply(id,round,request,user,false)?Results.Ok(store.View(id,false,Locale(context))):Error(context,409,"validation.failed","errors.validation.failed","Message could not be sent.",true);
+});
+api.MapPost("/admin/projects/{id}/revisions/{round}/messages", (string id,string round,RevisionReplyRequest request,HttpContext context,RevisionStore store) => {
+    var user=CurrentUser(context);
+    if(user is null || !Can(user,"admin.projects.manage"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
+    return store.Reply(id,round,request,user,true)?Results.Ok(store.View(id,true,Locale(context))):Error(context,409,"validation.failed","errors.validation.failed","Message could not be sent.",true);
+});
+
 api.MapPut("/admin/projects/{id}/workflow", (string id, UpdateProjectWorkflowRequest? request, HttpContext context, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
@@ -766,7 +806,7 @@ api.MapGet("/admin/projects/{id}/files/{fileId}", (string id, string fileId, Htt
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     var detail = admin.GetProject(id);
-    var asset = detail is null ? null : AllProjectAssets(detail.Project).FirstOrDefault(item => item.Id == fileId);
+    var asset = detail is null ? null : (AllProjectAssets(detail.Project).FirstOrDefault(item => item.Id == fileId) ?? revisions.HistoryAsset(id, fileId));
     if (detail is null || asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     var folder = Path.Combine(dataDirectory, "uploads", detail.OwnerId, id);
     var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").Where(IsStoredFile).SingleOrDefault() : null;
@@ -807,6 +847,14 @@ api.MapPut("/admin/file-categories/{scope}/{id}", (string scope, string id, Upse
         FileCategoryWriteOutcome.Conflict => Error(context, 409, "config.version_conflict", "admin.formOptions.conflict", "This category changed elsewhere. Reload it before saving.", false),
         _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The file category is invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
     };
+});
+
+api.MapGet("/admin/form-option-groups", (HttpContext context) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.config.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(FormOptionNavigation.ForLocale(Locale(context)));
 });
 
 api.MapGet("/admin/form-options/{groupId}", (string groupId, HttpContext context, FormOptionRepository options) =>
@@ -1129,6 +1177,7 @@ api.MapDelete("/projects/{id}", async (string id, int version, HttpContext conte
 
     var current = projects.Get(user.Id, id);
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The project was not found.", false);
+    if (revisions.HasHistory(id)) return Error(context,409,"project.not_editable","errors.project.notEditable","Returned projects cannot be deleted.",false);
     if (!current.Status.Equals("draft", StringComparison.Ordinal))
         return Error(context, 409, "project.not_editable", "errors.project.notEditable", "Submitted projects cannot be deleted.", false, currentVersion: current.Version);
     if (current.Version != version)
@@ -1208,7 +1257,12 @@ api.MapPost("/projects/{id}/recognize-book", async (string id, BookRecognitionRe
     catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested) { return Results.StatusCode(499); }
     catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or KeyNotFoundException or IndexOutOfRangeException or IOException or OperationCanceledException)
     {
-        // Provider payloads may contain private book text; do not log them or forward them to the client.
+        // Record only the failure category/status and correlation ID, never provider payloads or keys.
+        var providerStatus = (exception as HttpRequestException)?.StatusCode;
+        app.Logger.LogWarning("Book recognition failed. RequestId={RequestId} Category={Category} ProviderStatus={ProviderStatus}",
+            context.TraceIdentifier, exception.GetType().Name, (int?)providerStatus);
+        if (providerStatus == System.Net.HttpStatusCode.NotFound)
+            return Error(context, 502, "recognition.endpoint", "bookIntake.recognitionEndpoint", "AI endpoint or model not found.", false);
         return Error(context, 502, "recognition.failed", "bookIntake.recognitionFailed", "Book recognition failed. Try again or enter the information manually.", true);
     }
 }).RequireRateLimiting("book-recognition");
@@ -1338,7 +1392,7 @@ api.MapPost("/projects/{id}/validate", (string id, ValidateProjectRequest? reque
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before validating.", false, currentVersion: current.Version);
-    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds(), options, fileCategories);
+    var fieldErrors = revisions.FilterSubmissionErrors(id, current, SubmitValidator.Validate(current, voices.EnabledIds(), options, fileCategories));
     return Results.Ok(new ValidationResultDto(fieldErrors.Length == 0, fieldErrors));
 });
 
@@ -1360,7 +1414,7 @@ api.MapPost("/projects/{id}/submit", (string id, SubmitProjectRequest? request, 
     }
     if (current.Status != "draft") return Error(context, 409, "project.not_editable", "errors.project.notEditable", "This application is read-only.", false, currentVersion: current.Version);
     if (current.Version != request.Version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before submitting.", false, currentVersion: current.Version);
-    var fieldErrors = SubmitValidator.Validate(current, voices.EnabledIds(), options, fileCategories);
+    var fieldErrors = revisions.FilterSubmissionErrors(id, current, SubmitValidator.Validate(current, voices.EnabledIds(), options, fileCategories));
     if (fieldErrors.Length > 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The application is incomplete.", false, fieldErrors);
     var snapshot = CaptureSubmissionConfiguration(current, options, voices, fileCategories);
@@ -1514,7 +1568,7 @@ api.MapDelete("/projects/{id}/files/{fileId}", async (string id, string fileId, 
         if (asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
 
         (string Original, string Staged)? stagedFile;
-        try { stagedFile = StageReferenceFileDeletion(dataDirectory, user.Id, id, fileId); }
+        try { stagedFile = revisions.HistoryAsset(id, fileId) is null ? StageReferenceFileDeletion(dataDirectory, user.Id, id, fileId) : null; }
         catch (Exception exception)
         {
             app.Logger.LogError(exception, "Could not stage reference file {FileId} before deletion", fileId);

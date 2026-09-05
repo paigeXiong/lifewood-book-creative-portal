@@ -1,3 +1,4 @@
+import { useRevisionNext, useRevisionPrevious, RevisionLink } from "../revision-navigation";
 import { createId } from "../create-id";
 import { EnumField } from "../components/EnumField";
 import { ChoiceRow } from "../components/ChoiceRow";
@@ -31,11 +32,12 @@ type TransferItem = { id: string; categoryId: string; file: File; status: "uploa
 
 function VoiceSummary({ stage, control, voices }: { stage: "voice" | "references"; control: Control<VoiceFormValues>; voices: VoiceReference[] }) {
   const { t } = useTranslation();
+  const next = useRevisionNext();
   const [narrationEnabled, selectedVoiceIds, preferredVoiceId, assets, competitorUrls] = useWatch({ control, name: ["narrationEnabled", "selectedVoiceIds", "preferredVoiceId", "assets", "competitorUrls"] });
   return <aside className="voice-summary">
     {stage === "voice" && narrationEnabled && <div className="studio-card"><span className="folio-label">{t("voice.summary.selection")}</span><div className="studio-wave" aria-hidden="true">{Array.from({ length: 24 }, (_, index) => <i key={index} />)}</div><strong>{voices.find((voice) => voice.id === preferredVoiceId)?.name ?? t("voice.summary.noPreferred")}</strong>{selectedVoiceIds.length > 0 && <p>{t("voice.summary.candidates", { count: selectedVoiceIds.length })}</p>}</div>}
     {stage === "references" && <div className="handoff-card"><span className="folio-label">{t("voice.summary.package")}</span><strong>{t("voice.summary.fileCount", { count: assets.length })}</strong><p>{t("voice.summary.linkCount", { count: competitorUrls.filter((url) => url.trim()).length })}</p></div>}
-    <div className="next-card"><span className="next-mark" aria-hidden="true">→</span><div><h3>{t(stage === "voice" ? "voice.summary.nextStyleTitle" : "voice.summary.nextReviewTitle")}</h3></div></div>
+    <div className="next-card"><span className="next-mark" aria-hidden="true">→</span><div><h3>{t(next ? "wizard.steps."+next : stage === "voice" ? "voice.summary.nextStyleTitle" : "voice.summary.nextReviewTitle")}</h3></div></div>
   </aside>;
 }
 
@@ -64,6 +66,8 @@ function ReferencesSection({ form, categories, locale, uploadCategory, transfers
 
 export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references" }) {
   const { t } = useTranslation();
+  const revisionNext = useRevisionNext();
+  const revisionPrevious = useRevisionPrevious();
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -380,7 +384,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
           <Field className="field-wide" label={t("voice.fields.avoidContent")} icon={<FieldIcon name="avoid" />} htmlFor="avoid-content" error={form.formState.errors.avoidContent?.message}><textarea id="avoid-content" rows={2} maxLength={200} autoComplete="off" {...form.register("avoidContent")} /></Field>
         </div></section></>}
       </div><VoiceSummary stage={stage} control={form.control} voices={voices} /></div>
-      <div className="sticky-actions"><Link className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/${stage === "voice" ? "characters" : "style"}`)} onClick={guardLink}>{t(stage === "voice" ? "wizard.actions.backCharacters" : "wizard.actions.backStyle")}</Link><div><button className="button button-quiet" type="button" disabled={navigating || Boolean(uploadCategory)} onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}>{t("common.backHome")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={navigating || Boolean(uploadCategory)}>{t(stage === "voice" ? "wizard.actions.toStyle" : "voice.continueToReview")}<span aria-hidden="true">→</span></button></div></div>
+      <div className="sticky-actions"><RevisionLink hideWhenLocked className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/${revisionPrevious ?? (stage === "voice" ? "characters" : "style")}`)} onClick={guardLink}>{revisionPrevious ? t("clientUx.backTo",{unit:t("wizard.steps."+revisionPrevious)}) : t(stage === "voice" ? "wizard.actions.backCharacters" : "wizard.actions.backStyle")}</RevisionLink><div><button className="button button-quiet" type="button" disabled={navigating || Boolean(uploadCategory)} onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}>{t("common.backHome")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={navigating || Boolean(uploadCategory)}>{t(revisionNext ? `wizard.steps.${revisionNext}` : (stage === "voice" ? "wizard.actions.toStyle" : "voice.continueToReview"))}<span aria-hidden="true">→</span></button></div></div>
     </form>
   </div>;
 }

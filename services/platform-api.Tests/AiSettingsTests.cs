@@ -11,6 +11,41 @@ public sealed class AiSettingsTests : IDisposable
     private readonly EphemeralDataProtectionProvider protection = new();
     private BookRecognitionSettingsStore Store() => new(directory, new ConfigurationBuilder().Build(), protection);
 
+    [Theory]
+    [InlineData("https://api.deepseek.com/anthropic", "anthropic", "https://api.deepseek.com/anthropic/v1/messages")]
+    [InlineData("https://api.deepseek.com/anthropic/", "anthropic", "https://api.deepseek.com/anthropic/v1/messages")]
+    [InlineData("https://gateway.test/prefix/anthropic/v1/", "anthropic", "https://gateway.test/prefix/anthropic/v1/messages")]
+    [InlineData("https://api.deepseek.com/anthropic/v1/messages", "anthropic", "https://api.deepseek.com/anthropic/v1/messages")]
+    [InlineData("https://gateway.test/prefix/v1", "openai", "https://gateway.test/prefix/v1/chat/completions")]
+    [InlineData("https://gateway.test/custom-call", "anthropic", "https://gateway.test/custom-call")]
+    public void ProviderAddressesResolveWithoutChangingCustomEndpoints(string input, string protocol, string expected)
+    {
+        var store=Store();
+        Assert.True(store.Upsert(new(null,"Provider",protocol,input,"","secret",Models:["vision"])));
+        var provider=Assert.Single(store.Get("en-US").Providers);
+        Assert.Equal(expected,provider.Endpoint);
+        Assert.True(store.Bind(new("book-recognition",provider.Id,"vision",true)));
+        Assert.Equal(expected,Store().Current.Endpoint!.AbsoluteUri);
+    }
+
+    [Fact]
+    public void PreviouslySavedAnthropicBaseUrlWorksWithoutReenteringKey()
+    {
+        Directory.CreateDirectory(directory);
+        var encrypted=protection.CreateProtector("BookRecognition.ApiKey.v1").Protect("kept-secret");
+        var document=new AiProvidersDocument(3,"p",
+            [new("p","DeepSeek","anthropic","https://api.deepseek.com/anthropic","",encrypted,["vision"])],
+            [new("book-recognition","p","vision",true)]);
+        File.WriteAllText(Path.Combine(directory,"book-recognition.json"),System.Text.Json.JsonSerializer.Serialize(document,Lifewood.PlatformApi.Serialization.AppJsonContext.Default.AiProvidersDocument));
+        var store=Store();
+        Assert.Equal("https://api.deepseek.com/anthropic/v1/messages",store.Current.Endpoint!.AbsoluteUri);
+        Assert.Equal("kept-secret",store.Current.ApiKey);
+        var provider=Assert.Single(store.Get("zh-CN").Providers);
+        Assert.True(store.Upsert(new(provider.Id,"Renamed",provider.Protocol,provider.Endpoint,"","",Models:provider.Models)));
+        Assert.Equal("kept-secret",Store().Current.ApiKey);
+        Assert.False(store.Upsert(new(provider.Id,"Renamed",provider.Protocol,"https://other.test/anthropic","","",Models:provider.Models)));
+    }
+
     [Fact]
     public void OpenAiRootUsesVersionedEndpoint()
     {

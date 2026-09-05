@@ -153,8 +153,25 @@ internal sealed class ProjectRepository(string connectionString)
             markMigration.ExecuteNonQuery();
         }
 
+        if (!HasColumn(connection, transaction, "projects", "first_submitted_at"))
+        {
+            using var migration = connection.CreateCommand();
+            migration.Transaction = transaction;
+            migration.CommandText = "ALTER TABLE projects ADD COLUMN first_submitted_at TEXT NULL;";
+            migration.ExecuteNonQuery();
+            migration.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='revision_rounds';";
+            var hasRevisions = (long)migration.ExecuteScalar()! > 0;
+            // Old returned projects have no reliable first-submission timestamp.
+            // Retain their notes rather than hiding previously accepted work.
+            migration.CommandText = hasRevisions
+                ? "UPDATE projects SET first_submitted_at=CASE WHEN EXISTS(SELECT 1 FROM revision_rounds r WHERE r.project_id=projects.id) THEN created_at ELSE updated_at END WHERE task_number IS NOT NULL OR status='submitted';"
+                : "UPDATE projects SET first_submitted_at=updated_at WHERE task_number IS NOT NULL OR status='submitted';";
+            migration.ExecuteNonQuery();
+        }
+
         UpgradeLegacyCharacterPresets(connection, transaction);
         transaction.Commit();
+        new RevisionStore(connectionString).Initialize();
     }
 
     private static void UpgradeLegacyCharacterPresets(SqliteConnection connection, SqliteTransaction transaction)
@@ -204,7 +221,7 @@ internal sealed class ProjectRepository(string connectionString)
         var direction = string.Equals(sortDirection, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
         const string where = """
             WHERE owner_id = $ownerId
-              AND ($status = '' OR status = $status)
+              AND ($status = '' OR status = $status OR ($status = 'action_required' AND status = 'draft' AND workflow_status = 'awaiting_customer'))
               AND ($search = '' OR
                    json_extract(project_json, '$.projectName') LIKE '%' || $search || '%' COLLATE NOCASE OR
                    json_extract(book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE OR
@@ -292,6 +309,9 @@ internal sealed class ProjectRepository(string connectionString)
 
     public SaveResult Save(string ownerId, string id, SaveDraftRequest request)
     {
+        var revisionCurrent = Get(ownerId, id);
+        if (revisionCurrent is not null && !new RevisionStore(connectionString).Allows(id, revisionCurrent, project: request.Project, book: request.Book))
+            return new SaveResult(SaveOutcome.NotEditable, revisionCurrent, revisionCurrent.Version);
         var now = DateTimeOffset.UtcNow;
         using var connection = Open();
         using var command = connection.CreateCommand();
@@ -358,6 +378,9 @@ internal sealed class ProjectRepository(string connectionString)
 
     public SaveResult SaveCreative(string ownerId, string id, SaveCreativeRequest request)
     {
+        var revisionCurrent = Get(ownerId, id);
+        if (revisionCurrent is not null && !new RevisionStore(connectionString).Allows(id, revisionCurrent, creative: request.Creative))
+            return new SaveResult(SaveOutcome.NotEditable, revisionCurrent, revisionCurrent.Version);
         var now = DateTimeOffset.UtcNow;
         using var connection = Open();
         using var command = connection.CreateCommand();
@@ -391,6 +414,9 @@ internal sealed class ProjectRepository(string connectionString)
 
     public SaveResult SaveVoiceAndReferences(string ownerId, string id, SaveVoiceAndReferencesRequest request)
     {
+        var revisionCurrent = Get(ownerId, id);
+        if (revisionCurrent is not null && !new RevisionStore(connectionString).Allows(id, revisionCurrent, project: request.Project, voice: request.VoiceAndReferences))
+            return new SaveResult(SaveOutcome.NotEditable, revisionCurrent, revisionCurrent.Version);
         request = request with { VoiceAndReferences = request.VoiceAndReferences with
         {
             Voiceover = NarrationSettings.Normalize(request.VoiceAndReferences.Voiceover)
@@ -493,11 +519,11 @@ internal sealed class ProjectRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE projects
-            SET task_number = $taskNumber, status = 'submitted', submission_key = $idempotencyKey, version = version + 1,
+            SET task_number = COALESCE(task_number, $taskNumber), status = 'submitted', submission_key = $idempotencyKey, version = version + 1,
                 project_json = CASE WHEN TRIM(COALESCE(json_extract(project_json, '$.projectName'), '')) = ''
                     THEN json_set(project_json, '$.projectName', TRIM(COALESCE(json_extract(book_json, '$.title'), '')))
                     ELSE project_json END,
-                submission_snapshot_json = $snapshot, updated_at = $updatedAt, workflow_status = 'new', priority = 'normal', assignee_user_id = NULL, workflow_updated_at = $updatedAt
+                submission_snapshot_json = $snapshot, first_submitted_at = COALESCE(first_submitted_at, $updatedAt), updated_at = $updatedAt, workflow_status = 'new', priority = CASE WHEN task_number IS NULL THEN 'normal' ELSE priority END, assignee_user_id = CASE WHEN task_number IS NULL THEN NULL ELSE assignee_user_id END, workflow_updated_at = $updatedAt
             WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version
             RETURNING id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status;
             """;

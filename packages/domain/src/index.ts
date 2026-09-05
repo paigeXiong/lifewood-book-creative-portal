@@ -76,6 +76,12 @@ export interface AdminFileCategory {
   updatedAt?: string;
 }
 
+export interface FormOptionSection {
+  id: string;
+  label: string;
+  groups: { id: string; label: string }[];
+}
+
 export interface AdminFormOption {
   previewImageUrl?: string;
   previewVideoUrl?: string;

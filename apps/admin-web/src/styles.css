@@ -1480,3 +1480,27 @@ td {
 .ai-model-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .ai-model-tags span { padding: 3px 7px; border-radius: 5px; background: #e5eee9; font-size: 12px; overflow-wrap: anywhere; }
 .ai-settings-form textarea { width: 100%; resize: vertical; min-height: 88px; }
+
+.revision-messages{max-height:320px;overflow-y:auto;overscroll-behavior:contain}.revision-message{display:flex;gap:10px;padding:10px 0;align-items:flex-start}.revision-message img,.revision-avatar{width:32px;height:32px;flex:none;border-radius:50%;object-fit:cover;background:#e0eee7;color:#204c3c;display:grid;place-items:center;font-size:12px}.revision-message>div{min-width:0;flex:1}.revision-message time{display:block;font-size:11px;color:#69786f}.revision-message p{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0;font-size:13px}.revision-reason{margin:12px 0}.revision-reason label{display:flex;gap:8px;align-items:center}.revision-reason textarea,.revision-thread textarea{width:100%;min-height:70px;margin-top:8px}.revision-admin details{margin-top:12px}.revision-admin summary{cursor:pointer;font-size:13px}.revision-admin pre{overflow:auto;max-height:260px;font-size:11px}.revision-thread{background:#f3f6f3;padding:12px;margin:8px 0}.revision-thread h4{margin:0}
+
+/* Revision dialog: selectable units with their own inline reason. */
+.modal:has(.revision-return-form) { width:min(580px,calc(100vw - 32px)); padding:0; overflow:hidden; border-radius:18px; }
+.revision-return-form { display:flex; flex-direction:column; max-height:calc(100dvh - 48px); }
+.revision-return-form>header { display:flex; align-items:center; gap:12px; padding:20px 24px; }
+.revision-return-form h2 { font-size:20px; margin:0; }
+.revision-dialog-icon { display:grid; place-items:center; width:38px; height:38px; background:#e4eee8; border-radius:12px; color:#23513e; font-size:27px; }
+.revision-dialog-close { margin-left:auto; background:transparent; box-shadow:none; font-size:25px; padding:2px 8px; }
+.revision-reason-list { overflow:auto; padding:0 24px 16px; }
+.revision-return-form .revision-reason { background:#f4f6f3; border-radius:12px; margin:0 0 8px; padding:0; transition:background .16s; }
+.revision-return-form .revision-reason.is-selected { background:#e9f1ec; box-shadow:inset 0 0 0 1px #90b19d; }
+.revision-return-form .revision-reason label { display:flex; cursor:pointer; gap:12px; padding:14px; margin:0; }
+.revision-return-form .revision-reason input { position:absolute; opacity:0; width:1px; height:1px; }
+.revision-return-form .revision-reason:focus-within { outline:2px solid #39765b; outline-offset:2px; }
+.revision-unit-number { color:#698071; font-size:12px; font-variant-numeric:tabular-nums; }
+.revision-unit-check { display:grid; place-items:center; width:22px; height:22px; margin-left:auto; background:white; border-radius:7px; color:transparent; box-shadow:inset 0 0 0 1px #cbd7ce; }
+.is-selected .revision-unit-check { background:#21573e; color:white; box-shadow:none; }
+.revision-return-form .revision-reason textarea { display:block; width:calc(100% - 28px); margin:0 14px 14px; min-height:88px; resize:vertical; background:white; padding:10px 12px; font:inherit; }
+.revision-return-form .revision-reason.is-selected { padding-bottom:1px; }
+.revision-return-form>footer { display:flex; justify-content:flex-end; gap:10px; padding:14px 24px; background:#f6f8f5; }
+.revision-selected-count { display:inline-grid; place-items:center; min-width:22px; height:22px; margin-left:8px; border-radius:6px; background:#ffffff26; }
+@media(max-width:600px) { .revision-return-form>header {padding:16px;} .revision-reason-list {padding:0 16px 12px;} .revision-return-form>footer {padding:12px 16px;} }
