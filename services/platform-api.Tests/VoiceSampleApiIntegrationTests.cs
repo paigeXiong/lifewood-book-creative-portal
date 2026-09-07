@@ -73,9 +73,9 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            remoteFactory?.Dispose();
+            if (remoteFactory is not null) await remoteFactory.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            if (Directory.Exists(remoteRoot)) Directory.Delete(remoteRoot, recursive: true);
+            await DeleteTestDirectoryAsync(remoteRoot);
         }
     }
 
@@ -103,9 +103,9 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            productionFactory?.Dispose();
+            if (productionFactory is not null) await productionFactory.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+            await DeleteTestDirectoryAsync(productionRoot);
         }
     }
 
@@ -133,9 +133,9 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            productionFactory?.Dispose();
+            if (productionFactory is not null) await productionFactory.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+            await DeleteTestDirectoryAsync(productionRoot);
         }
     }
 
@@ -162,9 +162,9 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            productionFactory?.Dispose();
+            if (productionFactory is not null) await productionFactory.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+            await DeleteTestDirectoryAsync(productionRoot);
         }
     }
 
@@ -192,9 +192,9 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            productionFactory?.Dispose();
+            if (productionFactory is not null) await productionFactory.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+            await DeleteTestDirectoryAsync(productionRoot);
         }
     }
 
@@ -223,9 +223,9 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         }
         finally
         {
-            productionFactory?.Dispose();
+            if (productionFactory is not null) await productionFactory.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            if (Directory.Exists(productionRoot)) Directory.Delete(productionRoot, recursive: true);
+            await DeleteTestDirectoryAsync(productionRoot);
         }
     }
 
@@ -1435,11 +1435,16 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         ownerClient.Dispose();
         await factory.DisposeAsync();
         SqliteConnection.ClearAllPools();
+        await DeleteTestDirectoryAsync(root);
+    }
+
+    private static async Task DeleteTestDirectoryAsync(string directory)
+    {
         // The in-process entry point can finish its using declarations just after
         // host shutdown. Wait briefly for Windows to release those file handles.
-        for (var attempt = 0; Directory.Exists(root); attempt++)
+        for (var attempt = 0; Directory.Exists(directory); attempt++)
         {
-            try { Directory.Delete(root, recursive: true); break; }
+            try { Directory.Delete(directory, recursive: true); break; }
             catch (IOException) when (attempt < 39) { await Task.Delay(50); }
         }
     }
