@@ -1,3 +1,7 @@
+import { SaveFeedback } from "../components/SaveFeedback";
+import { useDraftRecovery, focusSaveIssue } from "../useDraftRecovery";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
+import { useConfirm } from "../useConfirm";
 import { useRevisionNext, useRevisionPrevious, RevisionLink } from "../revision-navigation";
 import { toCreativeFormValues } from "../creative-form-values";
 import { EnumField } from "../components/EnumField";
@@ -193,7 +197,7 @@ function CreativeSummary({
     });
   const selectedStyle = visualStyles.find((item) => item.id === visualStyleId);
   const portrait = activeCharacter?.referenceImages[0]?.url ?? activeCharacter?.referenceImageUrls[0] ??
-    (activeCharacter?.presetId ? `/character-presets/${activeCharacter.presetId}.png` : undefined);
+    (activeCharacter?.presetImageUrl ?? (activeCharacter?.presetId ? `/character-presets/${activeCharacter.presetId}.png` : undefined));
   return (
     <aside className="creative-summary">
       {stage === "characters" && activeCharacter && <figure className="focused-character-card">
@@ -226,6 +230,7 @@ function CreativeSummary({
 
 export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const revisionNext = useRevisionNext();
   const revisionPrevious = useRevisionPrevious();
   const { locale, taskId } = useParams();
@@ -244,6 +249,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   const savePromiseRef = useRef<Promise<boolean> | undefined>(undefined);
   const savedSnapshotRef = useRef<string | undefined>(undefined);
   const [navigating, setNavigating] = useState(false);
+  const conflictRef = useRef(false);
   const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
   const draftQuery = useQuery({
     queryKey: ["project", taskId],
@@ -310,30 +316,16 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     setSelectedCharacterId(characters.fields[0]?.id);
   }, [characters.fields, selectedCharacterId]);
 
+  const resetFromDraft = (draft: TaskDraft) => {
+    form.reset(toCreativeFormValues(draft.creative));
+  };
   useEffect(() => {
     const draft = draftQuery.data;
     if (!draft || form.formState.isDirty) return;
-    form.reset(toCreativeFormValues(draft.creative));
+    resetFromDraft(draft);
   }, [draftQuery.data, form, form.formState.isDirty]);
 
-  useEffect(() => {
-    const dirty = form.formState.isDirty;
-    document.body.dataset.unsavedChanges = String(dirty);
-    const preventLoss = (event: BeforeUnloadEvent) => {
-      if (dirty) event.preventDefault();
-    };
-    const preventBackLoss = () => {
-      if (dirty && !window.confirm(t("wizard.unsavedChanges")))
-        window.history.go(1);
-    };
-    window.addEventListener("beforeunload", preventLoss);
-    window.addEventListener("popstate", preventBackLoss);
-    return () => {
-      window.removeEventListener("beforeunload", preventLoss);
-      window.removeEventListener("popstate", preventBackLoss);
-      delete document.body.dataset.unsavedChanges;
-    };
-  }, [form.formState.isDirty, t]);
+
 
   const saveCreative = useMutation({
     mutationFn: async ({
@@ -365,6 +357,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
         await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "characters" ? "voice" : "references"}`));
     },
     onError: (_error, variables) => {
+      if (_error instanceof ApiError && _error.details.code === "project.version_conflict") conflictRef.current = true;
       failedSaveSnapshotRef.current = JSON.stringify(variables.values);
       setSaveState("error");
     },
@@ -378,6 +371,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     continueAfter: boolean,
     explicit: boolean,
   ) => {
+    if (conflictRef.current) { setSaveState("error"); return Promise.resolve(false); }
     const snapshot = JSON.stringify(values);
     if (saveInFlightRef.current) return savePromiseRef.current ?? Promise.resolve(false);
     if (!explicit && failedSaveSnapshotRef.current === snapshot) return Promise.resolve(false);
@@ -389,6 +383,30 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     const pending = saveCreative.mutateAsync({ values, continueAfter }).then(() => true, () => false);
     savePromiseRef.current = pending;
     return pending;
+  };
+
+  const recovery = useDraftRecovery(taskId, validLocale, () => JSON.stringify(form.getValues()), latest => {
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    queryClient.setQueryData(["project", taskId], latest);
+    resetFromDraft(latest);
+    savedSnapshotRef.current = JSON.stringify(form.getValues());
+    failedSaveSnapshotRef.current = undefined;
+    conflictRef.current = false;
+    saveCreative.reset(); setSaveState("idle");
+  });
+  const retrySave = async () => {
+    if (saveInFlightRef.current) return;
+    const checked = draftSchema.safeParse(form.getValues());
+    if (!checked.success) {
+      setSaveState("invalid");
+      for (const issue of checked.error.issues) form.setError(issue.path.join(".") as never, { message: issue.message });
+      const first = checked.error.issues[0]?.path;
+      if (first?.[0] === "characters" && typeof first[1] === "number") setSelectedCharacterId(characters.fields[first[1]]?.id);
+      if (first) focusSaveIssue(first.join("."));
+      return;
+    }
+    await runSave(checked.data, false, true);
   };
 
   useEffect(() => {
@@ -421,7 +439,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (draftQuery.isPending || optionsQuery.isPending)
     return (
-      <div className="screen-status" role="status" aria-busy="true">
+      <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty} />
         {t("common.loading")}
       </div>
     );
@@ -431,7 +449,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     !draftQuery.data ||
     !optionsQuery.data
   )
-    return <ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} />;
+    return <><UnsavedChangesGuard dirty={form.formState.isDirty} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
   if (draftQuery.data.status !== "draft")
     return (
       <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />
@@ -505,6 +523,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     setSelectedCharacterId(character.id);
   };
   const ensureCreativeSaved = async () => {
+    if (conflictRef.current) throw new ApiError({ retryable: false, code: "project.version_conflict", messageKey: "wizard.versionConflict" });
     if (saveInFlightRef.current && !await savePromiseRef.current)
       throw new Error(t("wizard.saveFailed"));
     if (autosaveTimerRef.current !== undefined)
@@ -516,21 +535,10 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       queryClient.getQueryData<TaskDraft>(["project", taskId]) ??
       draftQuery.data!;
     if (!form.formState.isDirty) return current;
-    saveInFlightRef.current = true;
-
-    try {
-      current = await projectService.saveCreative(
-        current.id,
-        { ...current, creative: toCreativeInfo(checked.data) },
-        validLocale,
-      );
-      queryClient.setQueryData(["project", taskId], current);
-      form.reset(toCreativeFormValues(current.creative));
-      setSaveState("idle");
-      return current;
-    } finally {
-      saveInFlightRef.current = false;
+    if (!await runSave(checked.data, false, true)) {
+      throw new ApiError({ retryable: false, code: conflictRef.current ? "project.version_conflict" : "project.save_failed", messageKey: conflictRef.current ? "wizard.versionConflict" : "wizard.saveFailed" });
     }
+    return queryClient.getQueryData<TaskDraft>(["project", taskId])!;
   };
   const uploadReferences = async (
     category: ReferenceCategory | undefined,
@@ -573,6 +581,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       }
       setSaveState("idle");
     } catch (error) {
+      if (error instanceof ApiError && error.details.code === "project.version_conflict") conflictRef.current = true;
       setUploadError(localizedApiError(error, t));
       setUploadErrorTarget(target);
       setSaveState("error");
@@ -583,7 +592,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   const removeReference = async (asset: ReferenceAsset) => {
     if (
       uploadTarget ||
-      !window.confirm(
+      !await confirm(
         t("creative.removeReferenceConfirm", { name: asset.fileName }),
       )
     )
@@ -604,6 +613,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       form.reset(toCreativeFormValues(saved.creative));
       setSaveState("idle");
     } catch (error) {
+      if (error instanceof ApiError && error.details.code === "project.version_conflict") conflictRef.current = true;
       setUploadError(localizedApiError(error, t));
       setUploadErrorTarget(target);
       setSaveState("error");
@@ -616,7 +626,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     if (
       !character ||
       uploadTarget ||
-      !window.confirm(t("creative.deleteConfirm"))
+      !await confirm(t("creative.deleteConfirm"))
     )
       return;
     const target = `delete-character:${character.id}`;
@@ -625,6 +635,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     setUploadErrorTarget(undefined);
     try {
       if (saveInFlightRef.current && !await savePromiseRef.current) return;
+      if (conflictRef.current) throw new ApiError({ retryable: false, code: "project.version_conflict", messageKey: "wizard.versionConflict" });
       if (autosaveTimerRef.current !== undefined)
         window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = undefined;
@@ -658,6 +669,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       setSelectedCharacterId(next?.id);
       setSaveState("idle");
     } catch (error) {
+      if (error instanceof ApiError && error.details.code === "project.version_conflict") conflictRef.current = true;
       setUploadError(localizedApiError(error, t));
       setUploadErrorTarget(target);
       setSaveState("error");
@@ -666,10 +678,8 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       setUploadTarget(undefined);
     }
   };
-  const conflict =
-    saveCreative.error instanceof ApiError &&
-    saveCreative.error.details.code === "project.version_conflict";
-  const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
+  const conflict = conflictRef.current;
+  const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? (conflict ? t("wizard.versionConflict") : saveCreative.error instanceof ApiError ? localizedApiError(saveCreative.error, t) : t("wizard.saveFailed")) : "";
   const navigateWithSave = async (path: string) => {
     if (navigating || uploadTarget) return;
     setNavigating(true);
@@ -730,9 +740,10 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
 
   return (
     <div className="wizard-page creative-page">
+      <UnsavedChangesGuard dirty={form.formState.isDirty} />
       <div className="wizard-heading">
         <h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1>
-        {statusText && <span className={`save-state save-${saveState}`} role="alert">{statusText}</span>}
+        <SaveFeedback message={statusText} conflict={conflict} invalid={saveState === "invalid"} busy={saveCreative.isPending || recovery.loading || navigating || Boolean(uploadTarget)} error={recovery.error} onRetry={() => void retrySave()} onReload={() => void recovery.reload()} />
       </div>
       <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "characters" ? 2 : 4} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadTarget)} />
       <form
@@ -801,7 +812,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                   >
                     {characters.fields.map((character, index) => {
                       const value = watchedCharacters[index];
-                      const thumbnail = value?.referenceImages?.[0] ?? (value?.presetId ? { url: `/character-presets/${value.presetId}.png` } : undefined);
+                      const thumbnail = value?.referenceImages?.[0] ?? ((value?.presetImageUrl ?? (value?.presetId ? `/character-presets/${value.presetId}.png` : "")) ? { url: value?.presetImageUrl ?? `/character-presets/${value?.presetId}.png` } : undefined);
                       return (
                         <button
                           type="button"
@@ -1233,19 +1244,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
             >
               {t("common.backHome")}
             </button>
-            {conflict && (
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => {
-                  failedSaveSnapshotRef.current = undefined;
-                  form.reset();
-                  void draftQuery.refetch();
-                }}
-              >
-                {t("common.reload")}
-              </button>
-            )}
+
             <button
               className="button button-primary"
               type="submit"

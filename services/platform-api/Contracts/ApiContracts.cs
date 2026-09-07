@@ -243,7 +243,8 @@ public sealed record CharacterInfoDto(
     string? VoiceHint,
     string[] ReferenceImageUrls,
     ReferenceAssetDto[]? ReferenceImages = null,
-    string? PresetId = null);
+    string? PresetId = null,
+    string? PresetImageUrl = null);
 
 public sealed record CreativeInfoDto(
     CharacterInfoDto[] Characters,
@@ -400,3 +401,7 @@ public sealed record ApiErrorDto(
 
 public sealed record BookRecognitionRequest(string[] AssetIds);
 public sealed record BookRecognitionDto(string Title, string AuthorName, string Subtitle, string GenreId, string SellingPoint, string Synopsis);
+
+
+public sealed record AdminCharacterPresetDto(string Id, CharacterInfoDto ZhCn, CharacterInfoDto EnUs, string? ImageUrl, bool Enabled, int SortOrder, string? UpdatedAt);
+public sealed record UpsertCharacterPresetRequest(CharacterInfoDto ZhCn, CharacterInfoDto EnUs, bool Enabled, int SortOrder, string? ExpectedUpdatedAt);

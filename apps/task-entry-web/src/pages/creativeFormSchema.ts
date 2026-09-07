@@ -11,7 +11,7 @@ export function createCreativeDraftSchema(t: Translate, previousToneIds: readonl
   });
   return z.object({
     characters: z.array(z.object({
-      presetId: z.string().optional(), id: z.string().min(1), roleTypeId: z.string(), name: text(80), storyRole: text(200), personality: text(300),
+      presetId: z.string().optional(), presetImageUrl: z.string().optional(), id: z.string().min(1), roleTypeId: z.string(), name: text(80), storyRole: text(200), personality: text(300),
       appearance: text(300), ageRangeId: z.string(), genderId: z.string(), clothing: text(200), emotion: text(150),
       voiceHint: text(100), referenceImageUrls: z.array(z.string()).max(6), referenceImages: z.array(asset).max(50),
     })).max(12),

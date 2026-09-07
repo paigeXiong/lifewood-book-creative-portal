@@ -1,3 +1,4 @@
+import { Announcements } from "../components/Announcements";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -56,6 +57,7 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
+      {isSupportedLocale(locale) && <Announcements key={locale} locale={locale} />}
       <header className="login-header">
         <div className="login-brand"><img src="/lifewood-logo.png" alt={t("app.providerName")} width="2285" height="492" /><strong translate="no">{t("app.clientName")}</strong></div>
         <Link className="login-language" to={`/${otherLocale}/login`} lang={otherLocale}>{locale === "zh-CN" ? "English" : "中文"}</Link>

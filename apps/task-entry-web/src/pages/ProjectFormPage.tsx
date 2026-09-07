@@ -1,3 +1,7 @@
+import { SaveFeedback } from "../components/SaveFeedback";
+import { useDraftRecovery, focusSaveIssue } from "../useDraftRecovery";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
+import { useConfirm } from "../useConfirm";
 import { useRevisionNext, RevisionLink } from "../revision-navigation";
 import { createId } from "../create-id";
 import { EnumField } from "../components/EnumField";
@@ -27,7 +31,7 @@ import { mergeLegacyOptions } from "../legacy-options";
 import { mergeLegacyCategories, type DisplayReferenceCategory } from "../legacy-categories";
 
 
-type SourceTransfer = { id: string; categoryId: string; file: File; status: "uploading" | "error" | "cancelled"; error?: string };
+type SourceTransfer = { id: string; categoryId: string; file: File; status: "queued" | "uploading" | "error" | "cancelled"; error?: string };
 
 function SourceFilesSection({ categories, assets, locale, uploadCategory, transfers, uploadError, onUpload, onRemove, onCancel, onRetry, children }: {
   children?: ReactNode;
@@ -46,7 +50,7 @@ function SourceFilesSection({ categories, assets, locale, uploadCategory, transf
       busyCategory={uploadCategory}
       required={category.required}
       camera={category.id === "book-cover"}
-      feedback={transfers.some(item => item.categoryId === category.id) && <ul className="transfer-list" aria-live="polite">{transfers.filter(item => item.categoryId === category.id).map(item => <li key={item.id}><span>{item.file.name}</span><small role={item.status === "error" ? "alert" : undefined}>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancel(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetry(item)}>{t("common.retry")}</button>}</li>)}</ul>}
+      feedback={transfers.some(item => item.categoryId === category.id) && <ul className="transfer-list" aria-live="polite">{transfers.filter(item => item.categoryId === category.id).map(item => <li key={item.id}><span>{item.file.name}</span><small role={item.status === "error" ? "alert" : undefined}>{item.status === "queued" ? t("voice.waitingUpload") : item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "queued" || item.status === "uploading" ? <button type="button" onClick={() => onCancel(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetry(item)}>{t("common.retry")}</button>}</li>)}</ul>}
       preview={category.id === "book-cover" && files[0] ? <img className="source-cover-preview" src={files[0].url} alt={t("sourceFiles.coverAlt", { title: files[0].fileName })} width="320" height="128" /> : undefined}
       onUpload={onUpload}
       onRemove={onRemove}
@@ -114,6 +118,7 @@ function ProjectSummaryRail({ control, cover, assets, genres, statusLabel, creat
 
 export function ProjectFormPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const revisionNext = useRevisionNext();
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
@@ -125,11 +130,13 @@ export function ProjectFormPage() {
   const [uploadError, setUploadError] = useState<string>();
   const [transfers, setTransfers] = useState<SourceTransfer[]>([]);
   const uploadControllers = useRef(new Map<string, AbortController>());
+  const cancelledTransferIdsRef = useRef(new Set<string>());
   const uploadingRef = useRef(false);
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const saveInFlightRef = useRef(false);
   const savePromiseRef = useRef<Promise<boolean> | undefined>(undefined);
   const savedSnapshotRef = useRef<string | undefined>(undefined);
+  const conflictRef = useRef(false);
   const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
 
@@ -154,9 +161,7 @@ export function ProjectFormPage() {
   const selectedPlatformIds = useWatch({ control: form.control, name: "publishingPlatformIds" }) ?? [];
   const selectedVideoDurationId = useWatch({ control: form.control, name: "videoDurationId" }) ?? "";
   const customVideoDuration = useWatch({ control: form.control, name: "customVideoDuration" }) ?? "";
-  useEffect(() => {
-    const draft = draftQuery.data;
-    if (!draft || form.formState.isDirty) return;
+  const resetFromDraft = (draft: TaskDraft) => {
     form.reset({
       clientName: draft.project.clientName ?? "",
       contactName: draft.project.contactName ?? "",
@@ -167,21 +172,14 @@ export function ProjectFormPage() {
       sellingPoint: draft.book.sellingPoint, synopsis: draft.book.synopsis, contentLanguageId: draft.book.contentLanguageId ?? "",
       videoDurationId: draft.book.videoDurationId ?? "", customVideoDuration: draft.book.customVideoDuration ?? "", publishingPlatformIds: draft.book.publishingPlatformIds,
     });
+  };
+  useEffect(() => {
+    const draft = draftQuery.data;
+    if (!draft || form.formState.isDirty) return;
+    resetFromDraft(draft);
   }, [draftQuery.data, form, form.formState.isDirty]);
 
-  useEffect(() => {
-    const dirty = form.formState.isDirty;
-    const preventLoss = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
-    const preventBackLoss = () => { if (dirty && !window.confirm(t("wizard.unsavedChanges"))) window.history.go(1); };
-    document.body.dataset.unsavedChanges = String(dirty);
-    window.addEventListener("beforeunload", preventLoss);
-    window.addEventListener("popstate", preventBackLoss);
-    return () => {
-      window.removeEventListener("beforeunload", preventLoss);
-      window.removeEventListener("popstate", preventBackLoss);
-      delete document.body.dataset.unsavedChanges;
-    };
-  }, [form.formState.isDirty, t]);
+
 
   const saveDraft = useMutation({
     mutationFn: async ({ values, continueAfter }: { values: ProjectFormValues; continueAfter: boolean }) => {
@@ -212,11 +210,13 @@ export function ProjectFormPage() {
       setSaveState("idle");
       if (continueAfter) await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/characters`));
     },
-    onError: (_error, variables) => { failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
+    onError: (_error, variables) => {
+      if (_error instanceof ApiError && _error.details.code === "project.version_conflict") conflictRef.current = true; failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
     onSettled: () => { saveInFlightRef.current = false; },
   });
 
   const runSave = (values: ProjectFormValues, continueAfter: boolean, explicit: boolean) => {
+    if (conflictRef.current) { setSaveState("error"); return Promise.resolve(false); }
     const snapshot = JSON.stringify(values);
     if (saveInFlightRef.current) return savePromiseRef.current ?? Promise.resolve(false);
     if (!explicit && failedSaveSnapshotRef.current === snapshot) return Promise.resolve(false);
@@ -227,6 +227,30 @@ export function ProjectFormPage() {
     const pending = saveDraft.mutateAsync({ values, continueAfter }).then(() => true, () => false);
     savePromiseRef.current = pending;
     return pending;
+  };
+
+  const recovery = useDraftRecovery(taskId, validLocale, () => JSON.stringify(form.getValues()), latest => {
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    queryClient.setQueryData(["project", taskId], latest);
+    resetFromDraft(latest);
+    savedSnapshotRef.current = JSON.stringify(form.getValues());
+    failedSaveSnapshotRef.current = undefined;
+    conflictRef.current = false;
+    saveDraft.reset(); setSaveState("idle");
+  });
+  const retrySave = async () => {
+    if (saveInFlightRef.current) return;
+    const checked = schema.safeParse(form.getValues());
+    if (!checked.success) {
+      setSaveState("invalid");
+      for (const issue of checked.error.issues) form.setError(issue.path.join(".") as never, { message: issue.message });
+      const first = checked.error.issues[0]?.path;
+
+      if (first) focusSaveIssue(first.join("."));
+      return;
+    }
+    await runSave(checked.data, false, true);
   };
 
   useEffect(() => {
@@ -261,9 +285,9 @@ export function ProjectFormPage() {
     } finally { setReturningHome(false); }
   };
   if (!taskId || !isSupportedLocale(locale)) return null;
-  if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
+  if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty} />{t("common.loading")}</div>;
   if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) {
-    return <ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} />;
+    return <><UnsavedChangesGuard dirty={form.formState.isDirty} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
   }
   if (draftQuery.data.status !== "draft") {
     return <Navigate replace to={localizedPath(validLocale, `/tasks/${draftQuery.data.id}`)} />;
@@ -282,7 +306,7 @@ export function ProjectFormPage() {
   const sourceCategories = mergeLegacyCategories(options.sourceCategories, sourceAssets, unavailable);
   const cover = sourceAssets.find((asset) => asset.categoryId === "book-cover");
   const conflict = saveDraft.error instanceof ApiError && saveDraft.error.details.code === "project.version_conflict";
-  const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
+  const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? (conflict ? t("wizard.versionConflict") : saveDraft.error instanceof ApiError ? localizedApiError(saveDraft.error, t) : t("wizard.saveFailed")) : "";
   const continueStep = form.handleSubmit(async (values) => {
     if (continuing || returningHome || uploadingRef.current) return;
     if (options.sourceCategories.some((category) => category.required && !sourceAssets.some((asset) => asset.categoryId === category.id))) {
@@ -348,10 +372,13 @@ export function ProjectFormPage() {
     setUploadCategory(category.id);
     const available = Math.max(0, category.maxFiles - sourceAssets.filter((asset) => asset.categoryId === category.id).length);
     try {
-      const queue = Array.from(files).slice(0, available).map((file) => ({ id: createId(), categoryId: category.id, file, status: "uploading" as const }));
+      const queue = Array.from(files).slice(0, available).map((file) => ({ id: createId(), categoryId: category.id, file, status: "queued" as const }));
       if (saveInFlightRef.current && !await savePromiseRef.current) return;
       setTransfers((current) => [...current, ...queue]);
-      for (const item of queue) await uploadOne(item);
+      for (const item of queue) {
+        if (cancelledTransferIdsRef.current.delete(item.id)) continue;
+        await uploadOne(item);
+      }
     } catch (error) {
       setUploadError(localizedApiError(error, t));
     } finally {
@@ -373,9 +400,16 @@ export function ProjectFormPage() {
       setUploadCategory(undefined);
     }
   };
-  const cancelUpload = (id: string) => uploadControllers.current.get(id)?.abort();
+  const cancelUpload = (id: string) => {
+    const controller = uploadControllers.current.get(id);
+    if (controller) controller.abort();
+    else {
+      cancelledTransferIdsRef.current.add(id);
+      setTransfers(current => current.filter(item => item.id !== id));
+    }
+  };
   const removeAsset = async (id: string) => {
-    if (uploadingRef.current || !window.confirm(t("sourceFiles.removeConfirm"))) return;
+    if (uploadingRef.current || !await confirm(t("sourceFiles.removeConfirm"))) return;
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
     uploadingRef.current = true;
@@ -395,9 +429,10 @@ export function ProjectFormPage() {
   };
   return (
     <div className="wizard-page">
+      <UnsavedChangesGuard dirty={form.formState.isDirty} />
       <div className="wizard-heading">
         <h1 className="sr-only">{t("wizard.pageTitles.project")}</h1>
-        {statusText && <span className={`save-state save-${saveState}`} role="alert">{statusText}</span>}
+        <SaveFeedback message={statusText} conflict={conflict} invalid={saveState === "invalid"} busy={saveDraft.isPending || recovery.loading || returningHome || continuing || Boolean(uploadCategory)} error={recovery.error} onRetry={() => void retrySave()} onReload={() => void recovery.reload()} />
       </div>
       <StepProgress onNavigate={(path) => void returnHome(path)} current={1} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success && options.sourceCategories.every(category => !category.required || sourceAssets.some(asset => asset.categoryId === category.id))} busy={returningHome || continuing || Boolean(uploadCategory)} />
 
@@ -437,7 +472,7 @@ export function ProjectFormPage() {
           <button className="button button-quiet" type="button" disabled={returningHome || Boolean(uploadCategory)} onClick={() => void returnHome()}>{t("common.backHome")}</button>
 
           <div>
-          {conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}
+
           <button className="button button-primary" type="submit" disabled={continuing || returningHome || Boolean(uploadCategory)}>{t(revisionNext ? `wizard.steps.${revisionNext}` : ("wizard.actions.toCharacters"))}<span aria-hidden="true">→</span></button></div>
         </div>
       </form>

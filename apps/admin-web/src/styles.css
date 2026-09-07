@@ -1504,3 +1504,9 @@ td {
 .revision-return-form>footer { display:flex; justify-content:flex-end; gap:10px; padding:14px 24px; background:#f6f8f5; }
 .revision-selected-count { display:inline-grid; place-items:center; min-width:22px; height:22px; margin-left:8px; border-radius:6px; background:#ffffff26; }
 @media(max-width:600px) { .revision-return-form>header {padding:16px;} .revision-reason-list {padding:0 16px 12px;} .revision-return-form>footer {padding:12px 16px;} }
+
+.config-removable th:last-child { width: 150px; }
+.config-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.config-row-actions .config-delete { color: #a3342a; background: #fff1ee; }
+
+.config-removable th { white-space: nowrap; }

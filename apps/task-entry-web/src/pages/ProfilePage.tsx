@@ -1,4 +1,6 @@
-import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
+import { useConfirm, useConfirmLink } from "../useConfirm";
+import { lazy, Suspense, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -11,6 +13,8 @@ const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((modul
 
 export function ProfilePage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
+  const guardLink = useConfirmLink();
   const { locale } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -60,22 +64,10 @@ export function ProfilePage() {
   const storedClientName = user?.clientName ?? user?.organization?.name ?? user?.displayName ?? "";
   const unchanged = !user || (currentDisplayName.trim() === user.displayName && currentClientName.trim() === storedClientName && currentPhone.trim() === (user.phone ?? ""));
   const dirty = Boolean(user) && !unchanged;
-  useEffect(() => {
-    document.body.dataset.unsavedChanges = String(dirty);
-    const preventLoss = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
-    const preventBackLoss = () => { if (dirty && !window.confirm(t("wizard.unsavedChanges"))) window.history.go(1); };
-    window.addEventListener("beforeunload", preventLoss);
-    window.addEventListener("popstate", preventBackLoss);
-    return () => {
-      window.removeEventListener("beforeunload", preventLoss);
-      window.removeEventListener("popstate", preventBackLoss);
-      delete document.body.dataset.unsavedChanges;
-    };
-  }, [dirty, t]);
+
 
   if (!isSupportedLocale(locale)) return null;
-  if (userQuery.isPending || !user) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
-  const guardLink = (event: MouseEvent<HTMLAnchorElement>) => { if (dirty && !window.confirm(t("wizard.unsavedChanges"))) event.preventDefault(); };
+  if (userQuery.isPending || !user) return <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={dirty} />{t("common.loading")}</div>;
   const role = user.roles[0] ?? "member";
   const roleLabel = t(`profile.roles.${role}`, { defaultValue: t("profile.roles.member") });
 
@@ -86,6 +78,7 @@ export function ProfilePage() {
 
   return (
     <div className="page profile-page">
+      <UnsavedChangesGuard dirty={dirty} />
       <header className="profile-identity">
         <Link className="profile-back-link" to={`/${locale}/tasks`} onClick={guardLink}>← {t("profile.backToProjects")}</Link>
         <div className="profile-person">
@@ -168,10 +161,11 @@ export function ProfilePage() {
                 name="locale"
                 value={user.locale ?? locale}
                 disabled={updatePreferences.isPending}
-                onChange={(event) => {
+                onChange={async (event) => {
+                  const select = event.currentTarget;
                   const nextLocale = event.target.value as SupportedLocale;
-                  if (dirty && !window.confirm(t("wizard.unsavedChanges"))) {
-                    event.currentTarget.value = user.locale ?? locale;
+                  if (dirty && !await confirm(t("wizard.unsavedChanges"), false)) {
+                    select.value = user.locale ?? locale;
                     return;
                   }
                   updatePreferences.mutate(nextLocale);
@@ -199,7 +193,7 @@ export function ProfilePage() {
         error={avatarUpdate.isError ? t("nav.avatarFailed") : undefined}
         onClose={() => { if (!avatarUpdate.isPending) { setAvatarOpen(false); avatarUpdate.reset(); } }}
         onSave={(file) => avatarUpdate.mutate({ file })}
-        onRemove={() => { if (window.confirm(t("nav.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
+        onRemove={async () => { if (await confirm(t("nav.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
         returnFocus={avatarButtonRef.current}
         labels={{
           title: t("nav.avatarEditorTitle"), close: t("common.close"), choose: t("nav.chooseAvatar"), chooseAnother: t("nav.chooseAnotherAvatar"),

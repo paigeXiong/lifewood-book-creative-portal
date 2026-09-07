@@ -1,6 +1,7 @@
 import { act, useState } from "react";
+import { i18n } from "@lifewood/i18n";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, Routes, Route, Outlet, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { revisionService, type RevisionView } from "@lifewood/api-client";
@@ -16,13 +17,13 @@ function data(active=true): RevisionView {
 function Form() {
  const [draft,setDraft]=useState("");
  const location=useLocation();const navigate=useWizardNavigate();
- return <div id="form"><input aria-label="Draft" value={draft} readOnly/><button id="edit" onClick={()=>setDraft("Unsaved text")}>Edit</button><output>{location.pathname}</output><StepProgress current={1} highestReachable={6} canContinue onNext={()=>void navigate("/zh-CN/tasks/task/edit/characters")}/><button id="continue" onClick={()=>void navigate("/zh-CN/tasks/task/edit/characters")}>Continue</button></div>;
+ return <div id="form"><button id="home" onClick={()=>void navigate("/zh-CN/tasks")}>Home</button><button id="back-to-round" onClick={()=>void navigate("/zh-CN/tasks/task/edit/style")}>Back</button><input aria-label="Draft" value={draft} readOnly/><button id="edit" onClick={()=>setDraft("Unsaved text")}>Edit</button><output>{location.pathname}</output><StepProgress current={1} highestReachable={6} canContinue onNext={()=>void navigate("/zh-CN/tasks/task/edit/characters")}/><button id="continue" onClick={()=>void navigate("/zh-CN/tasks/task/edit/characters")}>Continue</button></div>;
 }
 async function render(view:RevisionView|undefined,step:string,check:(container:HTMLDivElement,client:QueryClient)=>Promise<void>,locale="zh-CN") {
  const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
  if(view)client.setQueryData(["revision","task",locale],view);
  const container=document.createElement("div");document.body.append(container);const root=createRoot(container);
- try { await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/task/edit/${step}`]}><Routes><Route path="/:locale/tasks/:taskId/edit/:step" element={<RevisionWorkspace><Form/></RevisionWorkspace>}/></Routes></MemoryRouter></QueryClientProvider>));await check(container,client);}
+ try { await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/task/edit/${step}`]}><Routes><Route path="/:locale" element={<RevisionWorkspace><Outlet/></RevisionWorkspace>}><Route path="tasks/:taskId/edit/:step" element={<Form/>}/><Route path="tasks" element={<Form/>}/></Route></Routes></MemoryRouter></QueryClientProvider>));await check(container,client);}
  finally {await act(async()=>root.unmount());client.clear();container.remove();}
 }
 describe("revision workspace",()=>{
@@ -99,4 +100,104 @@ describe("revision workspace",()=>{
   }finally{await act(async()=>root.unmount());}
  });
  it("closed rounds are read only",async()=>{await render(data(false),"style",async c=>{await act(async()=>c.querySelector<HTMLButtonElement>(".revision-toggle")!.click());expect(c.querySelector("textarea")).toBeNull();expect(c.textContent).toContain(labels.submitted);});});
+});
+
+function typeReply(container: HTMLDivElement, value: string) {
+ const input = container.querySelector<HTMLTextAreaElement>("textarea")!;
+ Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
+ input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+function submitReply(container: HTMLDivElement) {
+ container.querySelector(".revision-chat form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+}
+async function flushReply() { await new Promise(resolve => setTimeout(resolve, 0)); }
+
+describe("revision reply delivery", () => {
+ it.each(["zh-CN", "en-US"])("locks the submitted draft and unit until the reply settles in %s", async locale => {
+  await i18n.changeLanguage(locale);
+  const view = data();
+  view.units.push({ id: "project", label: "Book" });
+  view.rounds[0].reasons.push({ unit: "project", body: "Clarify book" });
+  let finish!: (view: RevisionView) => void;
+  const reply = vi.spyOn(revisionService, "reply").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const get = vi.spyOn(revisionService, "get").mockResolvedValue(view);
+  try {
+   await render(view, "style", async c => {
+    await act(async () => typeReply(c, "Keep this approach"));
+    await act(async () => { submitReply(c); submitReply(c); await flushReply(); });
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0][2]).toMatchObject({ unit: "style", body: "Keep this approach" });
+    expect(c.querySelector<HTMLTextAreaElement>("textarea")!.disabled).toBe(true);
+    expect(c.querySelector<HTMLSelectElement>(".revision-unit-picker select")!.disabled).toBe(true);
+    expect(c.querySelector(".revision-chat form button")!.textContent).toBe(locale === "zh-CN" ? "正在发送…" : "Sending…");
+    await act(async () => { finish(view); await flushReply(); await flushReply(); });
+    expect(c.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+    expect(c.querySelector<HTMLTextAreaElement>("textarea")!.disabled).toBe(false);
+    expect(get).toHaveBeenCalledWith("task", locale);
+   }, locale);
+  } finally { reply.mockRestore(); get.mockRestore(); }
+ });
+
+ it("keeps failed text and reuses the message ID for an unchanged retry", async () => {
+  const view = data();
+  const reply = vi.spyOn(revisionService, "reply").mockRejectedValue(new Error("Connection lost after send"));
+  const get = vi.spyOn(revisionService, "get").mockResolvedValue(view);
+  try {
+   await render(view, "style", async c => {
+    await act(async () => typeReply(c, "Please keep it"));
+    await act(async () => { submitReply(c); await flushReply(); await flushReply(); });
+    expect(c.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("Please keep it");
+    expect(c.querySelector(".revision-chat [role=alert]")).not.toBeNull();
+    await act(async () => { submitReply(c); await flushReply(); await flushReply(); });
+    expect(reply.mock.calls[1][2].id).toBe(reply.mock.calls[0][2].id);
+    await act(async () => typeReply(c, "Updated explanation"));
+    reply.mockResolvedValue(view);
+    await act(async () => { submitReply(c); await flushReply(); await flushReply(); });
+    expect(reply.mock.calls[2][2].id).not.toBe(reply.mock.calls[0][2].id);
+    expect(reply.mock.calls[2][2].body).toBe("Updated explanation");
+    expect(c.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("");
+   });
+  } finally { reply.mockRestore(); get.mockRestore(); }
+ });
+
+ it("does not erase a new round's draft or replace its cache when an old reply arrives", async () => {
+  const oldView = data();
+  const newView = data();
+  newView.rounds[0].id = "new-round";
+  newView.rounds[0].reasons[0].body = "New reason";
+  let finish!: (view: RevisionView) => void;
+  const reply = vi.spyOn(revisionService, "reply").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const get = vi.spyOn(revisionService, "get").mockResolvedValue(newView);
+  try {
+   await render(oldView, "style", async (c, client) => {
+    await act(async () => typeReply(c, "Old reply"));
+    await act(async () => { submitReply(c); await flushReply(); });
+    await act(async () => { client.setQueryData(["revision", "task", "zh-CN"], newView); await flushReply(); });
+    await act(async () => typeReply(c, "New draft"));
+    await act(async () => { finish(oldView); await flushReply(); await flushReply(); });
+    expect(c.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("New draft");
+    expect(c.querySelector(".revision-pinned-reason")!.textContent).toContain("New reason");
+    expect(client.getQueryData<RevisionView>(["revision", "task", "zh-CN"])!.rounds[0].id).toBe("new-round");
+   });
+  } finally { reply.mockRestore(); get.mockRestore(); }
+ });
+ it("preserves a new draft after leaving and returning to the same round during send", async () => {
+  const view = data();
+  let finish!: (view: RevisionView) => void;
+  const reply = vi.spyOn(revisionService, "reply").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const get = vi.spyOn(revisionService, "get").mockResolvedValue(view);
+  try {
+   await render(view, "style", async c => {
+    await act(async () => typeReply(c, "Old reply"));
+    await act(async () => { submitReply(c); await flushReply(); });
+    await act(async () => c.querySelector<HTMLButtonElement>("#home")!.click());
+    expect(c.querySelector(".revision-chat")).toBeNull();
+    await act(async () => c.querySelector<HTMLButtonElement>("#back-to-round")!.click());
+    await act(async () => typeReply(c, "New reply after returning"));
+    await act(async () => { finish(view); await flushReply(); await flushReply(); });
+    expect(c.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("New reply after returning");
+   });
+  } finally { reply.mockRestore(); get.mockRestore(); }
+ });
+
 });

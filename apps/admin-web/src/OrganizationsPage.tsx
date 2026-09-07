@@ -1,6 +1,8 @@
+import type { NoticeEditor } from "./AnnouncementsPage";
+import { useConfirm } from "./useConfirm";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { adminService, localizedApiError } from "@lifewood/api-client";
 import type { AdminOrganization, SupportedLocale } from "@lifewood/domain";
@@ -15,6 +17,12 @@ function formatDate(value: string, locale: SupportedLocale) {
 export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const location=useLocation(); const navigate=useNavigate();
+  const noticeEditor=(location.state as {announcementEditor?:NoticeEditor}|null)?.announcementEditor;
+  const picking=!!noticeEditor && new URLSearchParams(location.search).get("pick")==="announcement";
+  const [selected,setSelected]=useState<string[]>(noticeEditor?.content.organizationIds??[]);
+  const [names,setNames]=useState<Record<string,string>>(noticeEditor?.organizations??{});
+
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearch = searchParams.get("q") ?? "";
   const [searchInput, setSearchInput] = useState(initialSearch);
@@ -45,7 +53,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
     const next = new URLSearchParams(searchParams);
     nextSearch ? next.set("q", nextSearch) : next.delete("q");
     nextPage > 1 ? next.set("page", String(nextPage)) : next.delete("page");
-    setSearchParams(next, { replace: true });
+    setSearchParams(next, { replace: true, state: location.state });
   };
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
@@ -57,6 +65,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
 
   return (
     <main className="content organizations-content">
+      {picking&&<section className="page-toolbar"><span>{t("announcements.selected")} · {selected.length}</span><button onClick={()=>navigate(`/${locale}/settings/announcements`,{state:{announcementEditor:noticeEditor}})}>{t("announcements.cancel")}</button><button className="primary" onClick={()=>navigate(`/${locale}/settings/announcements`,{state:{announcementEditor:{...noticeEditor,organizations:names,content:{...noticeEditor!.content,organizationIds:selected}}}})}>{t("announcements.done")}</button></section>}
       <section className="page-toolbar">
         <form onSubmit={submitSearch} role="search">
           <input
@@ -88,7 +97,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
               <td data-label={t("admin.organizations.members")}>{organization.memberCount}</td>
               <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
               <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>
-              <td data-label={t("admin.organizations.action")}><button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button></td>
+              <td data-label={t("admin.organizations.action")}>{picking?<label><input type="checkbox" disabled={!organization.active || !selected.includes(organization.id)&&selected.length>=200} checked={selected.includes(organization.id)} onChange={e=>{setSelected(prev=>e.target.checked?[...prev,organization.id]:prev.filter(x=>x!==organization.id));setNames(prev=>({...prev,[organization.id]:organization.name}));}}/>{t("announcements.select")}</label>:<button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button>}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -121,12 +130,13 @@ function OrganizationDialog({ organization, busy, error, onClose, onSave }: {
   onSave: (value: { id?: string; name: string; active: boolean }) => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const active = organization ? data.get("active") === "on" : true;
-    if (organization?.active && !active && organization.memberCount > 0 && !window.confirm(t("admin.organizations.deactivateConfirm", { count: organization.memberCount }))) return;
+    if (organization?.active && !active && organization.memberCount > 0 && !await confirm(t("admin.organizations.deactivateConfirm", { count: organization.memberCount }))) return;
     onSave({ id: organization?.id, name: String(data.get("name") ?? ""), active });
   };
   return (

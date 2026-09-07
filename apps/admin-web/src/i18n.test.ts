@@ -11,6 +11,8 @@ function flatten(value: Record<string, unknown>, prefix = ""): Record<string, st
 const sourceFiles = import.meta.glob<string>(["./**/*.{ts,tsx}", "../../task-entry-web/src/**/*.{ts,tsx}", "!**/*.test.*"], { query: "?raw", import: "default", eager: true });
 
 const requiredKeys = [
+  "creative.fields.characterName", "creative.fields.storyRole", "creative.fields.personality", "creative.fields.appearance", "creative.fields.clothing", "creative.fields.emotion", "creative.fields.voiceHint",
+  "admin.presets.title", "admin.presets.imageInvalid", "admin.presets.limit",
   "admin.nav.home",
   "admin.workflow.new",
   "admin.workflow.contacting",

@@ -5,6 +5,7 @@ export function toCreativeFormValues(creative: CreativeInfo): CreativeFormValues
     characters: creative.characters.map((character) => ({
       id: character.id,
       presetId: character.presetId ?? undefined,
+      presetImageUrl: character.presetImageUrl ?? undefined,
       roleTypeId: character.roleTypeId ?? "",
       name: character.name,
       storyRole: character.storyRole,

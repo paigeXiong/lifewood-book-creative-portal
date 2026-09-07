@@ -196,6 +196,11 @@ builder.Services.AddSingleton(auditEvents);
 var deliveries = new DeliveryRepository(databaseConnection);
 deliveries.Initialize();
 builder.Services.AddSingleton(deliveries);
+var announcements = new AnnouncementRepository(databaseConnection);
+announcements.Initialize();
+builder.Services.AddSingleton(announcements);
+var characterPresets = new CharacterPresetRepository(databaseConnection);
+builder.Services.AddSingleton(characterPresets);
 var voiceReferences = new VoiceReferenceRepository(databaseConnection);
 voiceReferences.Initialize();
 RecoverVoiceSampleBackups(voiceSampleDirectory, voiceReferences);
@@ -290,6 +295,14 @@ app.Use(async (context, next) =>
             await context.Response.WriteAsJsonAsync(
                 new ApiErrorDto("validation.file", "errors.validation.file", "The uploaded file is larger than this category allows.", null, false, context.TraceIdentifier),
                 AppJsonContext.Default.ApiErrorDto);
+        }
+    }
+    catch (Microsoft.Data.Sqlite.SqliteException exception) when (exception.SqliteErrorCode == 19 && exception.Message.Contains("config.option_removed", StringComparison.Ordinal))
+    {
+        if (!context.Response.HasStarted)
+        {
+            context.Response.Clear();
+            await Error(context, 409, "config.option_removed", "errors.validation.optionRemoved", "An option was removed while saving. Reload the available options and try again.", false).ExecuteAsync(context);
         }
     }
     catch (Exception exception)
@@ -500,6 +513,32 @@ api.MapPost("/me/password", async (ChangePasswordRequest? request, HttpContext c
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.NoContent();
 }).RequireRateLimiting("authentication");
+
+api.MapGet("/announcements/public", (HttpContext context, AnnouncementRepository notices, long? before) => Results.Ok(notices.Feed(null, Locale(context), before)));
+api.MapGet("/announcements", (HttpContext context, AnnouncementRepository notices, long? before, bool unread = false) => {
+    context.Response.Headers.CacheControl="no-store";
+    var user=CurrentUser(context); return user is null ? Results.Unauthorized() : Results.Ok(notices.Feed(user.Id,Locale(context),before,unread));
+});
+api.MapPost("/announcements/dismiss", (DismissAnnouncementsRequest? request,HttpContext context,AnnouncementRepository notices) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();
+    return notices.DismissMany(user.Id,request?.Ids)?Results.NoContent():Results.BadRequest();
+});
+api.MapPost("/announcements/{id}/dismiss", (string id,HttpContext context,AnnouncementRepository notices) => {
+    var user=CurrentUser(context);return user is null?Results.Unauthorized():notices.Dismiss(user.Id,id)?Results.NoContent():Results.NotFound();
+});
+api.MapGet("/admin/announcements", (HttpContext context,AnnouncementRepository notices,long? before,string? search) => {
+    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);return user is null?Results.Unauthorized():!Can(user,"admin.config.manage")?Results.Forbid():Results.Ok(notices.List(before,search));
+});
+api.MapPut("/admin/announcements/{id}", (string id,AnnouncementInput? input,HttpContext context,AnnouncementRepository notices) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    if(!Guid.TryParseExact(id,"N",out _))return Results.BadRequest();
+    var error=notices.Save(id,input,out var saved);return error is null?Results.Ok(saved):Error(context,error=="conflict"?409:400,"announcement."+error,error=="conflict"?"announcements.conflict":"announcements.invalid","Invalid announcement or stale version.",false);
+});
+api.MapPost("/admin/announcements/{id}/{action}", (string id,string action,AnnouncementVersion input,HttpContext context,AnnouncementRepository notices) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    if(action is not ("publish" or "withdraw"))return Results.NotFound();
+    var error=notices.Transition(id,input.Version,action=="publish",out var saved);return error is null?Results.Ok(saved):Error(context,error=="conflict"?409:error=="missing"?404:400,"announcement."+error,error=="conflict"?"announcements.conflict":"announcements.invalid","Invalid announcement or stale version.",false);
+});
 
 api.MapGet("/form-options", (HttpContext context, FormOptionRepository options, FileCategoryRepository categories, BookRecognitionService recognition) =>
 {
@@ -849,6 +888,36 @@ api.MapPut("/admin/file-categories/{scope}/{id}", (string scope, string id, Upse
     };
 });
 
+api.MapDelete("/admin/file-categories/{scope}/{id}", (string scope, string id, DateTimeOffset? expectedUpdatedAt, HttpContext context, FileCategoryRepository categories) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.config.manage")) return Error(context, user is null ? 401 : 403, "auth.forbidden", "errors.auth.forbidden", "Configuration permission is required.", false);
+    var error = categories.Remove(scope, id, expectedUpdatedAt);
+    return error is null ? Results.NoContent() : Error(context, error == "missing" ? 404 : 409, "config." + error, "admin.configRemoval." + error, "Could not delete configuration.", false);
+});
+
+api.MapDelete("/admin/character-presets/{id}", (string id, string? expectedUpdatedAt, HttpContext context, CharacterPresetRepository presets) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.config.manage")) return Error(context, user is null ? 401 : 403, "auth.forbidden", "errors.auth.forbidden", "Configuration permission is required.", false);
+    var error = presets.Remove(id, expectedUpdatedAt);
+    return error is null ? Results.NoContent() : Error(context, error == "missing" ? 404 : 409, "config." + error, "admin.configRemoval." + error, "Could not delete configuration.", false);
+});
+
+api.MapDelete("/admin/voices/{id}", async (string id, string? expectedUpdatedAt, HttpContext context, VoiceReferenceRepository voices) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.config.manage")) return Error(context, user is null ? 401 : 403, "auth.forbidden", "errors.auth.forbidden", "Configuration permission is required.", false);
+    var gate = voiceSampleLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+    await gate.WaitAsync(context.RequestAborted);
+    try
+    {
+        var error = voices.Remove(id, expectedUpdatedAt);
+        return error is null ? Results.NoContent() : Error(context, error == "missing" ? 404 : 409, "config." + error, "admin.configRemoval." + error, "Could not delete configuration.", false);
+    }
+    finally { gate.Release(); }
+});
+
 api.MapGet("/admin/form-option-groups", (HttpContext context) =>
 {
     var user = CurrentUser(context);
@@ -881,6 +950,59 @@ api.MapPut("/admin/form-options/{groupId}/{id}", (string groupId, string id, Ups
         FormOptionWriteOutcome.Conflict => Error(context, 409, "config.version_conflict", "admin.formOptions.conflict", "This option changed elsewhere. Reload it before saving.", false),
         _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The form option is invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
     };
+});
+
+api.MapDelete("/admin/form-options/{groupId}/{id}", (string groupId, string id, DateTimeOffset? expectedUpdatedAt, HttpContext context, FormOptionRepository options) =>
+{
+    var user=CurrentUser(context);
+    if(user is null || !Can(user,"admin.config.manage")) return Error(context,user is null?401:403,"auth.forbidden","errors.auth.forbidden","Configuration permission is required.",false);
+    var error=options.Remove(groupId,id,expectedUpdatedAt);
+    return error is null ? Results.NoContent() : Error(context,error=="missing"?404:409,"config."+error,"admin.formOptions.remove"+char.ToUpperInvariant(error[0])+error[1..],"The option could not be removed.",false);
+});
+
+api.MapGet("/admin/character-presets", (HttpContext context, CharacterPresetRepository presets) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.config.manage")) return Error(context, user is null ? 401 : 403, "auth.forbidden", "errors.auth.forbidden", "Configuration permission is required.", false);
+    return Results.Ok(presets.List());
+});
+api.MapPut("/admin/character-presets/{id}", (string id, UpsertCharacterPresetRequest? request, HttpContext context, CharacterPresetRepository presets, FormOptionRepository options) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.config.manage")) return Error(context, user is null ? 401 : 403, "auth.forbidden", "errors.auth.forbidden", "Configuration permission is required.", false);
+    var error = presets.Save(id, request, options, out var saved);
+    return error is null ? Results.Ok(saved) : Error(context, error == "conflict" ? 409 : 400, "preset." + error, "admin.presets." + error, "Could not save character preset.", false);
+});
+api.MapPost("/admin/character-presets/{id}/image", async (string id, HttpContext context, CharacterPresetRepository presets, StorageQuota storageQuota) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.config.manage")) return Error(context, user is null ? 401 : 403, "auth.forbidden", "errors.auth.forbidden", "Configuration permission is required.", false);
+    if (!context.Request.HasFormContentType) return Error(context, 400, "preset.image", "admin.presets.imageInvalid", "Select a JPG, PNG or WebP image under 5 MB.", false);
+    var form = await context.Request.ReadFormAsync(context.RequestAborted);
+    var file = form.Files.GetFile("file");
+    var contentType = file is null ? null : NormalizeContentType(file.ContentType, file.FileName);
+    if (file is null || file.Length is <= 0 or > 5000000 || contentType is not ("image/jpeg" or "image/png" or "image/webp") || !await HasExpectedSignature(file, contentType, context.RequestAborted))
+        return Error(context, 400, "preset.image", "admin.presets.imageInvalid", "Select a JPG, PNG or WebP image under 5 MB.", false);
+    await using var reservation = await storageQuota.TryReserveAsync(file.Length, context.RequestAborted);
+    if (reservation is null) return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached.", true);
+    var directory = Path.Combine(dataDirectory, "character-preset-images"); Directory.CreateDirectory(directory);
+    var name = Guid.NewGuid().ToString("N") + (contentType == "image/png" ? ".png" : contentType == "image/webp" ? ".webp" : ".jpg");
+    var target = Path.Combine(directory, name);
+    try
+    {
+        await using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None)) await file.CopyToAsync(output, context.RequestAborted);
+        var error = presets.SetImage(id, form["expectedUpdatedAt"].ToString(), $"/api/character-preset-images/{name}", out var saved);
+        if (error is not null) { File.Delete(target); return Error(context, error == "conflict" ? 409 : 404, "preset." + error, "admin.presets." + error, "Could not update preset image.", false); }
+        return Results.Ok(saved);
+    }
+    catch { if (File.Exists(target)) File.Delete(target); throw; }
+}).DisableAntiforgery();
+api.MapGet("/character-preset-images/{name}", (string name, HttpContext context) =>
+{
+    if (CurrentUser(context) is null) return Results.Unauthorized();
+    if (!System.Text.RegularExpressions.Regex.IsMatch(name, "^[a-f0-9]{32}\\.(png|jpg|webp)$")) return Results.NotFound();
+    var path = Path.Combine(dataDirectory, "character-preset-images", name);
+    return File.Exists(path) ? Results.File(path, NormalizeContentType("", name)) : Results.NotFound();
 });
 
 api.MapGet("/admin/voices", (HttpContext context, VoiceReferenceRepository voices) =>

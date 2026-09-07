@@ -7,6 +7,15 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(AdminCharacterPresetDto))]
+[JsonSerializable(typeof(AdminCharacterPresetDto[]))]
+[JsonSerializable(typeof(UpsertCharacterPresetRequest))]
+[JsonSerializable(typeof(DismissAnnouncementsRequest))]
+[JsonSerializable(typeof(AnnouncementInput))]
+[JsonSerializable(typeof(AnnouncementDocument))]
+[JsonSerializable(typeof(AnnouncementPage))]
+[JsonSerializable(typeof(AnnouncementFeed))]
+[JsonSerializable(typeof(AnnouncementVersion))]
 [JsonSerializable(typeof(CurrentUserDto))]
 [JsonSerializable(typeof(HealthDto))]
 [JsonSerializable(typeof(RevisionView))]

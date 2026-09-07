@@ -183,6 +183,7 @@ export interface BookInfo {
 
 export interface CharacterInfo {
   presetId?: string;
+  presetImageUrl?: string;
   id: string;
   roleTypeId?: string;
   name: string;
@@ -429,3 +430,14 @@ export interface AppErrorShape {
 }
 
 export interface BookRecognition { title: string; authorName: string; subtitle: string; genreId: string; sellingPoint: string; synopsis: string; }
+
+export interface AdminCharacterPreset {
+  id: string; zhCn: CharacterInfo; enUs: CharacterInfo; imageUrl?: string | null;
+  enabled: boolean; sortOrder: number; updatedAt: string | null;
+}
+
+export interface AnnouncementInput { titleZh: string; bodyZh: string; titleEn: string; bodyEn: string; placement: "login" | "personal"; audience: "all" | "specified"; languages: string[]; organizationIds: string[]; startsAt: string | null; endsAt: string | null; version: number }
+export interface AnnouncementDocument { id: string; sequence: number; content: AnnouncementInput; status: "draft" | "published" | "withdrawn"; version: number; createdAt: string; recipients: number }
+export interface AnnouncementItem { id: string; sequence: number; title: string; body: string; publishedAt: string; dismissed: boolean; popup: boolean }
+export interface AnnouncementFeed { items: AnnouncementItem[]; nextCursor: number | null }
+export interface AnnouncementPage { items: AnnouncementDocument[]; nextCursor: number | null }

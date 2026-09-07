@@ -1,3 +1,4 @@
+import { useConfirmLink } from "../useConfirm";
 import { useContext, useId, useState } from "react";
 import { RevisionNavigation } from "../revision-navigation";
 import { useTranslation } from "react-i18next";
@@ -15,9 +16,9 @@ export function StepProgress({ current, highestReachable, onNext, onNavigate, ca
   const listId=useId();
   const allowed = useContext(RevisionNavigation);
   const { t } = useTranslation();
+  const guardLink = useConfirmLink();
   const { locale, taskId } = useParams();
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
-  const confirmLeave = () => document.body.dataset.unsavedChanges !== "true" || window.confirm(t("wizard.unsavedChanges"));
   return (
     <nav className={"step-progress"+(expanded?" steps-expanded":"")} aria-label={t("wizard.stepProgress", { current, total: workflowStepCount })}>
       <div className="step-compact"><strong>{current}/{workflowStepCount} · {t("wizard.steps."+stepKeys[current-1])}</strong><button type="button" aria-expanded={expanded} aria-controls={listId} onClick={()=>setExpanded(!expanded)}>{t(expanded?"clientUx.hideSteps":"clientUx.allSteps")}</button></div>
@@ -38,7 +39,7 @@ export function StepProgress({ current, highestReachable, onNext, onNavigate, ca
                   if (busy) { event.preventDefault(); return; }
                   setExpanded(false);
                   if (onNavigate) { event.preventDefault(); onNavigate(event.currentTarget.pathname); }
-                  else if (!confirmLeave()) event.preventDefault();
+                  else void guardLink(event);
                 }}>
                   {content}
                 </Link>

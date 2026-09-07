@@ -1,3 +1,5 @@
+import { Announcements } from "./Announcements";
+import { useConfirm, useConfirmLink } from "../useConfirm";
 import { useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -15,6 +17,8 @@ export function adminCenterUrl(locale: SupportedLocale, configuredBase = import.
 
 export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUser }>) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
+  const guardLink = useConfirmLink();
   const { locale } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -51,14 +55,14 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   }, [accountOpen]);
 
   if (!isSupportedLocale(locale)) return null;
-  const confirmLeave = () => document.body.dataset.unsavedChanges !== "true" || window.confirm(t("wizard.unsavedChanges"));
+  const confirmLeave = async () => document.body.dataset.unsavedChanges !== "true" || await confirm(t("wizard.unsavedChanges"), false);
   const canAccessAdmin = user.permissions.includes("admin.access");
 
   return (
     <div className="app-shell reference-shell">
       <a className="skip-link" href="#main-content">{t("nav.skipToContent")}</a>
       <header className="topbar reference-topbar">
-        <Link className="brand" to={`/${locale}/tasks`} aria-label={t("app.name")} onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}>
+        <Link className="brand" to={`/${locale}/tasks`} aria-label={t("app.name")} onClick={guardLink}>
           <img className="brand-logo" src="/lifewood-logo.png" alt="" width="2285" height="492" />
           <span className="brand-text">
             <strong translate="no">{t("app.clientName")}</strong>
@@ -66,14 +70,15 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
         </Link>
 
         <div className="topbar-actions">
+          <Announcements key={user.id} userId={user.id} locale={locale} />
           {canAccessAdmin ? (
-            <a className="admin-entry" href={adminCenterUrl(locale)} aria-label={t("nav.adminCenter")} onClick={(event) => { if (!confirmLeave()) event.preventDefault(); }}>
+            <a className="admin-entry" href={adminCenterUrl(locale)} aria-label={t("nav.adminCenter")} onClick={event => guardLink(event, undefined, true)}>
               <span className="admin-entry-icon" aria-hidden="true">⚙</span>
               <span>{t("nav.adminCenter")}</span>
             </a>
           ) : null}
           <div className="account-menu" ref={accountRef}>
-            <Link className="avatar-trigger" to={`/${locale}/profile`} aria-label={t("nav.profile")} onClick={(event) => { if (confirmLeave()) setAccountOpen(false); else event.preventDefault(); }}>
+            <Link className="avatar-trigger" to={`/${locale}/profile`} aria-label={t("nav.profile")} onClick={event => guardLink(event, () => setAccountOpen(false))}>
               <img className="avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" />
             </Link>
             <button
@@ -92,15 +97,15 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
             {accountOpen ? (
               <div id={accountPopoverId} className="account-popover" role="dialog" aria-label={t("nav.account")}>
                 <div className="account-identity">
-                  <Link className="account-avatar-preview" to={`/${locale}/profile`} aria-label={t("nav.profile")} onClick={(event) => { if (confirmLeave()) setAccountOpen(false); else event.preventDefault(); }}>
+                  <Link className="account-avatar-preview" to={`/${locale}/profile`} aria-label={t("nav.profile")} onClick={event => guardLink(event, () => setAccountOpen(false))}>
                     <img className="avatar avatar-large" src={user.avatarUrl || "/api/me/avatar"} alt="" width="46" height="46" />
                   </Link>
                   <div><strong>{user.displayName}</strong>{user.email ? <span>{user.email}</span> : null}{user.organization?.name ? <small>{user.organization.name}</small> : null}</div>
                 </div>
-                <Link className="account-action" to={`/${locale}/profile`} onClick={(event) => { if (confirmLeave()) setAccountOpen(false); else event.preventDefault(); }}>
+                <Link className="account-action" to={`/${locale}/profile`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
                   {t("nav.profile")}
                 </Link>
-                <button className="account-action" type="button" disabled={logout.isPending} onClick={() => { if (confirmLeave()) logout.mutate(); }}>
+                <button className="account-action" type="button" disabled={logout.isPending} onClick={async () => { if (await confirmLeave()) logout.mutate(); }}>
                   {logout.isPending ? t("nav.loggingOut") : t("nav.logout")}
                 </button>
                 {logout.isError ? <p className="account-error" role="alert">{t("nav.logoutFailed")}</p> : null}

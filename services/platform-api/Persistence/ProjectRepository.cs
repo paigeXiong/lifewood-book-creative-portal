@@ -10,6 +10,7 @@ internal sealed class ProjectRepository(string connectionString)
 {
     public void Initialize()
     {
+        new CharacterPresetRepository(connectionString).Initialize();
         using var connection = Open();
         using (var pragma = connection.CreateCommand())
         {
@@ -277,7 +278,7 @@ internal sealed class ProjectRepository(string connectionString)
             Guid.NewGuid().ToString("N"), null, "draft", 1,
             new ProjectInfoDto(clientName, contactName, email, phone, null, "", null, null, []),
             new BookInfoDto("", null, "", null, "", "", null, null, [], []),
-            EmptyCreative() with { Characters = CharacterPresetCatalog.Create(locale) },
+            EmptyCreative() with { Characters = new CharacterPresetRepository(connectionString).ForLocale(locale) },
             EmptyVoiceAndReferences(),
             now, now);
         Insert(ownerId, draft);

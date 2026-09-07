@@ -14,3 +14,10 @@ services/test-api/uploads/
 artifacts/
 data/
 backups/
+
+# Local verification builds and development logs
+.tmp/
+
+# Browser verification output
+test-results/
+playwright-report/

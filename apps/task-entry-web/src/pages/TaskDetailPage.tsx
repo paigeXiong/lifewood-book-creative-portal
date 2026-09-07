@@ -340,7 +340,7 @@ export function TaskDetailPage() {
                 <div className="data-wide receipt-character" key={character.id}>
                   <dt>{t("taskDetail.character", { index: index + 1 })}</dt>
                   <dd>
-                    <>{character.presetId && <img src={`/character-presets/${character.presetId}.png`} alt={t("bookIntake.presetImage", { name: character.name })} width="96" height="96" loading="lazy" />}</><strong>{character.name || "—"}</strong> ·{" "}
+                    <>{(character.presetImageUrl ?? character.presetId) && <img src={character.presetImageUrl ?? `/character-presets/${character.presetId}.png`} alt={t("bookIntake.presetImage", { name: character.name })} width="96" height="96" loading="lazy" />}</><strong>{character.name || "—"}</strong> ·{" "}
                     {optionLabel(catalog.roleTypes, character.roleTypeId)}
                     <br />
                     {character.storyRole || "—"}

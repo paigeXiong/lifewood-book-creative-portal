@@ -1,3 +1,4 @@
+import { useConfirm } from "./useConfirm";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -17,6 +18,7 @@ function formatDate(value: string, locale: SupportedLocale) {
 export function FinalDeliveryPanel({ projectId, projectStatus, locale }: { projectId: string; projectStatus: string; locale: SupportedLocale }) {
   const canPublish = projectStatus === "submitted";
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [fileInvalid, setFileInvalid] = useState(false);
@@ -78,7 +80,7 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale }: { proje
             className="danger-link"
             type="button"
             disabled={revoke.isPending}
-            onClick={() => { if (window.confirm(t("admin.delivery.revokeConfirm"))) revoke.mutate(item.id); }}
+            onClick={async () => { if (await confirm(t("admin.delivery.revokeConfirm"))) revoke.mutate(item.id); }}
           >{t("admin.delivery.revoke")}</button>
         </>}
     </div></li>)}</ol> : !deliveries.isPending && <p className="muted">{t("admin.delivery.empty")}</p>}

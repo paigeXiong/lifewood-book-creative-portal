@@ -21,8 +21,9 @@ internal static class CreativeValidator
                 var character = creative.Characters[index];
                 var prefix = $"creative.characters.{index}";
                 if (character is null) { errors.Add(Error(prefix, "required")); continue; }
-                if (character.PresetId is not null && !FormOptionCatalog.RoleTypeIds.Contains(character.PresetId)) errors.Add(Error($"{prefix}.presetId", "invalid"));
                 var previousCharacter = previous?.Characters.FirstOrDefault(item => item.Id == character.Id);
+                if (character.PresetId != previousCharacter?.PresetId) errors.Add(Error($"{prefix}.presetId", "invalid"));
+                if (character.PresetImageUrl != previousCharacter?.PresetImageUrl) errors.Add(Error($"{prefix}.presetImageUrl", "invalid"));
                 if (string.IsNullOrWhiteSpace(character.Id) || character.Id.Length > 80 || !ids.Add(character.Id)) errors.Add(Error($"{prefix}.id", "invalid"));
                 Text(errors, $"{prefix}.name", character.Name, 80);
                 Text(errors, $"{prefix}.storyRole", character.StoryRole, 200);

@@ -1,4 +1,7 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { VoiceSampleControl } from "./VoiceSampleControl";
+import { useConfigRemoval } from "./useConfigRemoval";
+import { useConfirm } from "./useConfirm";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminService, localizedApiError, optionService } from "@lifewood/api-client";
 import type { AdminVoiceReference, SupportedLocale } from "@lifewood/domain";
@@ -24,9 +27,13 @@ const emptyVoice: AdminVoiceReference = {
 
 export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<AdminVoiceReference>();
   const [audioError, setAudioError] = useState<string>();
+  const activeAudio = useRef<HTMLAudioElement | null>(null);
+  const audioLock = useRef(false);
+  const [confirmingAudio, setConfirmingAudio] = useState(false);
   const voices = useQuery({ queryKey: ["admin-voices"], queryFn: adminService.listVoiceReferences });
   const options = useQuery({ queryKey: ["form-options", locale], queryFn: () => optionService.getFormOptions(locale) });
   const refreshVoices = async () => {
@@ -49,7 +56,8 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
     mutationFn: adminService.removeVoiceSample,
     onSuccess: async () => { showAdminToast(t("admin.feedback.audioRemoved")); await refreshVoices(); },
   });
-  const audioBusy = uploadSample.isPending || removeSample.isPending;
+  const removal = useConfigRemoval(adminService.removeVoiceReference, refreshVoices);
+  const audioBusy = confirmingAudio || removal.busy || uploadSample.isPending || removeSample.isPending;
   const audioMutationError = uploadSample.error || removeSample.error;
   const handleAudio = (voice: AdminVoiceReference, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -66,35 +74,40 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
     uploadSample.mutate({ id: voice.id, file });
   };
 
-  return <main className="content config-content">
+  const handleRemoveAudio = async (voice: AdminVoiceReference) => {
+    if (audioLock.current || audioBusy) return;
+    audioLock.current = true; setConfirmingAudio(true);
+    try {
+      if (!await confirm(t("admin.voices.removeAudioConfirm"))) return;
+      activeAudio.current?.pause(); activeAudio.current = null;
+      setAudioError(undefined); uploadSample.reset(); removeSample.reset();
+      await removeSample.mutateAsync(voice.id);
+    } catch { /* The mutation error remains visible above the table. */ }
+    finally { audioLock.current = false; setConfirmingAudio(false); }
+  };
+
+  return <main className="content config-content voice-config-page">
     <SettingsTabs locale={locale} />
     <section className="page-toolbar">
       <h1 className="config-context">{t("admin.voices.title")}</h1>
       <span className="result-count">{t("admin.voices.count", { count: voices.data?.length ?? 0 })}</span>
-      <button className="primary push-right" type="button" onClick={() => { save.reset(); setEditing({ ...emptyVoice }); }}>{t("admin.voices.create")}</button>
+      <button className="primary push-right" type="button" disabled={audioBusy} onClick={() => { save.reset(); setEditing({ ...emptyVoice }); }}>{t("admin.voices.create")}</button>
     </section>
     {voices.isError && <div className="message error" role="alert">{localizedApiError(voices.error, t)}</div>}
     {(audioError || audioMutationError) && <div className="message error" role="alert" aria-live="polite">{audioError ?? localizedApiError(audioMutationError, t)}</div>}
-    <section className="table-card">
+    {removal.error && <div className="message error" role="alert">{localizedApiError(removal.error, t)}</div>}
+    <section className="table-card config-removable">
       <table>
         <thead><tr><th>{t("admin.voices.reference")}</th><th>{t("admin.voices.tags")}</th><th>{t("admin.voices.audio")}</th><th>{t("admin.voices.order")}</th><th>{t("admin.voices.status")}</th><th>{t("admin.voices.action")}</th></tr></thead>
         <tbody>{voices.data?.map((voice) => <tr key={voice.id}>
-          <td data-label={t("admin.voices.reference")}><div className="voice-config-name"><strong>{locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs}</strong><small translate="no">{voice.id}</small></div></td>
+          <td data-label={t("admin.voices.reference")}><div className="voice-config-name"><strong>{locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs}</strong></div></td>
           <td data-label={t("admin.voices.tags")}><span className="voice-tags">{voice.tagIds.map((tag) => options.data?.voiceTags.find((item) => item.id === tag)?.label ?? tag).join(" · ") || "—"}</span></td>
-          <td data-label={t("admin.voices.audio")}><div className="voice-audio-cell">
-            <span className={voice.audioUrl ? "status active" : "status inactive"}>{t(voice.audioUrl ? "admin.voices.audioReady" : "admin.voices.audioEmpty")}</span>
-            {voice.audioUrl && <audio controls preload="none" src={`/api/admin/voices/${encodeURIComponent(voice.id)}/sample`} aria-label={`${locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs} · ${t("admin.voices.audio")}`} />}
-            <div className="voice-audio-actions">
-              <label className="compact-action" aria-disabled={audioBusy}>
-                <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" disabled={audioBusy} onChange={(event) => handleAudio(voice, event)} />
-                <span>{t(voice.audioUrl ? "admin.voices.replaceAudio" : "admin.voices.uploadAudio")}</span>
-              </label>
-              {voice.audioUrl && <button type="button" disabled={audioBusy} onClick={() => { if (!window.confirm(t("admin.voices.removeAudioConfirm"))) return; setAudioError(undefined); uploadSample.reset(); removeSample.reset(); removeSample.mutate(voice.id); }}>{t("admin.voices.removeAudio")}</button>}
-            </div>
-          </div></td>
+          <td data-label={t("admin.voices.audio")}><VoiceSampleControl key={`${voice.id}:${voice.updatedAt}`} name={locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs} busy={audioBusy} activeAudio={activeAudio}
+            src={voice.audioUrl ? `/api/admin/voices/${encodeURIComponent(voice.id)}/sample?v=${encodeURIComponent(voice.updatedAt ?? "")}` : undefined}
+            onUpload={event => handleAudio(voice, event)} onRemove={() => void handleRemoveAudio(voice)} /></td>
           <td className="numeric" data-label={t("admin.voices.order")}>{voice.sortOrder}</td>
           <td data-label={t("admin.voices.status")}><span className={voice.enabled ? "status active" : "status inactive"}>{t(voice.enabled ? "admin.voices.enabled" : "admin.voices.disabled")}</span>{voice.recommended && <span className="status status-confirmed">{t("admin.voices.recommended")}</span>}</td>
-          <td data-label={t("admin.voices.action")}><button type="button" onClick={() => { save.reset(); setEditing({ ...voice, tagIds: [...voice.tagIds] }); }}>{t("admin.voices.edit")}</button></td>
+          <td data-label={t("admin.voices.action")}><div className="config-row-actions"><button type="button" disabled={audioBusy} onClick={() => { save.reset(); setEditing({ ...voice, tagIds: [...voice.tagIds] }); }}>{t("admin.voices.edit")}</button><button type="button" className="config-delete" disabled={audioBusy} onClick={() => void removal.run(voice, locale === "zh-CN" ? voice.nameZhCn : voice.nameEnUs)}>{t("admin.voices.deleteVoice")}</button></div></td>
         </tr>)}</tbody>
       </table>
       {!voices.isPending && !voices.data?.length && <div className="empty">{t("admin.voices.empty")}</div>}
@@ -116,10 +129,11 @@ function VoiceDialog({ voice, tagOptions, busy, error, onClose, onSave }: {
   onSave: (voice: AdminVoiceReference) => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const existing = Boolean(voice.id);
   const [selectedTags, setSelectedTags] = useState(voice.tagIds);
   const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const id = String(data.get("id")).trim();
@@ -135,7 +149,7 @@ function VoiceDialog({ voice, tagOptions, busy, error, onClose, onSave }: {
       enabled: data.get("enabled") === "on",
       sortOrder: Number(data.get("sortOrder")),
     };
-    if (voice.enabled && !value.enabled && !window.confirm(t("admin.voices.disableConfirm"))) return;
+    if (voice.enabled && !value.enabled && !await confirm(t("admin.voices.disableConfirm"))) return;
     onSave(value);
   };
   return <ModalFrame labelledBy="voice-dialog-title" busy={busy} onClose={requestClose}>

@@ -13,7 +13,8 @@ export function isSupportedLocale(
 const resources = {
   "zh-CN": {
     translation: {
-      clientUx: {"allSteps": "查看全部步骤", "hideSteps": "收起步骤", "returnedStatus": "待修改或回复", "resubmit": "重新提交需求", "backTo": "返回：{{unit}}", "revisionReviewHint": "核对本轮要求和回复后重新提交。若保留原需求，可以说明原因，无需强制修改。", "requestedUnits": "本轮请处理", "returnReason": "退回原因", "openFeedback": "查看反馈", "allProjects": "全部项目", "actionRequired": "待我处理", "continueDraft": "继续填写", "handleReturn": "处理退回", "viewProgress": "查看进展", "more": "更多操作", "optionalBook": "卖点与简介（选填）", "optionalFiles": "更多资料（选填）", "recognizedFields": "已填入：{{fields}}。请核对结果。", "searchOptions": "搜索{{label}}", "noOptions": "没有匹配的选项", "selected": "已选", "manuscriptOptional": "全书或节选（选填）"},
+      clientUx: {
+        sendingReply: "正在发送…","allSteps": "查看全部步骤", "hideSteps": "收起步骤", "returnedStatus": "待修改或回复", "resubmit": "重新提交需求", "backTo": "返回：{{unit}}", "revisionReviewHint": "核对本轮要求和回复后重新提交。若保留原需求，可以说明原因，无需强制修改。", "requestedUnits": "本轮请处理", "returnReason": "退回原因", "openFeedback": "查看反馈", "allProjects": "全部项目", "actionRequired": "待我处理", "continueDraft": "继续填写", "handleReturn": "处理退回", "viewProgress": "查看进展", "more": "更多操作", "optionalBook": "卖点与简介（选填）", "optionalFiles": "更多资料（选填）", "recognizedFields": "已填入：{{fields}}。请核对结果。", "searchOptions": "搜索{{label}}", "noOptions": "没有匹配的选项", "selected": "已选", "manuscriptOptional": "全书或节选（选填）"},
       bookIntake: {"recognitionEndpoint": "AI 服务地址或模型不可用，请联系管理员检查接入配置。已有信息未被修改。", "basicHint": "填写品牌、项目名称、视频目标、截止日期和目标受众。", "presetImage": "{{name}}的默认角色参考图", "presetHint": "AI 生成的默认参考图。可修改设定、上传自己的参考图，或删除整个角色。", "uploadCover": "上传封面", "recognizeShort": "识别填写", "recognitionTitle": "封面识别", "recognitionHint": "上传封面、封底或书腰照片后，可将最多 6 张、合计 20 MB 的照片发送给已配置的 AI，提取书名、作者、副标题、类型、卖点和简介。只填入空白字段，请核对结果。", "recognitionDisabled": "尚未配置封面识别服务；请手动填写书籍信息。", "recognitionImages": "请选择 1–6 张已上传的封面照片，每张最多 10 MB，合计不超过 20 MB。", "recognitionFailed": "识别失败。请稍后重试或手动填写，已有信息未被修改。", "recognize": "识别并填写空白字段", "recognizing": "正在识别封面…", "recognitionDone": "已填入识别到的资料，请核对并补充。未识别的信息保留为空。", "recognitionNoChange": "没有可自动填入的新资料。已有内容已保留，您可以手动补充。", "uploadFirst": "上传封面照片", "takePhoto": "拍摄封面照片", "preparingPhoto": "正在处理并上传照片…", "photoFormat": "当前类别不接受 JPG 或 PNG 照片，请联系管理员检查文件类别配置。", "photoSize": "照片压缩后仍超过大小限制，请选择较小的照片。", "photoUnreadable": "无法读取这张照片，请将相机格式设为 JPG 后重拍，或选择 JPG、PNG 图片上传。", "photoInterrupted_camera": "拍照期间页面重新加载，尚未收到照片。请从相册重新选择照片上传。", "photoInterrupted_processing": "处理照片时页面重新加载，上传已中断。请降低拍照分辨率后重试。", "photoInterrupted_uploading": "上传时页面重新加载。请先检查封面列表，未出现时再重新上传。", "photoTimeout": "照片处理超时，请重新选择照片或降低相机分辨率后再试。", "photoUploadFailed": "照片上传失败，请重试。"},
       app: { name: "Lifewood · Deseret Book", clientName: "Deseret Book", providerName: "Lifewood" },
       nav: {
@@ -146,6 +147,8 @@ const resources = {
         reload: "重新载入",
         close: "关闭",
         cancel: "取消",
+        confirmTitle: "确认操作",
+        confirmAction: "确认继续",
         back: "返回",
         continue: "保存并继续",
         loading: "正在加载…",
@@ -215,6 +218,13 @@ const resources = {
           notFound: "接口不存在。",
         },
       },
+      saveRecovery: {
+        title: "保存需要处理", retry: "重试保存", locate: "定位问题", loadLatest: "载入最新版本",
+        keptHint: "当前页面的输入已保留，请处理后再离开。", invalidHint: "点击定位问题，修正对应字段后将自动保存。",
+        replaceConfirm: "载入最新版本会替换当前页面尚未保存的修改。确定继续吗？",
+        changedWhileLoading: "加载期间你又修改了内容，仍要用服务器最新版本替换当前输入吗？",
+        reloadFailed: "未能载入最新版本，当前输入未被修改。",
+      },
       tasks: {
         title: "项目看板",
         subtitle: "管理图书视频需求采集与提交记录。",
@@ -222,6 +232,12 @@ const resources = {
         filters: { open: "筛选", keyword: "关键词", reset: "重置", apply: "应用筛选" },
         searchPlaceholder: "项目名、书名或作者",
         searchAction: "搜索",
+        listUx: {
+          sortLabel: "项目排序", sortOption: "{{column}} · {{direction}}", activeFilters: "已选筛选条件",
+          removeSearch: "移除关键词：{{value}}", removeStatus: "移除状态：{{value}}", clearAll: "清除筛选",
+          noResultsTitle: "没有符合条件的项目", noResultsDescription: "试试其他关键词，或清除筛选查看全部项目。",
+          noActionTitle: "暂时没有需要你处理的项目", noActionDescription: "可以查看全部项目，了解已提交项目的进展。",
+        },
         filterLabel: "项目状态",
         sort: {
           asc: "升序",
@@ -244,6 +260,8 @@ const resources = {
         continueEditing: "需求采集",
         view: "查看采集详情",
         deleteDraft: "删除草稿",
+        deleteDialogTitle: "删除这个草稿？",
+        deleteDialogDescription: "已填写的资料和上传的文件将永久删除，此操作无法撤销。",
         deletingDraft: "正在删除…",
         deleteDraftConfirm:
           "确定删除此草稿吗？已填写的资料和上传文件将永久删除。",
@@ -542,6 +560,7 @@ const resources = {
         fileLimit: "单个不超过 {{size}}，最多 {{count}} 个",
         chooseFiles: "选择文件",
         chooseFor: "为{{category}}选择文件",
+        waitingUpload: "等待上传…",
         uploading: "正在上传…",
         uploadCancelled: "上传已取消。",
         cancelUpload: "取消上传",
@@ -596,7 +615,8 @@ const resources = {
   },
   "en-US": {
     translation: {
-      clientUx: {"allSteps": "View all steps", "hideSteps": "Hide steps", "returnedStatus": "Changes or reply needed", "resubmit": "Resubmit brief", "backTo": "Back to {{unit}}", "revisionReviewHint": "Review the requested changes and your replies before resubmitting. You can explain why you want to keep the original brief without changing it.", "requestedUnits": "Please address", "returnReason": "Requested change", "openFeedback": "View feedback", "allProjects": "All projects", "actionRequired": "Needs my attention", "continueDraft": "Continue draft", "handleReturn": "Address feedback", "viewProgress": "View progress", "more": "More actions", "optionalBook": "Selling point & synopsis (optional)", "optionalFiles": "More materials (optional)", "recognizedFields": "Filled in: {{fields}}. Please review.", "searchOptions": "Search {{label}}", "noOptions": "No matching options", "selected": "Selected", "manuscriptOptional": "Manuscript or excerpt (optional)"},
+      clientUx: {
+        sendingReply: "Sending…","allSteps": "View all steps", "hideSteps": "Hide steps", "returnedStatus": "Changes or reply needed", "resubmit": "Resubmit brief", "backTo": "Back to {{unit}}", "revisionReviewHint": "Review the requested changes and your replies before resubmitting. You can explain why you want to keep the original brief without changing it.", "requestedUnits": "Please address", "returnReason": "Requested change", "openFeedback": "View feedback", "allProjects": "All projects", "actionRequired": "Needs my attention", "continueDraft": "Continue draft", "handleReturn": "Address feedback", "viewProgress": "View progress", "more": "More actions", "optionalBook": "Selling point & synopsis (optional)", "optionalFiles": "More materials (optional)", "recognizedFields": "Filled in: {{fields}}. Please review.", "searchOptions": "Search {{label}}", "noOptions": "No matching options", "selected": "Selected", "manuscriptOptional": "Manuscript or excerpt (optional)"},
       bookIntake: {"recognitionEndpoint": "The AI endpoint or model is unavailable. Please ask an administrator to check the provider settings. Existing information has not changed.", "basicHint": "Set the brand, project name, video goal, deadline and target audience.", "presetImage": "Default reference portrait for {{name}}", "presetHint": "AI-generated reference portrait. Edit the preset, upload your own reference images, or delete this character.", "uploadCover": "Upload cover", "recognizeShort": "Scan & fill", "recognitionTitle": "Cover recognition", "recognitionHint": "After uploading cover, back-cover or book-jacket photos, send up to 6 photos (20 MB total) to the configured AI to extract title, author, subtitle, genre, hook and synopsis. Only blank fields are filled. Please check the results.", "recognitionDisabled": "Cover recognition is not configured. Enter the book information manually.", "recognitionImages": "Choose 1–6 uploaded cover photos, up to 10 MB each and 20 MB in total.", "recognitionFailed": "Recognition failed. Try again later or enter the information manually. Existing information has been preserved.", "recognize": "Recognize and fill blank fields", "recognizing": "Recognizing cover…", "recognitionDone": "Recognized information has been filled in. Please review and complete it. Unreadable details remain blank.", "recognitionNoChange": "No new information could be filled in. Existing content was preserved; you can complete the fields manually.", "uploadFirst": "Go to 1.2 to upload cover photos", "takePhoto": "Take a cover photo", "preparingPhoto": "Processing and uploading photo…", "photoFormat": "This category does not accept JPG or PNG photos. Ask an administrator to check its file settings.", "photoSize": "The compressed photo still exceeds the size limit. Choose a smaller photo.", "photoUnreadable": "This photo could not be read. Set the camera format to JPG and retake it, or upload a JPG or PNG image.", "photoInterrupted_camera": "The page reloaded before receiving the photo. Please select it from your gallery to upload.", "photoInterrupted_processing": "The page reloaded while processing the photo. Try a lower camera resolution.", "photoInterrupted_uploading": "The page reloaded during upload. Check your covers before uploading again.", "photoTimeout": "Photo processing timed out. Select the photo again or try a lower camera resolution.", "photoUploadFailed": "Photo upload failed. Please try again."},
       app: { name: "Lifewood · Deseret Book", clientName: "Deseret Book", providerName: "Lifewood" },
       nav: {
@@ -733,6 +753,8 @@ const resources = {
         reload: "Reload",
         close: "Close",
         cancel: "Cancel",
+        confirmTitle: "Confirm action",
+        confirmAction: "Continue",
         back: "Back",
         continue: "Save and continue",
         loading: "Loading…",
@@ -810,6 +832,13 @@ const resources = {
           notFound: "The endpoint was not found.",
         },
       },
+      saveRecovery: {
+        title: "Saving needs attention", retry: "Retry saving", locate: "Locate issue", loadLatest: "Load latest version",
+        keptHint: "Your input is still on this page. Resolve the issue before leaving.", invalidHint: "Locate and correct the field to resume automatic saving.",
+        replaceConfirm: "Loading the latest version will replace your unsaved changes on this page. Continue?",
+        changedWhileLoading: "You made more changes while loading. Replace your current input with the latest server version?",
+        reloadFailed: "The latest version could not be loaded. Your input has not been changed.",
+      },
       tasks: {
         title: "Projects Dashboard",
         subtitle: "Manage book-to-video intakes and submitted project records.",
@@ -817,6 +846,12 @@ const resources = {
         filters: { open: "Filters", keyword: "Keyword", reset: "Reset", apply: "Apply filters" },
         searchPlaceholder: "Project, book, or author",
         searchAction: "Search",
+        listUx: {
+          sortLabel: "Sort projects", sortOption: "{{column}} · {{direction}}", activeFilters: "Active filters",
+          removeSearch: "Remove keyword: {{value}}", removeStatus: "Remove status: {{value}}", clearAll: "Clear filters",
+          noResultsTitle: "No matching projects", noResultsDescription: "Try another keyword or clear the filters to see all projects.",
+          noActionTitle: "Nothing needs your attention", noActionDescription: "View all projects to check the progress of your submissions.",
+        },
         filterLabel: "Project status",
         sort: {
           asc: "ascending",
@@ -839,6 +874,8 @@ const resources = {
         continueEditing: "Intake",
         view: "View intake details",
         deleteDraft: "Delete draft",
+        deleteDialogTitle: "Delete this draft?",
+        deleteDialogDescription: "All entered details and uploaded files will be permanently deleted. This cannot be undone.",
         deletingDraft: "Deleting…",
         deleteDraftConfirm:
           "Delete this draft? Its entered details and uploaded files will be permanently removed.",
@@ -1171,6 +1208,7 @@ const resources = {
         fileLimit: "Up to {{size}} each, maximum {{count}}",
         chooseFiles: "Choose files",
         chooseFor: "Choose files for {{category}}",
+        waitingUpload: "Waiting to upload…",
         uploading: "Uploading…",
         uploadCancelled: "Upload cancelled.",
         cancelUpload: "Cancel upload",
@@ -1275,3 +1313,10 @@ export function localizedPath(locale: SupportedLocale, path: string): string {
 }
 
 export { i18n };
+
+i18n.addResourceBundle("zh-CN", "translation", { errors: { validation: { optionRemoved: "保存期间有选项被管理员移除，请重新加载可用选项后再试。" } } }, true, true);
+i18n.addResourceBundle("en-US", "translation", { errors: { validation: { optionRemoved: "An option was removed while saving. Reload the available options and try again." } } }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", {"announcements": {"title": "公告", "history": "我的公告", "new": "新建公告", "edit": "编辑草稿", "copy": "复制为新公告", "publish": "发布", "withdraw": "下架", "draft": "草稿", "published": "已发布", "withdrawn": "已下架", "save": "保存草稿", "close": "关闭", "cancel": "取消", "search": "搜索公告标题", "empty": "暂无公告", "more": "加载更多", "end": "已显示全部公告", "retry": "重试", "loading": "正在加载…", "placement": "展示位置", "login": "登录前（公开）", "personal": "登录后（个人）", "audience": "发布范围", "all": "全部账号", "specified": "指定范围", "languages": "语言偏好", "organizations": "指定组织", "chooseOrgs": "选择组织", "clear": "清除", "scopeHint": "语言与组织同时选择时取交集；未设置语言偏好的账号按简体中文匹配。", "snapshotHint": "发布时确定收件账号，新注册账号不会收到旧公告。", "publicHint": "登录前公告公开可见，只能按页面语言筛选，不支持组织定向。", "titleZh": "中文标题", "bodyZh": "中文正文", "titleEn": "英文标题", "bodyEn": "英文正文", "startsAt": "开始时间（可选）", "endsAt": "结束时间（可选）", "preview": "预览", "recipients": "收件账号", "status": "状态", "actions": "操作", "publishConfirm": "按当前范围发布此公告？发布后正文与收件范围将锁定。", "withdrawConfirm": "下架此公告？客户将无法继续查看。", "invalid": "请检查双语标题、正文、发布范围及时间。", "conflict": "公告已被其他管理员更改，请刷新列表后重试。", "select": "选择", "selected": "已选择", "done": "完成选择", "unsaved": "放弃未保存的公告修改？", "dismiss": "关闭并不再提醒", "newNotices": "新公告", "readHistory": "查看历史公告", "recipientCount": "{{count}} 个账号", "refresh": "刷新", "noSelection": "尚未选择组织"}}, true, true);
+
+i18n.addResourceBundle("en-US", "translation", {"announcements": {"title": "Announcements", "history": "My announcements", "new": "New announcement", "edit": "Edit draft", "copy": "Copy as new", "publish": "Publish", "withdraw": "Withdraw", "draft": "Draft", "published": "Published", "withdrawn": "Withdrawn", "save": "Save draft", "close": "Close", "cancel": "Cancel", "search": "Search announcement titles", "empty": "No announcements", "more": "Load more", "end": "All announcements loaded", "retry": "Retry", "loading": "Loading…", "placement": "Display location", "login": "Before sign-in (public)", "personal": "After sign-in (personal)", "audience": "Audience", "all": "All accounts", "specified": "Selected audience", "languages": "Language preference", "organizations": "Organizations", "chooseOrgs": "Choose organizations", "clear": "Clear", "scopeHint": "Language and organization filters both apply. Accounts without a language preference match Simplified Chinese.", "snapshotHint": "Recipients are fixed at publication. New accounts do not receive older notices.", "publicHint": "Public notices can target the page language, not an organization.", "titleZh": "Chinese title", "bodyZh": "Chinese body", "titleEn": "English title", "bodyEn": "English body", "startsAt": "Start time (optional)", "endsAt": "End time (optional)", "preview": "Preview", "recipients": "Recipients", "status": "Status", "actions": "Actions", "publishConfirm": "Publish to this audience? Content and recipients will be locked.", "withdrawConfirm": "Withdraw this announcement? Customers will no longer see it.", "invalid": "Check both translations, audience and dates.", "conflict": "Another administrator changed this announcement. Refresh and try again.", "select": "Select", "selected": "Selected", "done": "Finish selection", "unsaved": "Discard unsaved announcement changes?", "dismiss": "Dismiss and do not remind again", "newNotices": "New announcements", "readHistory": "View announcement history", "recipientCount": "{{count}} accounts", "refresh": "Refresh", "noSelection": "No organizations selected"}}, true, true);

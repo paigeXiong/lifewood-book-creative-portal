@@ -48,3 +48,8 @@
   .option-form-grid { grid-template-columns: minmax(0, 1fr); }
   .form-option-modal .modal-title { gap: 8px; }
 }
+
+.option-table th:last-child { width: 210px; }
+.option-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.option-row-actions .option-remove { color: #a3342a; background: #fff1ee; }
+.option-status-filter { width: auto; max-width: 150px; }

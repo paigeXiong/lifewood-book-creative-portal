@@ -13,7 +13,8 @@ export function FinalDeliverySection({ projectId, locale }: { projectId: string;
     queryKey: ["project-deliveries", projectId, locale],
     queryFn: () => projectService.listDeliveries(projectId, locale),
     refetchOnWindowFocus: true,
-    refetchInterval: (query) => Array.isArray(query.state.data) && query.state.data.length > 0 ? false : 10_000,
+    // Published files can still be replaced or revoked while this page stays open.
+    refetchInterval: 10_000,
     refetchIntervalInBackground: false,
   });
   const date = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });

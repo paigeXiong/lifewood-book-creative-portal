@@ -1,4 +1,5 @@
 import type {
+  AdminCharacterPreset,
   AppErrorShape,
   BookRecognition,
   AuditEvent,
@@ -467,6 +468,15 @@ export const adminService = {
     request<AdminOrganization>("/admin/organizations", { method: "POST", body: JSON.stringify({ name }) }),
   updateOrganization: (id: string, value: { name: string; active: boolean }) =>
     request<AdminOrganization>(`/admin/organizations/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(value) }),
+  removeFileCategory: (item: AdminFileCategory) => request<void>(`/admin/file-categories/${encodeURIComponent(item.scope)}/${encodeURIComponent(item.id)}?expectedUpdatedAt=${encodeURIComponent(item.updatedAt ?? "")}`, { method: "DELETE" }),
+  removeCharacterPreset: (item: AdminCharacterPreset) => request<void>(`/admin/character-presets/${encodeURIComponent(item.id)}?expectedUpdatedAt=${encodeURIComponent(item.updatedAt ?? "")}`, { method: "DELETE" }),
+  removeVoiceReference: (item: AdminVoiceReference) => request<void>(`/admin/voices/${encodeURIComponent(item.id)}?expectedUpdatedAt=${encodeURIComponent(item.updatedAt ?? "")}`, { method: "DELETE" }),
+  listCharacterPresets: () => request<AdminCharacterPreset[]>("/admin/character-presets"),
+  saveCharacterPreset: (preset: AdminCharacterPreset) => request<AdminCharacterPreset>(`/admin/character-presets/${encodeURIComponent(preset.id)}`, { method: "PUT", body: JSON.stringify({ zhCn: preset.zhCn, enUs: preset.enUs, enabled: preset.enabled, sortOrder: preset.sortOrder, expectedUpdatedAt: preset.updatedAt }) }),
+  uploadCharacterPresetImage: (preset: AdminCharacterPreset, file: File) => {
+    const body = new FormData(); body.append("file", file); body.append("expectedUpdatedAt", preset.updatedAt ?? "");
+    return request<AdminCharacterPreset>(`/admin/character-presets/${encodeURIComponent(preset.id)}/image`, { method: "POST", body });
+  },
   listVoiceReferences: () => request<AdminVoiceReference[]>("/admin/voices"),
   listSupportedFileContentTypes: () => request<string[]>("/admin/file-content-types"),
   listFileCategories: (scope: "source" | "reference") => request<AdminFileCategory[]>(`/admin/file-categories/${scope}`),
@@ -476,6 +486,7 @@ export const adminService = {
   },
   listFormOptionGroups: (locale: SupportedLocale) => request<FormOptionSection[]>("/admin/form-option-groups", { locale }),
   listFormOptions: (groupId: string) => request<AdminFormOption[]>(`/admin/form-options/${encodeURIComponent(groupId)}`),
+  removeFormOption: (option: AdminFormOption) => request<void>(`/admin/form-options/${encodeURIComponent(option.groupId)}/${encodeURIComponent(option.id)}?expectedUpdatedAt=${encodeURIComponent(option.updatedAt ?? "")}`, { method: "DELETE" }),
   saveFormOption: (option: AdminFormOption) => {
     const { updatedAt, ...payload } = option;
     return request<AdminFormOption>(`/admin/form-options/${encodeURIComponent(option.groupId)}/${encodeURIComponent(option.id)}`, { method: "PUT", body: JSON.stringify({ ...payload, expectedUpdatedAt: updatedAt }) });
@@ -502,4 +513,13 @@ export const revisionService = {
   get: (id: string, locale: SupportedLocale, admin = false, page = 1) => request<RevisionView>(`/${admin ? "admin/" : ""}projects/${encodeURIComponent(id)}/revisions?page=${page}`, { locale }),
   returnProject: (id: string, version: number, reasons: RevisionReason[], locale: SupportedLocale, expectedWorkflowUpdatedAt: string) => request<RevisionView>(`/admin/projects/${encodeURIComponent(id)}/return`, { method: "POST", locale, body: JSON.stringify({version, reasons, expectedWorkflowUpdatedAt}) }),
   reply: (id: string, round: string, message: {id:string; unit:string; body:string}, locale: SupportedLocale, admin = false) => request<RevisionView>(`/${admin ? "admin/" : ""}projects/${encodeURIComponent(id)}/revisions/${encodeURIComponent(round)}/messages`, { method: "POST", locale, body: JSON.stringify(message) }),
+};
+
+export const announcementService = {
+  dismissMany: (ids: string[]) => request<void>("/announcements/dismiss", { method: "POST", body: JSON.stringify({ids}) }),
+  feed: (locale: SupportedLocale, before?: number, unread = false, publicOnly = false) => request<import("@lifewood/domain").AnnouncementFeed>(`/announcements${publicOnly ? "/public" : ""}?unread=${unread}${before ? `&before=${before}` : ""}`, { locale }),
+  dismiss: (id: string) => request<void>(`/announcements/${encodeURIComponent(id)}/dismiss`, { method: "POST" }),
+  list: (search: string, before?: number) => request<import("@lifewood/domain").AnnouncementPage>(`/admin/announcements?search=${encodeURIComponent(search)}${before ? `&before=${before}` : ""}`),
+  save: (id: string, content: import("@lifewood/domain").AnnouncementInput) => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}`, {method:"PUT", body:JSON.stringify(content)}),
+  transition: (id: string, version: number, action: "publish" | "withdraw") => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}/${action}`, {method:"POST",body:JSON.stringify({version})}),
 };

@@ -1,3 +1,5 @@
+import { useConfigRemoval } from "./useConfigRemoval";
+import { useConfirm } from "./useConfirm";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminService, localizedApiError } from "@lifewood/api-client";
@@ -30,25 +32,30 @@ export function FileCategoryConfigPage({ locale }: { locale: SupportedLocale }) 
       await queryClient.invalidateQueries({ queryKey: ["form-options"] });
     },
   });
+  const removal = useConfigRemoval(adminService.removeFileCategory, async () => {
+    await queryClient.invalidateQueries({ queryKey: ["admin-file-categories"] });
+    await queryClient.invalidateQueries({ queryKey: ["form-options"] });
+  });
   return <main className="content config-content">
     <SettingsTabs locale={locale} />
     <section className="page-toolbar">
-      <label className="config-group-picker"><span className="sr-only">{t("admin.fileCategories.scope")}</span><select value={scope} onChange={(event) => { setScope(event.target.value as Scope); setEditing(undefined); }}>
+      <label className="config-group-picker"><span className="sr-only">{t("admin.fileCategories.scope")}</span><select value={scope} onChange={(event) => { removal.reset(); setScope(event.target.value as Scope); setEditing(undefined); }}>
         <option value="source">{t("admin.fileCategories.scopes.source")}</option>
         <option value="reference">{t("admin.fileCategories.scopes.reference")}</option>
       </select></label>
       <span className="result-count">{t("admin.fileCategories.count", { count: categories.data?.length ?? 0 })}</span>
-      <button className="primary push-right" type="button" onClick={() => { save.reset(); setEditing(emptyCategory(scope)); }}>{t("admin.fileCategories.create")}</button>
+      <button className="primary push-right" type="button" disabled={removal.busy} onClick={() => { save.reset(); setEditing(emptyCategory(scope)); }}>{t("admin.fileCategories.create")}</button>
     </section>
     {categories.isError && <div className="message error" role="alert">{localizedApiError(categories.error, t)}</div>}
-    <section className="table-card"><table><thead><tr>
+    {removal.error && <div className="message error" role="alert">{localizedApiError(removal.error, t)}</div>}
+    <section className="table-card config-removable"><table><thead><tr>
       <th>{t("admin.fileCategories.category")}</th><th>{t("admin.fileCategories.constraints")}</th><th>{t("admin.fileCategories.order")}</th><th>{t("admin.fileCategories.status")}</th><th>{t("admin.fileCategories.action")}</th>
     </tr></thead><tbody>{categories.data?.map((category) => <tr key={category.id}>
       <td data-label={t("admin.fileCategories.category")}><div className="voice-config-name"><strong>{locale === "zh-CN" ? category.labelZhCn : category.labelEnUs}</strong><small translate="no">{category.id}</small></div></td>
       <td data-label={t("admin.fileCategories.constraints")}><div className="voice-config-name"><span>{t("admin.fileCategories.limitSummary", { size: category.maxBytes / 1_000_000, count: category.maxFiles })}</span><small translate="no">{category.accept.join(", ")}</small></div></td>
       <td className="numeric" data-label={t("admin.fileCategories.order")}>{category.sortOrder}</td>
       <td data-label={t("admin.fileCategories.status")}><span className={category.enabled ? "status active" : "status inactive"}>{t(category.enabled ? "admin.formOptions.enabled" : "admin.formOptions.disabled")}</span></td>
-      <td data-label={t("admin.fileCategories.action")}><button type="button" onClick={() => { save.reset(); setEditing({ ...category }); }}>{t("admin.formOptions.edit")}</button></td>
+      <td data-label={t("admin.fileCategories.action")}><div className="config-row-actions"><button type="button" disabled={removal.busy} onClick={() => { save.reset(); setEditing({ ...category }); }}>{t("admin.formOptions.edit")}</button><button type="button" className="config-delete" disabled={removal.busy} onClick={() => void removal.run(category, locale === "zh-CN" ? category.labelZhCn : category.labelEnUs)}>{t("admin.configRemoval.remove")}</button></div></td>
     </tr>)}</tbody></table>{!categories.isPending && !categories.data?.length && <div className="empty">{t("admin.fileCategories.empty")}</div>}</section>
     {editing && supportedTypes.data && <FileCategoryDialog supportedTypes={supportedTypes.data} category={editing} busy={save.isPending} error={save.error} onClose={() => { save.reset(); setEditing(undefined); }} onSave={(value) => save.mutate(value)} />}
   </main>;
@@ -56,9 +63,10 @@ export function FileCategoryConfigPage({ locale }: { locale: SupportedLocale }) 
 
 function FileCategoryDialog({ category, supportedTypes, busy, error, onClose, onSave }: { category: AdminFileCategory; supportedTypes: string[]; busy: boolean; error: unknown; onClose: () => void; onSave: (value: AdminFileCategory) => void }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const existing = Boolean(category.id);
   const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const accept = data.getAll("accept").map(String);
@@ -69,7 +77,7 @@ function FileCategoryDialog({ category, supportedTypes, busy, error, onClose, on
       allowsUrl: data.get("allowsUrl") === "on", required: category.scope === "source" && data.get("required") === "on",
       enabled: data.get("enabled") === "on", sortOrder: Number(data.get("sortOrder")),
     };
-    if (category.enabled && !value.enabled && !window.confirm(t("admin.fileCategories.disableConfirm"))) return;
+    if (category.enabled && !value.enabled && !await confirm(t("admin.fileCategories.disableConfirm"))) return;
     onSave(value);
   };
   return <ModalFrame labelledBy="file-category-title" busy={busy} onClose={requestClose}>

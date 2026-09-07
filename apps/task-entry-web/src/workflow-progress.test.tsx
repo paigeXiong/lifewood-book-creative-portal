@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { optionService, projectService } from "@lifewood/api-client";
+import { ApiError, optionService, projectService } from "@lifewood/api-client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { FormOptions, ReferenceAsset, TaskDraft } from "@lifewood/domain";
 import { i18n } from "@lifewood/i18n";
@@ -381,4 +381,185 @@ describe("workflow progress", () => {
     act(() => root.unmount());
     container.remove();
   });
+});
+
+describe("sequential upload queue", () => {
+ for (const locale of ["zh-CN", "en-US"] as const) {
+  for (const stage of ["project", "references"] as const) {
+   it(`cancels a waiting file and uploads the remaining files with the latest version (${stage}, ${locale})`, async () => {
+    await i18n.changeLanguage(locale);
+    const draft = completeDraft();
+    const category = { id: "upload-test", label: "Attachments", description: "PDF", accept: ["application/pdf"], maxBytes: 20000000, maxFiles: 4, required: true, allowsUrl: false };
+    const catalog: FormOptions = {
+     brands: [], videoGoals: [], audiences: [], genres: [], contentLanguages: [], videoDurations: [], publishingPlatforms: [],
+     taskStatuses: [], roleTypes: [], ageRanges: [], genders: [], visualStyles: [], moodTags: [], imageStyleTags: [], paceTags: [],
+     narrationTones: [], speechRates: [], voiceGenders: [], voiceAges: [], accents: [], voiceEmotions: [], voiceTags: [],
+     sourceCategories: stage === "project" ? [category] : [], referenceCategories: stage === "references" ? [category] : [],
+     maxSelectedVoices: 3, workflowStatuses: [], projectPriorities: [],
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
+    client.setQueryData(["project", draft.id], draft);
+    client.setQueryData(["form-options", locale], catalog);
+    type UploadResult = Awaited<ReturnType<typeof projectService.uploadAsset>>;
+    const pending: Array<(result: UploadResult) => void> = [];
+    const upload = vi.spyOn(projectService, "uploadAsset").mockImplementation(() => new Promise(resolve => pending.push(resolve)));
+    const save = vi.spyOn(projectService, "saveDraft").mockImplementation(async (_id, value) => ({ ...value, version: value.version + 1 }));
+    const c = document.createElement("div"); document.body.append(c); const root = createRoot(c);
+    const rows = () => [...c.querySelectorAll<HTMLLIElement>(".transfer-list li")];
+    const row = (name: string) => rows().find(item => item.querySelector("span")?.textContent === name)!;
+    const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); };
+    try {
+     await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/${draft.id}/edit/${stage}`]}><Routes><Route path="/:locale/tasks/:taskId/edit/:step" element={stage === "project" ? <ProjectFormPage/> : <VoiceAndReferencesPage stage="references"/>}/></Routes></MemoryRouter></QueryClientProvider>));
+     const input = c.querySelector<HTMLInputElement>(`#${stage === "project" ? "source-upload" : "upload"}-upload-test`)!;
+     const files = ["first.pdf", "cancel.pdf", "third.pdf"].map(name => new File(["pdf"], name, { type: "application/pdf" }));
+     Object.defineProperty(input, "files", { configurable: true, value: files });
+     await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); await settle(); });
+     expect(upload).toHaveBeenCalledTimes(1);
+     expect(row("first.pdf").querySelector("small")!.textContent).toBe(i18n.t("voice.uploading"));
+     expect(row("cancel.pdf").querySelector("small")!.textContent).toBe(locale === "zh-CN" ? "等待上传…" : "Waiting to upload…");
+     await act(async () => row("cancel.pdf").querySelector<HTMLButtonElement>("button")!.click());
+     expect(row("cancel.pdf")).toBeUndefined();
+     expect(upload.mock.calls[0][5]!.aborted).toBe(false);
+     const first = { ...asset(category.id), id: "first", fileName: "first.pdf" };
+     const firstDraft = { ...draft, version: 2, book: { ...draft.book, sourceAssets: [...draft.book.sourceAssets, ...(stage === "project" ? [first] : [])] }, voiceAndReferences: { ...draft.voiceAndReferences, assets: stage === "references" ? [first] : [] } };
+     await act(async () => { pending[0]({ asset: first, draft: firstDraft }); await settle(); });
+     expect(upload).toHaveBeenCalledTimes(2);
+     expect(upload.mock.calls[1][3].name).toBe("third.pdf");
+     expect(upload.mock.calls[1][1]).toBe(2);
+     expect(row("third.pdf").querySelector("small")!.textContent).toBe(i18n.t("voice.uploading"));
+     const third = { ...first, id: "third", fileName: "third.pdf" };
+     const finalDraft = { ...firstDraft, version: 3, book: { ...firstDraft.book, sourceAssets: [...firstDraft.book.sourceAssets, ...(stage === "project" ? [third] : [])] }, voiceAndReferences: { ...firstDraft.voiceAndReferences, assets: stage === "references" ? [first, third] : [] } };
+     await act(async () => { pending[1]({ asset: third, draft: finalDraft }); await settle(); });
+     expect(rows()).toHaveLength(0);
+     expect(upload.mock.calls.map(call => call[3].name)).toEqual(["first.pdf", "third.pdf"]);
+    } finally {
+     await act(async () => root.unmount()); c.remove(); client.clear(); upload.mockRestore(); save.mockRestore();
+    }
+   });
+  }
+ }
+});
+
+describe("unsaved form protection after a failed background refresh", () => {
+  it.each(["project", "characters", "voice"] as const)("retains dirty protection on the %s error screen", async stage => {
+    await i18n.changeLanguage("zh-CN");
+    const locale = "zh-CN";
+        const catalog: FormOptions = {
+          brands: [], videoGoals: [], audiences: [], genres: [], contentLanguages: [], videoDurations: [], publishingPlatforms: [],
+          taskStatuses: [], roleTypes: [], ageRanges: [], genders: [], visualStyles: [], moodTags: [{ id: "warm", label: "Warm" }], imageStyleTags: [], paceTags: [],
+          narrationTones: [], speechRates: [], voiceGenders: [], voiceAges: [], accents: [], voiceEmotions: [], voiceTags: [],
+          sourceCategories: [], referenceCategories: [], maxSelectedVoices: 3, workflowStatuses: [], projectPriorities: [],
+        };
+    const draft = completeDraft();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(["project", draft.id], draft);
+    client.setQueryData(["form-options", locale], catalog);
+    client.setQueryData(["voices", locale], []);
+    const read = vi.spyOn(optionService, "getFormOptions").mockRejectedValue(new Error("offline"));
+    const saveProject = vi.spyOn(projectService, "saveDraft").mockImplementation(() => new Promise(() => {}));
+    const saveCreative = vi.spyOn(projectService, "saveCreative").mockImplementation(() => new Promise(() => {}));
+    const saveVoice = vi.spyOn(projectService, "saveVoiceAndReferences").mockImplementation(() => new Promise(() => {}));
+    const c = document.createElement("div"); document.body.append(c); const root = createRoot(c);
+    try {
+      const element = stage === "project" ? <ProjectFormPage/> : stage === "characters" ? <CreativeFormPage stage="characters"/> : <VoiceAndReferencesPage stage="voice"/>;
+      await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/${draft.id}/edit/${stage}`]}><Routes><Route path="/:locale/tasks/:taskId/edit/:stage" element={element}/></Routes></MemoryRouter></QueryClientProvider>));
+      const input = c.querySelector<HTMLInputElement | HTMLTextAreaElement>(stage === "project" ? "#title" : stage === "characters" ? '[id^="characterName-"]' : "#pronunciation-notes")!;
+      await act(async () => { Object.getOwnPropertyDescriptor(input.tagName === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype, "value")!.set!.call(input,"Unsaved change"); input.dispatchEvent(new Event("input",{bubbles:true})); });
+      expect(document.body.dataset.unsavedChanges).toBe("true");
+      await act(async () => { await client.invalidateQueries({queryKey:["form-options",locale]}); await new Promise(resolve => setTimeout(resolve, 20)); });
+      expect(read).toHaveBeenCalled();
+      expect(c.querySelector("form")).toBeNull();
+      expect(document.body.dataset.unsavedChanges).toBe("true");
+      const event = new Event("beforeunload", {cancelable:true}); window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    } finally { await act(async () => root.unmount()); c.remove(); client.clear(); read.mockRestore(); saveProject.mockRestore(); saveCreative.mockRestore(); saveVoice.mockRestore(); }
+  });
+});
+
+
+describe("save recovery actions", () => {
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    it.each(["project", "characters", "voice"] as const)(`retains input and recovers failed saves on %s (${locale})`, async stage => {
+      await i18n.changeLanguage(locale); vi.useFakeTimers();
+        const catalog: FormOptions = {
+          brands: [], videoGoals: [], audiences: [], genres: [], contentLanguages: [], videoDurations: [], publishingPlatforms: [],
+          taskStatuses: [], roleTypes: [], ageRanges: [], genders: [], visualStyles: [], moodTags: [{ id: "warm", label: "Warm" }], imageStyleTags: [], paceTags: [],
+          narrationTones: [], speechRates: [], voiceGenders: [], voiceAges: [], accents: [], voiceEmotions: [], voiceTags: [],
+          sourceCategories: [], referenceCategories: [], maxSelectedVoices: 3, workflowStatuses: [], projectPriorities: [],
+        };
+      const draft = completeDraft();
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
+      client.setQueryData(["project", draft.id], draft); client.setQueryData(["form-options", locale], catalog); client.setQueryData(["voices", locale], []);
+      let fail = true;
+      const save = vi.spyOn(projectService, stage === "project" ? "saveDraft" : stage === "characters" ? "saveCreative" : "saveVoiceAndReferences").mockImplementation(async (...args) => {
+        const payload = args[1];
+        if (fail) throw new Error("offline");
+        return { ...payload, version: payload.version + 1 };
+      });
+      const c = document.createElement("div"); document.body.append(c); const root = createRoot(c);
+      const show = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
+      const close = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+      Object.defineProperty(HTMLDialogElement.prototype,"showModal",{configurable:true,value:function(){this.open=true;}});
+      Object.defineProperty(HTMLDialogElement.prototype,"close",{configurable:true,value:function(){this.open=false;}});
+      const selector = stage === "project" ? "#title" : stage === "characters" ? '[id^="characterName-"]' : "#pronunciation-notes";
+      const input = () => c.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
+      const edit = async (value: string) => {
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(input().tagName === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,"value")!.set!.call(input(),value);
+          input().dispatchEvent(new Event("input",{bubbles:true}));
+          await vi.advanceTimersByTimeAsync(1);
+        });
+        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      };
+      const action = () => c.querySelector<HTMLButtonElement>(".save-feedback button")!;
+      const confirm = async () => { await act(async () => { [...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(b=>b.textContent===i18n.t("common.confirmAction"))!.click(); await vi.advanceTimersByTimeAsync(10); }); };
+      try {
+        const element = stage === "project" ? <ProjectFormPage/> : stage === "characters" ? <CreativeFormPage stage="characters"/> : <VoiceAndReferencesPage stage="voice"/>;
+        await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/${draft.id}/edit/${stage}`]}><Routes><Route path="/:locale/tasks/:taskId/edit/:stage" element={element}/></Routes></MemoryRouter></QueryClientProvider>));
+        await edit("Local edit");
+        expect(save).toHaveBeenCalledTimes(1); expect(input().value).toBe("Local edit");
+        expect(action().textContent).toBe(i18n.t("saveRecovery.retry"));
+        fail=false;
+        await act(async()=>{action().click(); await vi.advanceTimersByTimeAsync(10);});
+        expect(save).toHaveBeenCalledTimes(2); expect(c.querySelector(".save-feedback")).toBeNull();
+        save.mockRejectedValue(new ApiError({ retryable:false, code:"project.version_conflict", messageKey:"errors.project.versionConflict" }));
+        await edit("Conflict edit");
+        expect(action().textContent).toBe(i18n.t("saveRecovery.loadLatest"));
+        const count=save.mock.calls.length;
+        await edit("Keep my latest edit"); expect(save).toHaveBeenCalledTimes(count);
+        if (stage === "characters") {
+          await act(async()=>client.setQueryData(["project",draft.id],{...draft,version:8}));
+          const remove=[...c.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent===i18n.t("creative.delete"));
+          expect(remove).toBeDefined();
+          await act(async()=>remove!.click()); await confirm();
+          expect(save).toHaveBeenCalledTimes(count);
+          expect(input().value).toBe("Keep my latest edit");
+        }
+        const read=vi.spyOn(projectService,"getProject").mockRejectedValue(new Error("offline"));
+        await act(async()=>action().click()); await confirm();
+        expect(input().value).toBe("Keep my latest edit");
+        expect(c.textContent).toContain(i18n.t("saveRecovery.reloadFailed"));
+        let resolve!: (draft: TaskDraft)=>void;
+        read.mockImplementation(()=>new Promise(done=>{resolve=done;}));
+        await act(async()=>action().click()); await confirm();
+        expect(input().value).toBe("Keep my latest edit");
+        const latest={...draft,version:9};
+        await edit("Edited while loading");
+        await act(async()=>{resolve(latest); await vi.advanceTimersByTimeAsync(10);});
+        expect(document.querySelector("dialog")!.textContent).toContain(i18n.t("saveRecovery.changedWhileLoading"));
+        await act(async()=>{[...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(b=>b.textContent===i18n.t("common.cancel"))!.click(); await vi.advanceTimersByTimeAsync(10);});
+        expect(input().value).toBe("Edited while loading");
+        await act(async()=>action().click()); await confirm();
+        await act(async()=>{resolve(latest); await vi.advanceTimersByTimeAsync(10);});
+        expect(input().value).toBe(stage==="project"?"Book":stage==="characters"?"Mara":"");
+        expect(c.querySelector(".save-feedback")).toBeNull();
+        save.mockImplementation(async (...args)=>({...args[1],version:args[1].version+1}));
+        await edit("After reload"); expect(save.mock.calls.at(-1)![1].version).toBe(9);
+      } finally {
+        await act(async()=>root.unmount()); c.remove(); client.clear(); vi.restoreAllMocks(); vi.useRealTimers();
+        if(show)Object.defineProperty(HTMLDialogElement.prototype,"showModal",show);else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+        if(close)Object.defineProperty(HTMLDialogElement.prototype,"close",close);else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close;
+      }
+    });
+  }
 });

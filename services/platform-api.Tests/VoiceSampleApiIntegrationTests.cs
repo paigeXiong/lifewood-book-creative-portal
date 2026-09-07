@@ -1059,6 +1059,162 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         Assert.Equal(3,history.Rounds[0].Messages.Length);
     }
 
+    [Fact]
+    public async Task CharacterPresetConfigurationEnforcesPermissionsAndKeepsHistoricalImages()
+    {
+        await BootstrapOwner(); var csrf=await GetCsrf(ownerClient);
+        using var customer=await CreateCustomerClient(csrf);
+        Assert.Equal(HttpStatusCode.Forbidden,(await customer.GetAsync("/api/admin/character-presets")).StatusCode);
+        var preset=(await ownerClient.GetFromJsonAsync<AdminCharacterPresetDto[]>("/api/admin/character-presets"))![0];
+        var request=new UpsertCharacterPresetRequest(preset.ZhCn with{Name="配置角色"},preset.EnUs with{Name="Configured hero"},true,999,preset.UpdatedAt);
+        Assert.Equal(HttpStatusCode.BadRequest,(await ownerClient.PutAsJsonAsync("/api/admin/character-presets/"+preset.Id,request)).StatusCode);
+        using var savedResponse=await Send(ownerClient,HttpMethod.Put,"/api/admin/character-presets/"+preset.Id,csrf,JsonContent.Create(request));
+        Assert.Equal(HttpStatusCode.OK,savedResponse.StatusCode);
+        var saved=(await savedResponse.Content.ReadFromJsonAsync<AdminCharacterPresetDto>())!;
+        Assert.Equal(HttpStatusCode.Conflict,(await Send(ownerClient,HttpMethod.Put,"/api/admin/character-presets/"+preset.Id,csrf,JsonContent.Create(request))).StatusCode);
+        var png=Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        MultipartFormDataContent Image(string version, byte[] bytes) {var body=new MultipartFormDataContent();body.Add(new StringContent(version),"expectedUpdatedAt");var file=new ByteArrayContent(bytes);file.Headers.ContentType=new MediaTypeHeaderValue("image/png");body.Add(file,"file","portrait.png");return body;}
+        using var invalid=await Send(ownerClient,HttpMethod.Post,$"/api/admin/character-presets/{preset.Id}/image",csrf,Image(saved.UpdatedAt!,[1,2,3]));
+        Assert.Equal(HttpStatusCode.BadRequest,invalid.StatusCode);
+        using var uploaded=await Send(ownerClient,HttpMethod.Post,$"/api/admin/character-presets/{preset.Id}/image",csrf,Image(saved.UpdatedAt!,png));
+        Assert.Equal(HttpStatusCode.OK,uploaded.StatusCode); var first=(await uploaded.Content.ReadFromJsonAsync<AdminCharacterPresetDto>())!;
+        using var created=await Send(ownerClient,HttpMethod.Post,"/api/projects?locale=en-US",csrf);
+        Assert.Equal(HttpStatusCode.OK,created.StatusCode);var draft=(await created.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        Assert.Equal(first.ImageUrl,draft.Creative.Characters.Single(c=>c.PresetId==preset.Id).PresetImageUrl);
+        using var replaced=await Send(ownerClient,HttpMethod.Post,$"/api/admin/character-presets/{preset.Id}/image",csrf,Image(first.UpdatedAt!,png));
+        Assert.Equal(HttpStatusCode.OK,replaced.StatusCode); var second=(await replaced.Content.ReadFromJsonAsync<AdminCharacterPresetDto>())!;
+        Assert.NotEqual(first.ImageUrl,second.ImageUrl);
+        Assert.Equal(png,await customer.GetByteArrayAsync(first.ImageUrl));
+        var old=(await ownerClient.GetFromJsonAsync<TaskDraftDto>($"/api/projects/{draft.Id}"))!;
+        Assert.Equal(first.ImageUrl,old.Creative.Characters.Single(c=>c.PresetId==preset.Id).PresetImageUrl);
+        using var forbidden=await Send(customer,HttpMethod.Post,$"/api/admin/character-presets/{preset.Id}/image",await GetCsrf(customer),Image(second.UpdatedAt!,png));
+        Assert.Equal(HttpStatusCode.Forbidden,forbidden.StatusCode);
+    }
+
+    [Fact]
+    public async Task FormOptionDeletionRequiresPermissionCsrfAndCurrentVersion()
+    {
+        await BootstrapOwner();var csrf=await GetCsrf(ownerClient);
+        using var customer=await CreateCustomerClient(csrf);
+        var body=new UpsertFormOptionRequest("待删除","Remove me",null,null,null,null,true,500);
+        using var create=await Send(ownerClient,HttpMethod.Put,"/api/admin/form-options/video-goals/removal-test",csrf,JsonContent.Create(body));
+        Assert.Equal(HttpStatusCode.OK,create.StatusCode);var option=(await create.Content.ReadFromJsonAsync<AdminFormOptionDto>())!;
+        var url="/api/admin/form-options/video-goals/removal-test?expectedUpdatedAt="+Uri.EscapeDataString(option.UpdatedAt.ToString("O"));
+        Assert.Equal(HttpStatusCode.Forbidden,(await Send(customer,HttpMethod.Delete,url,await GetCsrf(customer))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,(await ownerClient.DeleteAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,(await Send(ownerClient,HttpMethod.Delete,"/api/admin/form-options/video-goals/removal-test",csrf)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,(await Send(ownerClient,HttpMethod.Delete,url,csrf)).StatusCode);
+        Assert.DoesNotContain((await ownerClient.GetFromJsonAsync<AdminFormOptionDto[]>("/api/admin/form-options/video-goals"))!,x=>x.Id==option.Id);
+        var role=(await ownerClient.GetFromJsonAsync<AdminFormOptionDto[]>("/api/admin/form-options/role-types"))!.Single(x=>x.Id=="protagonist");
+        using var referenced=await Send(ownerClient,HttpMethod.Delete,"/api/admin/form-options/role-types/protagonist?expectedUpdatedAt="+Uri.EscapeDataString(role.UpdatedAt.ToString("O")),csrf);
+        Assert.Equal(HttpStatusCode.Conflict,referenced.StatusCode);Assert.Equal("config.referenced",await ErrorCode(referenced));
+    }
+
+    [Theory]
+    [InlineData("/api/admin/file-categories/source")]
+    [InlineData("/api/admin/character-presets")]
+    [InlineData("/api/admin/voices")]
+    public async Task ConfigurationDeletionEnforcesPermissionCsrfVersionAndAudit(string collection)
+    {
+        await BootstrapOwner(); var csrf = await GetCsrf(ownerClient);
+        using var customer = await CreateCustomerClient(csrf);
+        using var document = JsonDocument.Parse(await ownerClient.GetStringAsync(collection));
+        var item = document.RootElement[0]; var id = item.GetProperty("id").GetString();
+        var path = collection + "/" + id;
+        var url = path + "?expectedUpdatedAt=" + Uri.EscapeDataString(item.GetProperty("updatedAt").GetString()!);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(customer, HttpMethod.Delete, url, await GetCsrf(customer))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await ownerClient.DeleteAsync(url)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(ownerClient, HttpMethod.Delete, path, csrf)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(ownerClient, HttpMethod.Delete, url, csrf)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(ownerClient, HttpMethod.Delete, url, csrf)).StatusCode);
+        using var updated = JsonDocument.Parse(await ownerClient.GetStringAsync(collection));
+        Assert.DoesNotContain(updated.RootElement.EnumerateArray(), x => x.GetProperty("id").GetString() == id);
+        using var db = new SqliteConnection("Data Source=" + Path.Combine(root, "platform.db")); db.Open();
+        using var command = db.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM audit_events WHERE action_id=$action";
+        command.Parameters.AddWithValue("$action", collection.EndsWith("source") ? "file_category.remove" : collection.EndsWith("voices") ? "voice.remove" : "preset.remove");
+        Assert.Equal(1, Convert.ToInt32(command.ExecuteScalar()));
+    }
+
+    [Fact]
+    public async Task CustomerJourneyFromDraftThroughRevisionToFinalDownload()
+    {
+        await BootstrapOwner(); var adminCsrf = await GetCsrf(ownerClient);
+        using var customer = await CreateCustomerClient(adminCsrf); var csrf = await GetCsrf(customer);
+        var options = (await customer.GetFromJsonAsync<FormOptionsDto>("/api/form-options"))!;
+        using var created = await Send(customer, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var draft = (await created.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        var route = $"/api/projects/{draft.Id}";
+        async Task Refresh() => draft = (await customer.GetFromJsonAsync<TaskDraftDto>(route))!;
+        async Task Write(string endpoint, object payload)
+        {
+            using var result = await Send(customer, HttpMethod.Put, route + endpoint, csrf, JsonContent.Create(payload));
+            Assert.True(result.IsSuccessStatusCode, await result.Content.ReadAsStringAsync()); await Refresh();
+        }
+        await Write("/draft", new SaveDraftRequest(draft.Version,
+            draft.Project with { ClientName = "Customer", ContactName = "Customer", Email = "customer@example.test", ProjectName = "Journey test", VideoGoalId = options.VideoGoals[0].Id, AudienceIds = [options.Audiences[0].Id] },
+            draft.Book with { Title = "Journey book", AuthorName = "Author", GenreId = options.Genres[0].Id, ContentLanguageId = options.ContentLanguages[0].Id, VideoDurationId = options.VideoDurations[0].Id }));
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        using (var cover = ReferenceRequest(png, "cover.png", "image/png", draft.Version, "book-cover"))
+        using (var uploaded = await Send(customer, HttpMethod.Post, route + "/files?categoryId=book-cover", csrf, cover))
+            Assert.True(uploaded.IsSuccessStatusCode, await uploaded.Content.ReadAsStringAsync());
+        await Refresh();
+        await Write("/creative", new SaveCreativeRequest(draft.Version, draft.Creative with { VisualStyleId = options.VisualStyles[0].Id }));
+        await Write("/voice-and-references", new SaveVoiceAndReferencesRequest(draft.Version, draft.VoiceAndReferences with {
+            Voiceover = draft.VoiceAndReferences.Voiceover with { NarrationEnabled = false },
+            CreativeDirection = draft.VoiceAndReferences.CreativeDirection with { CoreMessage = "A story about discovery" }
+        }));
+        async Task Submit()
+        {
+            using var validation = await Send(customer, HttpMethod.Post, route + "/validate", csrf, JsonContent.Create(new { version = draft.Version }));
+            var result = (await validation.Content.ReadFromJsonAsync<ValidationResultDto>())!;
+            Assert.Empty(result.FieldErrors);
+            using var submitted = await Send(customer, HttpMethod.Post, route + "/submit", csrf, JsonContent.Create(new { version = draft.Version, idempotencyKey = Guid.NewGuid().ToString("N") }));
+            Assert.True(submitted.IsSuccessStatusCode, await submitted.Content.ReadAsStringAsync()); await Refresh();
+        }
+        await Submit(); Assert.Equal("submitted", draft.Status);
+        var detail = (await ownerClient.GetFromJsonAsync<AdminProjectDetailDto>($"/api/admin/projects/{draft.Id}"))!;
+        using var returned = await Send(ownerClient, HttpMethod.Post, $"/api/admin/projects/{draft.Id}/return", adminCsrf,
+            JsonContent.Create(new { version = draft.Version, expectedWorkflowUpdatedAt = detail.WorkflowUpdatedAt, reasons = new[] { new { unit = "project", body = "Please clarify the subtitle" } } }));
+        Assert.True(returned.IsSuccessStatusCode, await returned.Content.ReadAsStringAsync()); await Refresh();
+        await Write("/draft", new SaveDraftRequest(draft.Version, draft.Project, draft.Book with { Subtitle = "Clarified after review" }));
+        var view = (await customer.GetFromJsonAsync<Lifewood.PlatformApi.Features.RevisionView>(route + "/revisions"))!;
+        var round = Assert.Single(view.Rounds);
+        using var reply = await Send(customer, HttpMethod.Post, route + $"/revisions/{round.Id}/messages", csrf,
+            JsonContent.Create(new { id = Guid.NewGuid().ToString("N"), unit = "project", body = "Subtitle updated" }));
+        Assert.Equal(HttpStatusCode.OK, reply.StatusCode); await Refresh(); await Submit();
+        var video = MinimalMp4(); using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(video); file.Headers.ContentType = new MediaTypeHeaderValue("video/mp4"); content.Add(file, "file", "final.mp4");
+        using var published = await Send(ownerClient, HttpMethod.Post, $"/api/admin/projects/{draft.Id}/deliveries", adminCsrf, content);
+        Assert.True(published.IsSuccessStatusCode, await published.Content.ReadAsStringAsync());
+        using var delivery = JsonDocument.Parse(await published.Content.ReadAsStringAsync());
+        var deliveryId = delivery.RootElement.GetProperty("id").GetString();
+        using var download = await customer.GetAsync(route + $"/deliveries/{deliveryId}/file");
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode); Assert.Equal(video, await download.Content.ReadAsByteArrayAsync());
+        var history = (await ownerClient.GetFromJsonAsync<Lifewood.PlatformApi.Features.RevisionView>($"/api/admin/projects/{draft.Id}/revisions"))!;
+        Assert.NotNull(Assert.Single(history.Rounds).AfterSnapshot);
+        Assert.Equal("Clarified after review", draft.Book.Subtitle);
+    }
+
+    [Fact]
+    public async Task AnnouncementPublicationRequiresAdminAndDismissalBelongsToAccount()
+    {
+        await BootstrapOwner();var csrf=await GetCsrf(ownerClient);using var customer=await CreateCustomerClient(csrf);var customerCsrf=await GetCsrf(customer);
+        var id=Guid.NewGuid().ToString("N");var input=new AnnouncementInput("公告","正文","Notice","Body","personal","all",[],[],null,null);
+        Assert.Equal(HttpStatusCode.Forbidden,(await Send(customer,HttpMethod.Put,"/api/admin/announcements/"+id,customerCsrf,JsonContent.Create(input))).StatusCode);
+        var saved=await Send(ownerClient,HttpMethod.Put,"/api/admin/announcements/"+id,csrf,JsonContent.Create(input));Assert.Equal(HttpStatusCode.OK,saved.StatusCode);
+        var d=await saved.Content.ReadFromJsonAsync<AnnouncementDocument>();
+        Assert.Equal(HttpStatusCode.OK,(await Send(ownerClient,HttpMethod.Post,"/api/admin/announcements/"+id+"/publish",csrf,JsonContent.Create(new AnnouncementVersion(d!.Version)))).StatusCode);
+        using var anonymous=factory.CreateClient();Assert.Equal(HttpStatusCode.Unauthorized,(await anonymous.GetAsync("/api/announcements")).StatusCode);
+        Assert.Empty((await anonymous.GetFromJsonAsync<AnnouncementFeed>("/api/announcements/public"))!.Items);
+        Assert.Single((await customer.GetFromJsonAsync<AnnouncementFeed>("/api/announcements?unread=true"))!.Items);
+        Assert.Equal(HttpStatusCode.NoContent,(await Send(customer,HttpMethod.Post,"/api/announcements/"+id+"/dismiss",customerCsrf)).StatusCode);
+        Assert.Empty((await customer.GetFromJsonAsync<AnnouncementFeed>("/api/announcements?unread=true"))!.Items);
+        Assert.Single((await customer.GetFromJsonAsync<AnnouncementFeed>("/api/announcements"))!.Items);
+        Assert.Single((await ownerClient.GetFromJsonAsync<AnnouncementFeed>("/api/announcements?unread=true"))!.Items);
+    }
+
     private async Task BootstrapOwner()
     {
         var csrf = await GetCsrf(ownerClient);

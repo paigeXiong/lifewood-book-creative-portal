@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useConfirm } from "./useConfirm";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminService, localizedApiError } from "@lifewood/api-client";
@@ -17,6 +18,9 @@ function emptyOption(groupId: string): AdminFormOption {
 export function FormOptionConfigPage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const actionLock = useRef(false);
+  const [working, setWorking] = useState(false);
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -58,6 +62,25 @@ export function FormOptionConfigPage({ locale }: { locale: SupportedLocale }) {
       ]);
     },
   });
+  const filter = params.get("status") === "disabled" ? "disabled" : params.get("status") === "all" ? "all" : "enabled";
+  const visibleOptions = (options.data ?? []).filter(option => filter === "all" || option.enabled === (filter === "enabled"));
+  const action = useMutation({
+    mutationFn: async ({ option, remove }: { option: AdminFormOption; remove: boolean }) => { if(remove) await adminService.removeFormOption(option); else await adminService.saveFormOption({ ...option, enabled: !option.enabled }); },
+    onSuccess: async (_result, { option, remove }) => {
+      showAdminToast(t(remove ? "admin.formOptions.removed" : "admin.feedback.optionSaved"));
+      await Promise.all([queryClient.invalidateQueries({queryKey:["admin-form-options",option.groupId]}),queryClient.invalidateQueries({queryKey:["form-options"]})]);
+    },
+  });
+  const runAction = async (option: AdminFormOption, remove: boolean) => {
+    if(actionLock.current)return;
+    actionLock.current=true;setWorking(true);action.reset();
+    try {
+      const name=locale==="zh-CN"?option.labelZhCn:option.labelEnUs;
+      if ((remove || option.enabled) && !await confirm(t(remove?"admin.formOptions.removeConfirm":"admin.formOptions.stopConfirm",{name})))return;
+      await action.mutateAsync({option,remove});
+    } catch { await queryClient.invalidateQueries({queryKey:["admin-form-options",option.groupId]}); }
+    finally {actionLock.current=false;setWorking(false);}
+  };
   const primaryLabel = t(locale === "zh-CN" ? "admin.formOptions.labelZh" : "admin.formOptions.labelEn");
   const secondaryLabel = t(locale === "zh-CN" ? "admin.formOptions.labelEn" : "admin.formOptions.labelZh");
   return <main className="content config-content form-options-content">
@@ -92,22 +115,26 @@ export function FormOptionConfigPage({ locale }: { locale: SupportedLocale }) {
       <section className="option-results" aria-label={selected?.label}>
         <div className="page-toolbar option-toolbar">
           <div className="option-context"><span>{section?.label}</span><strong>{selected?.label}</strong></div>
-          {options.isSuccess && <span className="result-count">{t("admin.formOptions.count", { count: options.data.length })}</span>}
-          <button className="primary push-right" type="button" disabled={!groupId || !options.isSuccess} onClick={() => { save.reset(); setEditing(emptyOption(groupId)); }}>{t("admin.formOptions.create")}</button>
+          {options.isSuccess && <span className="result-count">{t("admin.formOptions.count", { count: visibleOptions.length })}</span>}
+          <select className="option-status-filter" aria-label={t("admin.formOptions.statusFilter")} value={filter} onChange={event=>setParams(previous=>{const next=new URLSearchParams(previous);if(event.target.value==="enabled")next.delete("status");else next.set("status",event.target.value);return next;})}>
+            <option value="enabled">{t("admin.formOptions.enabled")}</option><option value="disabled">{t("admin.formOptions.disabled")}</option><option value="all">{t("admin.formOptions.allStatuses")}</option>
+          </select>
+          <button className="primary push-right" type="button" disabled={working || !groupId || !options.isSuccess} onClick={() => { save.reset(); setEditing(emptyOption(groupId)); }}>{t("admin.formOptions.create")}</button>
         </div>
         {options.isError && <div className="message error" role="alert">{localizedApiError(options.error, t)} <button type="button" onClick={() => void options.refetch()}>{t("admin.formOptions.retry")}</button></div>}
+        {action.isError && action.variables?.option.groupId === groupId && <div className="message error" role="alert">{localizedApiError(action.error,t)}</div>}
         <div className="table-card option-table" aria-busy={options.isFetching}>
           <table><thead><tr><th>{primaryLabel}</th><th>{secondaryLabel}</th><th>{t("admin.formOptions.order")}</th><th>{t("admin.formOptions.status")}</th><th>{t("admin.formOptions.action")}</th></tr></thead>
-            <tbody>{options.data?.map(option => <tr key={option.id}>
+            <tbody>{visibleOptions.map(option => <tr key={option.id}>
               <td data-label={primaryLabel}><strong>{locale === "zh-CN" ? option.labelZhCn : option.labelEnUs}</strong></td>
               <td data-label={secondaryLabel}>{locale === "zh-CN" ? option.labelEnUs : option.labelZhCn}</td>
               <td className="numeric" data-label={t("admin.formOptions.order")}>{option.sortOrder}</td>
               <td data-label={t("admin.formOptions.status")}><span className={option.enabled ? "status active" : "status inactive"}>{t(option.enabled ? "admin.formOptions.enabled" : "admin.formOptions.disabled")}</span></td>
-              <td data-label={t("admin.formOptions.action")}><button type="button" onClick={() => { save.reset(); setEditing({ ...option }); }}>{t("admin.formOptions.edit")}</button></td>
+              <td data-label={t("admin.formOptions.action")}><div className="option-row-actions"><button type="button" disabled={working} onClick={() => { save.reset(); setEditing({ ...option }); }}>{t("admin.formOptions.edit")}</button><button type="button" disabled={working} onClick={()=>void runAction(option,false)}>{t(option.enabled?"admin.formOptions.stop":"admin.formOptions.start")}</button><button className="option-remove" type="button" disabled={working} onClick={()=>void runAction(option,true)}>{t("admin.formOptions.remove")}</button></div></td>
             </tr>)}</tbody>
           </table>
           {options.isPending && <div className="empty" role="status">{t("admin.formOptions.loading")}</div>}
-          {options.isSuccess && !options.data.length && <div className="empty">{t("admin.formOptions.empty")}</div>}
+          {options.isSuccess && !visibleOptions.length && <div className="empty">{t("admin.formOptions.empty")}</div>}
         </div>
       </section>
     </div>}
@@ -117,9 +144,10 @@ export function FormOptionConfigPage({ locale }: { locale: SupportedLocale }) {
 
 function FormOptionDialog({ option, groupLabel, locale, busy, error, onClose, onSave }: { option: AdminFormOption; groupLabel: string; locale: SupportedLocale; busy: boolean; error: unknown; onClose: () => void; onSave: (option: AdminFormOption) => void }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const existing = Boolean(option.id);
   const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const value = { ...option,
@@ -135,7 +163,7 @@ function FormOptionDialog({ option, groupLabel, locale, busy, error, onClose, on
       previewVideoUrl: data.has("previewVideoUrl") ? String(data.get("previewVideoUrl")).trim() || undefined : option.previewVideoUrl,
       allowsCustomValue: option.groupId === "video-durations" && data.get("allowsCustomValue") === "on",
     };
-    if (option.enabled && !value.enabled && !window.confirm(t("admin.formOptions.disableConfirm"))) return;
+    if (option.enabled && !value.enabled && !await confirm(t("admin.formOptions.disableConfirm"))) return;
     onSave(value);
   };
   return <ModalFrame className="form-option-modal" labelledBy="form-option-dialog-title" busy={busy} onClose={requestClose}>

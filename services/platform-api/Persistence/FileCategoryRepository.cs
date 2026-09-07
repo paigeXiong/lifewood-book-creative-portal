@@ -29,6 +29,7 @@ internal sealed class FileCategoryRepository(string connectionString)
             );
             CREATE INDEX IF NOT EXISTS ix_file_categories_scope_order ON file_categories(scope,enabled DESC,sort_order,id);
             """);
+        ConfigurationRemoval.Initialize(connection, "file_categories");
         var zh = FormOptionCatalog.ForLocale("zh-CN");
         var en = FormOptionCatalog.ForLocale("en-US");
         using var transaction = connection.BeginTransaction();
@@ -57,6 +58,7 @@ internal sealed class FileCategoryRepository(string connectionString)
             migration.ExecuteNonQuery();
         }
         transaction.Commit();
+        ConfigurationRemoval.InstallProjectGuards(connection, "file_categories", ["categoryId"]);
     }
 
     public ReferenceCategoryDto[] ForLocale(string scope, string locale, bool enabledOnly = true)
@@ -67,7 +69,7 @@ internal sealed class FileCategoryRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id,label_zh_cn,label_en_us,description_zh_cn,description_en_us,accept_values,max_bytes,max_files,allows_url,required
-            FROM file_categories WHERE scope=$scope AND ($enabledOnly=0 OR enabled=1) ORDER BY sort_order,id;
+            FROM file_categories WHERE is_removed=0 AND scope=$scope AND ($enabledOnly=0 OR enabled=1) ORDER BY sort_order,id;
             """;
         command.Parameters.AddWithValue("$scope", scope);
         command.Parameters.AddWithValue("$enabledOnly", enabledOnly ? 1 : 0);
@@ -83,7 +85,7 @@ internal sealed class FileCategoryRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT scope,id,label_en_us,description_en_us,accept_values,max_bytes,max_files,allows_url,required FROM file_categories WHERE id=$id AND enabled=1;";
+        command.CommandText = "SELECT scope,id,label_en_us,description_en_us,accept_values,max_bytes,max_files,allows_url,required FROM file_categories WHERE id=$id AND enabled=1 AND is_removed=0;";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? new(reader.GetString(0), new(reader.GetString(1), reader.GetString(2),
@@ -98,7 +100,7 @@ internal sealed class FileCategoryRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT scope,id,label_zh_cn,label_en_us,description_zh_cn,description_en_us,accept_values,max_bytes,max_files,
-                   allows_url,required,enabled,sort_order,updated_at FROM file_categories WHERE scope=$scope ORDER BY sort_order,id;
+                   allows_url,required,enabled,sort_order,updated_at FROM file_categories WHERE is_removed=0 AND scope=$scope ORDER BY sort_order,id;
             """;
         command.Parameters.AddWithValue("$scope", scope);
         using var reader = command.ExecuteReader();
@@ -123,6 +125,7 @@ internal sealed class FileCategoryRepository(string connectionString)
         if (scope == FileCategoryScopes.Reference && request.Required) return new(FileCategoryWriteOutcome.Invalid, "required");
         using var connection = Open();
         using var transaction = connection.BeginTransaction(deferred: false);
+        if (ConfigurationRemoval.IsRemoved(connection, transaction, "file_categories", id)) return new(FileCategoryWriteOutcome.Conflict);
         var current = Get(connection, scope, id, transaction);
         if (current is not null && request.ExpectedUpdatedAt != current.UpdatedAt) return new(FileCategoryWriteOutcome.Conflict);
         if (current is null && request.ExpectedUpdatedAt is not null) return new(FileCategoryWriteOutcome.Conflict);
@@ -138,6 +141,16 @@ internal sealed class FileCategoryRepository(string connectionString)
         item = Get(connection, scope, id, transaction);
         transaction.Commit();
         return new(FileCategoryWriteOutcome.Saved);
+    }
+
+    public string? Remove(string scope, string id, DateTimeOffset? expected)
+    {
+        using var db = Open(); using var tx = db.BeginTransaction(deferred: false);
+        var current = Get(db, scope, id, tx);
+        if (current is null || ConfigurationRemoval.IsRemoved(db, tx, "file_categories", id)) return "missing";
+        if (expected != current.UpdatedAt) return "conflict";
+        if (ConfigurationRemoval.IsReferenced(db, tx, id, ["categoryId"])) return "referenced";
+        ConfigurationRemoval.Mark(db, tx, "file_categories", id); tx.Commit(); return null;
     }
 
     private static void Seed(SqliteConnection connection, SqliteTransaction transaction, string scope, ReferenceCategoryDto[] zh, ReferenceCategoryDto[] en)

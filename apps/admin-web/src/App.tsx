@@ -1,3 +1,4 @@
+import { useConfirm } from "./useConfirm";
 import { readRevisionSnapshot } from "./revision-snapshot";
 import { ProjectReturns } from "./ProjectReturns";
 import {
@@ -61,12 +62,14 @@ import { showAdminToast, ToastHost } from "./Toast";
 import { useUnsavedClose } from "./useUnsavedClose";
 import { loadAllOrganizations } from "./organization-loader";
 
+const AnnouncementsPage = lazy(() => import("./AnnouncementsPage").then(module => ({ default: module.AnnouncementsPage })));
 const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((module) => ({ default: module.AvatarEditor })));
 const OverviewPage = lazy(() => import("./OverviewPage").then((module) => ({ default: module.OverviewPage })));
 const OrganizationsPage = lazy(() => import("./OrganizationsPage").then((module) => ({ default: module.OrganizationsPage })));
 const AuditPage = lazy(() => import("./AuditPage").then((module) => ({ default: module.AuditPage })));
 const FormOptionConfigPage = lazy(() => import("./FormOptionConfigPage").then((module) => ({ default: module.FormOptionConfigPage })));
 const FileCategoryConfigPage = lazy(() => import("./FileCategoryConfigPage").then((module) => ({ default: module.FileCategoryConfigPage })));
+const CharacterPresetsPage = lazy(() => import("./CharacterPresetsPage").then(module => ({ default: module.CharacterPresetsPage })));
 const VoiceConfigPage = lazy(() => import("./VoiceConfigPage").then((module) => ({ default: module.VoiceConfigPage })));
 const AiSettingsPage = lazy(() => import("./AiSettingsPage").then(module => ({ default: module.AiSettingsPage })));
 const SystemRuntimePage = lazy(() => import("./SystemRuntimePage").then((module) => ({ default: module.SystemRuntimePage })));
@@ -274,6 +277,7 @@ function AdminShell({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -499,7 +503,7 @@ function AdminShell({
         error={avatarUpdate.isError ? t("admin.account.avatarFailed") : undefined}
         onClose={() => { if (!avatarUpdate.isPending) { setAvatarEditorOpen(false); avatarUpdate.reset(); } }}
         onSave={(file) => avatarUpdate.mutate({ file })}
-        onRemove={() => { if (window.confirm(t("admin.account.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
+        onRemove={async () => { if (await confirm(t("admin.account.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
         returnFocus={avatarTriggerRef.current}
         labels={{
           title: t("admin.account.avatarEditorTitle"), close: t("common.close"), choose: t("admin.account.chooseAvatar"), chooseAnother: t("admin.account.chooseAnotherAvatar"),
@@ -1226,7 +1230,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
                       number: selectedCharacterIndex + 1,
                     })}
                 </h4>
-                {selectedCharacter.presetId && <figure><img src={new URL(`/character-presets/${selectedCharacter.presetId}.png`, new URL(customerPortalUrl(locale), window.location.origin)).href} alt={t("bookIntake.presetImage", { name: selectedCharacter.name })} width="120" height="120" loading="lazy" /><figcaption>{t("bookIntake.presetHint")}</figcaption></figure>}
+                {(selectedCharacter.presetImageUrl ?? selectedCharacter.presetId) && <figure><img src={selectedCharacter.presetImageUrl?.startsWith("/api/") ? selectedCharacter.presetImageUrl : new URL(selectedCharacter.presetImageUrl ?? `/character-presets/${selectedCharacter.presetId}.png`, new URL(customerPortalUrl(locale), window.location.origin)).href} alt={t("bookIntake.presetImage", { name: selectedCharacter.name })} width="120" height="120" loading="lazy" /><figcaption>{t("bookIntake.presetHint")}</figcaption></figure>}
                 <FactGrid facts={[
                   { label: t("creative.fields.roleType"), value: label("roleTypes", selectedCharacter.roleTypeId) },
                   { label: t("creative.fields.storyRole"), value: selectedCharacter.storyRole },
@@ -1293,6 +1297,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
 
 function UsersPage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearch = searchParams.get("q") ?? "";
@@ -1476,10 +1481,10 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                       <button
                         type="button"
                         disabled={update.isPending}
-                        onClick={() => {
+                        onClick={async () => {
                           if (
                             user.active &&
-                            !window.confirm(
+                            !await confirm(
                               t("admin.users.deactivateConfirm", {
                                 name: user.displayName,
                               }),
@@ -1834,6 +1839,8 @@ function AdminRoot() {
         <Route path="users" element={<UsersPage locale={locale} />} />
         <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
         <Route path="audit" element={<AuditPage locale={locale} />} />
+        <Route path="settings/announcements" element={<AnnouncementsPage locale={locale} />} />
+        <Route path="settings/characters" element={<CharacterPresetsPage locale={locale} imageBase={customerPortalUrl(locale)} />} />
         <Route path="settings/ai" element={<AiSettingsPage locale={locale} />} />
         <Route path="settings" element={<Navigate replace to="options" />} />
         <Route

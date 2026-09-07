@@ -29,6 +29,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
             CREATE INDEX IF NOT EXISTS ix_voice_references_order ON voice_references(enabled DESC, sort_order, id);
             """);
 
+        ConfigurationRemoval.Initialize(connection, "voice_references");
         using var transaction = connection.BeginTransaction();
         var zh = Features.FormOptionCatalog.VoicesForLocale("zh-CN");
         var en = Features.FormOptionCatalog.VoicesForLocale("en-US");
@@ -52,6 +53,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
             Save(connection, en[index].Id, request, transaction, en[index].AudioUrl);
         }
         transaction.Commit();
+        ConfigurationRemoval.InstallProjectGuards(connection, "voice_references", ["selectedVoiceIds", "preferredVoiceId"]);
     }
 
     public VoiceReferenceDto[] ForLocale(string locale)
@@ -63,7 +65,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
             SELECT id, name_zh_cn, name_en_us, description_zh_cn, description_en_us,
                    audio_url, tag_ids, recommended, enabled
             FROM voice_references
-            WHERE enabled = 1
+            WHERE enabled = 1 AND is_removed = 0
             ORDER BY sort_order, id;
             """;
         using var reader = command.ExecuteReader();
@@ -89,7 +91,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         command.CommandText = """
             SELECT id, name_zh_cn, name_en_us, description_zh_cn, description_en_us,
                    audio_url, tag_ids, recommended, enabled, sort_order, updated_at
-            FROM voice_references
+            FROM voice_references WHERE is_removed = 0
             ORDER BY sort_order, id;
             """;
         using var reader = command.ExecuteReader();
@@ -111,6 +113,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
 
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
+        if (ConfigurationRemoval.IsRemoved(connection, transaction, "voice_references", id)) return new(VoiceWriteOutcome.Conflict);
         var previous = GetAdmin(connection, id, transaction);
         if (previous is null ? request.ExpectedUpdatedAt is not null : request.ExpectedUpdatedAt != previous.UpdatedAt)
             return new(VoiceWriteOutcome.Conflict, "expectedUpdatedAt");
@@ -131,6 +134,16 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         item = GetAdmin(connection, id);
         return new(VoiceWriteOutcome.Saved);
     }
+    public string? Remove(string id, string? expected)
+    {
+        using var db = Open(); using var tx = db.BeginTransaction(deferred: false);
+        var current = GetAdmin(db, id, tx);
+        if (current is null) return "missing";
+        if (expected != current.UpdatedAt) return "conflict";
+        if (ConfigurationRemoval.IsReferenced(db, tx, id, ["selectedVoiceIds", "preferredVoiceId"])) return "referenced";
+        ConfigurationRemoval.Mark(db, tx, "voice_references", id); tx.Commit(); return null;
+    }
+
     public void ReconcileAudioAvailability(Func<string, bool> hasSample)
     {
         foreach (var voice in ListAdmin())
@@ -143,7 +156,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM voice_references WHERE id = $id;";
+        command.CommandText = "SELECT COUNT(*) FROM voice_references WHERE id = $id AND is_removed = 0;";
         command.Parameters.AddWithValue("$id", id);
         return Convert.ToInt32(command.ExecuteScalar()) == 1;
     }
@@ -153,7 +166,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE voice_references SET audio_url = $audioUrl, updated_at = $updatedAt WHERE id = $id;
+            UPDATE voice_references SET audio_url = $audioUrl, updated_at = $updatedAt WHERE id = $id AND is_removed = 0;
             """;
         command.Parameters.AddWithValue("$audioUrl", available ? $"/api/voices/{id}/sample" : DBNull.Value);
         command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
@@ -167,7 +180,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id FROM voice_references WHERE enabled = 1;";
+        command.CommandText = "SELECT id FROM voice_references WHERE enabled = 1 AND is_removed = 0;";
         using var reader = command.ExecuteReader();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         while (reader.Read()) ids.Add(reader.GetString(0));
@@ -218,7 +231,7 @@ internal sealed class VoiceReferenceRepository(string connectionString)
         command.CommandText = """
             SELECT id, name_zh_cn, name_en_us, description_zh_cn, description_en_us,
                    audio_url, tag_ids, recommended, enabled, sort_order, updated_at
-            FROM voice_references WHERE id = $id;
+            FROM voice_references WHERE id = $id AND is_removed = 0;
             """;
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();

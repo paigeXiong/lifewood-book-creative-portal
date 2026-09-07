@@ -11,6 +11,9 @@ internal static class AuditActionCatalog
 
     private static readonly Definition[] Definitions =
     [
+        new("announcement.save", "保存公告草稿", "Saved announcement draft"),
+        new("announcement.publish", "发布公告", "Published announcement"),
+        new("announcement.withdraw", "下架公告", "Withdrew announcement"),
         new("user.create", "创建用户", "Created user"),
         new("user.update", "更新用户", "Updated user"),
         new("user.password_reset", "重置用户密码", "Reset user password"),
@@ -20,8 +23,14 @@ internal static class AuditActionCatalog
         new("project.note_add", "添加内部备注", "Added internal note"),
         new("delivery.publish", "发布最终成品", "Published final delivery"),
         new("delivery.revoke", "撤回最终成品", "Withdrew final delivery"),
+        new("file_category.remove", "删除文件类别", "Deleted file category"),
+        new("preset.remove", "删除预设角色", "Deleted character preset"),
+        new("voice.remove", "删除参考音色", "Deleted voice reference"),
         new("file_category.upsert", "保存文件类别", "Saved file category"),
+        new("form_option.remove", "移除表单选项", "Removed form option"),
         new("form_option.upsert", "保存表单选项", "Saved form option"),
+        new("preset.upsert", "保存预设角色", "Saved character preset"),
+        new("preset.image_upload", "上传预设角色图片", "Uploaded character preset image"),
         new("voice.upsert", "保存参考音色", "Saved voice reference"),
         new("voice.sample_upload", "上传音色样本", "Uploaded voice sample"),
         new("voice.sample_remove", "移除音色样本", "Removed voice sample"),
@@ -40,6 +49,13 @@ internal static class AuditActionCatalog
         if (segments is null || segments.Length < 3 || segments[0] != "api" || segments[1] != "admin") return null;
         string? Value(int index) => segments.Length > index ? Uri.UnescapeDataString(segments[index]) : null;
 
+        if (method == "PUT" && segments.Length == 4 && segments[2] == "announcements") return new("announcement.save", "announcement", Value(3));
+        if (method == "POST" && segments.Length == 5 && segments[2] == "announcements" && (segments[4] is "publish" or "withdraw")) return new("announcement." + segments[4], "announcement", Value(3));
+        if (method == "DELETE" && segments.Length == 5 && segments[2] == "file-categories") return new("file_category.remove", "file_category", $"{Value(3)}/{Value(4)}");
+        if (method == "DELETE" && segments.Length == 4 && segments[2] == "character-presets") return new("preset.remove", "character_preset", Value(3));
+        if (method == "DELETE" && segments.Length == 4 && segments[2] == "voices") return new("voice.remove", "voice", Value(3));
+        if (method == "PUT" && segments.Length == 4 && segments[2] == "character-presets") return new("preset.upsert", "character_preset", Value(3));
+        if (method == "POST" && segments.Length == 5 && segments[2] == "character-presets" && segments[4] == "image") return new("preset.image_upload", "character_preset", Value(3));
         if (method == "POST" && segments is ["api", "admin", "users"])
             return new("user.create", "user", null);
         if (method == "PUT" && segments.Length == 4 && segments[2] == "users")
@@ -60,6 +76,7 @@ internal static class AuditActionCatalog
             return new("delivery.revoke", "delivery", Value(5));
         if (method == "PUT" && segments.Length == 5 && segments[2] == "file-categories")
             return new("file_category.upsert", "file_category", $"{Value(3)}/{Value(4)}");
+        if (method == "DELETE" && segments.Length == 5 && segments[2] == "form-options") return new("form_option.remove", "form_option", $"{Value(3)}/{Value(4)}");
         if (method == "PUT" && segments.Length == 5 && segments[2] == "form-options")
             return new("form_option.upsert", "form_option", $"{Value(3)}/{Value(4)}");
         if (method == "PUT" && segments.Length == 4 && segments[2] == "voices")

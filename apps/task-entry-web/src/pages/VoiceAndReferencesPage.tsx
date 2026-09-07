@@ -1,3 +1,7 @@
+import { SaveFeedback } from "../components/SaveFeedback";
+import { useDraftRecovery, focusSaveIssue } from "../useDraftRecovery";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
+import { useConfirm } from "../useConfirm";
 import { useRevisionNext, useRevisionPrevious, RevisionLink } from "../revision-navigation";
 import { createId } from "../create-id";
 import { EnumField } from "../components/EnumField";
@@ -28,7 +32,7 @@ import { mergeLegacyOptions } from "../legacy-options";
 import { effectiveVoiceContentLanguage } from "../voice-content-language";
 import { mergeLegacyCategories, type DisplayReferenceCategory } from "../legacy-categories";
 
-type TransferItem = { id: string; categoryId: string; file: File; status: "uploading" | "error" | "cancelled"; error?: string };
+type TransferItem = { id: string; categoryId: string; file: File; status: "queued" | "uploading" | "error" | "cancelled"; error?: string };
 
 function VoiceSummary({ stage, control, voices }: { stage: "voice" | "references"; control: Control<VoiceFormValues>; voices: VoiceReference[] }) {
   const { t } = useTranslation();
@@ -58,7 +62,7 @@ function ReferencesSection({ form, categories, locale, uploadCategory, transfers
   const linksEnabled = categories.some((category) => category.allowsUrl && !category.unavailable);
   return <section className="form-panel reference-section"><div className="section-heading"><div><h2><span>5.2</span>{t("voice.sections.references")}</h2></div></div>
     <div className="upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <FileDropCard key={category.id} inputId={`upload-${category.id}`} category={category} files={files} locale={locale} busyCategory={uploadCategory} onUpload={onUpload} onRemove={onRemoveAsset} />; })}</div>
-    {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "uploading" ? <button type="button" onClick={() => onCancelUpload(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetryUpload(item)}>{t("common.retry")}</button>}</li>)}</ul>}
+    {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "queued" ? t("voice.waitingUpload") : item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "queued" || item.status === "uploading" ? <button type="button" onClick={() => onCancelUpload(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetryUpload(item)}>{t("common.retry")}</button>}</li>)}</ul>}
     {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
     <div className="competitor-links" hidden={!linksEnabled && competitorUrls.length === 0}><div className="section-heading compact"><div><h3>{t("voice.fields.competitorLinks")}</h3><p>{t("voice.competitorHint")}</p></div><button className="button button-secondary" type="button" disabled={!linksEnabled || competitorUrls.length >= 5} onClick={() => form.setValue("competitorUrls", [...competitorUrls, ""], { shouldDirty: true })}>{t("voice.addLink")}</button></div>{competitorUrls.map((_, index) => { const error = form.formState.errors.competitorUrls?.[index]?.message; const messageId = `competitor-url-${index}-message`; return <div className="field" key={index}><label htmlFor={`competitor-url-${index}`}>{t("voice.linkNumber", { index: index + 1 })}</label><div className="inline-input"><input id={`competitor-url-${index}`} type="url" inputMode="url" spellCheck={false} autoComplete="off" readOnly={!linksEnabled} placeholder="https://example.com/…" aria-invalid={error ? true : undefined} aria-describedby={error ? messageId : undefined} {...form.register(`competitorUrls.${index}`)} /><button type="button" aria-label={t("voice.removeLink", { index: index + 1 })} onClick={() => form.setValue("competitorUrls", competitorUrls.filter((_, itemIndex) => itemIndex !== index), { shouldDirty: true })}>{t("voice.remove")}</button></div>{error && <div className="field-error" id={messageId} role="alert">{error}</div>}</div>; })}</div>
   </section>;
@@ -66,6 +70,7 @@ function ReferencesSection({ form, categories, locale, uploadCategory, transfers
 
 export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references" }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const revisionNext = useRevisionNext();
   const revisionPrevious = useRevisionPrevious();
   const { locale, taskId } = useParams();
@@ -87,6 +92,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   const savePromiseRef = useRef<Promise<boolean> | undefined>(undefined);
   const savedSnapshotRef = useRef<string | undefined>(undefined);
   const [navigating, setNavigating] = useState(false);
+  const conflictRef = useRef(false);
   const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
   const draftSchema = useMemo(() => createVoiceDraftSchema(t), [t]);
   const stepSchema = useMemo(() => stage === "voice" ? createVoicePreferencesStepSchema(t) : createReferencesStepSchema(t), [stage, t]);
@@ -105,9 +111,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   const narrationEnabled = useWatch({ control: form.control, name: "narrationEnabled" });
   const voicesQuery = useQuery({ queryKey: ["voices", validLocale], queryFn: () => optionService.getVoices(validLocale), enabled: stage === "voice" && narrationEnabled === true });
 
-  useEffect(() => {
-    const draft = draftQuery.data;
-    if (!draft || form.formState.isDirty) return;
+  const resetFromDraft = (draft: TaskDraft) => {
     const voice = draft.voiceAndReferences.voiceover;
     const direction = draft.voiceAndReferences.creativeDirection;
     const { selectedVoiceIds, preferredVoiceId, removedCount } = stage === "voice" && getNarrationEnabled(voice) === true && voicesQuery.data
@@ -124,17 +128,14 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
       assets: draft.voiceAndReferences.assets, competitorUrls: draft.voiceAndReferences.competitorUrls,
       coreMessage: direction.coreMessage, requiredScenes: direction.requiredScenes ?? "", authorPreferences: direction.authorPreferences ?? "", closingMessage: direction.closingMessage ?? "", musicMood: direction.musicMood ?? "", avoidContent: direction.avoidContent ?? "",
     });
+  };
+  useEffect(() => {
+    const draft = draftQuery.data;
+    if (!draft || form.formState.isDirty) return;
+    resetFromDraft(draft);
   }, [draftQuery.data, voicesQuery.data, form, form.formState.isDirty, stage]);
 
-  useEffect(() => {
-    const dirty = form.formState.isDirty;
-    document.body.dataset.unsavedChanges = String(dirty);
-    const preventLoss = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
-    const preventBackLoss = () => { if (dirty && !window.confirm(t("wizard.unsavedChanges"))) window.history.go(1); };
-    window.addEventListener("beforeunload", preventLoss);
-    window.addEventListener("popstate", preventBackLoss);
-    return () => { window.removeEventListener("beforeunload", preventLoss); window.removeEventListener("popstate", preventBackLoss); delete document.body.dataset.unsavedChanges; };
-  }, [form.formState.isDirty, t]);
+
 
   useEffect(() => () => {
     audioRef.current?.pause();
@@ -159,11 +160,13 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
       return { saved: await projectService.saveVoiceAndReferences(current.id, next, validLocale, stage === "references" && continueAfter, stage === "references"), continueAfter, values };
     },
     onSuccess: async ({ saved, continueAfter, values }) => { queryClient.setQueryData(["project", taskId], saved); void queryClient.invalidateQueries({ queryKey: ["projects"] }); form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values); failedSaveSnapshotRef.current = undefined; setSaveState("idle"); if (continueAfter) await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "voice" ? "style" : "review"}`)); },
-    onError: (_error, variables) => { failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
+    onError: (_error, variables) => {
+      if (_error instanceof ApiError && _error.details.code === "project.version_conflict") conflictRef.current = true; failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
     onSettled: () => { saveInFlightRef.current = false; },
   });
 
   const runSave = (values: VoiceFormValues, continueAfter: boolean, explicit: boolean) => {
+    if (conflictRef.current) { setSaveState("error"); return Promise.resolve(false); }
     const snapshot = JSON.stringify(values);
     if (saveInFlightRef.current) return savePromiseRef.current ?? Promise.resolve(false);
     if (!explicit && failedSaveSnapshotRef.current === snapshot) return Promise.resolve(false);
@@ -174,6 +177,30 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     const pending = save.mutateAsync({ values, continueAfter }).then(() => true, () => false);
     savePromiseRef.current = pending;
     return pending;
+  };
+
+  const recovery = useDraftRecovery(taskId, validLocale, () => JSON.stringify(form.getValues()), latest => {
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    queryClient.setQueryData(["project", taskId], latest);
+    resetFromDraft(latest);
+    savedSnapshotRef.current = JSON.stringify(form.getValues());
+    failedSaveSnapshotRef.current = undefined;
+    conflictRef.current = false;
+    save.reset(); setSaveState("idle");
+  });
+  const retrySave = async () => {
+    if (saveInFlightRef.current) return;
+    const checked = draftSchema.safeParse(form.getValues());
+    if (!checked.success) {
+      setSaveState("invalid");
+      for (const issue of checked.error.issues) form.setError(issue.path.join(".") as never, { message: issue.message });
+      const first = checked.error.issues[0]?.path;
+
+      if (first) focusSaveIssue(first.join("."));
+      return;
+    }
+    await runSave(checked.data, false, true);
   };
 
   useEffect(() => {
@@ -187,8 +214,8 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     return () => { if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = undefined; };
   }, [autosaveValues, form.formState.isDirty, save.isPending, uploadCategory, navigating, draftSchema]);
   if (!taskId || !isSupportedLocale(locale)) return null;
-  if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" aria-busy="true">{t("common.loading")}</div>;
-  if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) return <ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} />;
+  if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty} />{t("common.loading")}</div>;
+  if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) return <><UnsavedChangesGuard dirty={form.formState.isDirty} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
   if (draftQuery.data.status !== "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
   if (!isCharactersComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} />;
   if (stage === "references" && !isVoicePreferencesComplete(draftQuery.data.voiceAndReferences)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/voice`)} />;
@@ -211,7 +238,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   const referenceCategories = mergeLegacyCategories(options.referenceCategories.filter((category) => !["character-reference", "style-reference"].includes(category.id)), draftQuery.data.voiceAndReferences.assets, unavailable);
   const voices = (voicesQuery.data ?? []).filter((voice) => voice.enabled);
   const conflict = save.error instanceof ApiError && save.error.details.code === "project.version_conflict";
-  const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? t(conflict ? "wizard.versionConflict" : "wizard.saveFailed") : "";
+  const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? (conflict ? t("wizard.versionConflict") : save.error instanceof ApiError ? localizedApiError(save.error, t) : t("wizard.saveFailed")) : "";
   const navigateWithSave = async (path: string) => {
     if (navigating || uploadCategory) return;
     setNavigating(true);
@@ -275,7 +302,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     uploadingRef.current = true; setUploadError(undefined); setUploadCategory(category.id);
     const available = Math.max(0, category.maxFiles - form.getValues("assets").filter((asset) => asset.categoryId === category.id).length);
     try {
-    const queue = Array.from(files).slice(0, available).map((file) => ({ id: createId(), categoryId: category.id, file, status: "uploading" as const }));
+    const queue = Array.from(files).slice(0, available).map((file) => ({ id: createId(), categoryId: category.id, file, status: "queued" as const }));
     if (saveInFlightRef.current && !await savePromiseRef.current) return;
     setTransfers((current) => [...current, ...queue]);
     for (const item of queue) {
@@ -296,12 +323,14 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     } finally { uploadingRef.current = false; setUploadCategory(undefined); }
   };
   const cancelUpload = (id: string) => {
-    cancelledTransferIdsRef.current.add(id);
     if (activeUploadRef.current?.id === id) activeUploadRef.current.controller.abort();
-    else setTransfers((current) => current.filter((item) => item.id !== id));
+    else {
+      cancelledTransferIdsRef.current.add(id);
+      setTransfers((current) => current.filter((item) => item.id !== id));
+    }
   };
   const removeAsset = async (id: string) => {
-    if (uploadingRef.current || !window.confirm(t("voice.removeConfirm"))) return;
+    if (uploadingRef.current || !await confirm(t("voice.removeConfirm"))) return;
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
     uploadingRef.current = true;
@@ -333,7 +362,8 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   });
 
   return <div className={`wizard-page voice-page ${stage}-page`}>
-    <div className="wizard-heading"><h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1>{statusText && <span className={`save-state save-${saveState}`} role="alert">{statusText}</span>}</div>
+      <UnsavedChangesGuard dirty={form.formState.isDirty} />
+    <div className="wizard-heading"><h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1><SaveFeedback message={statusText} conflict={conflict} invalid={saveState === "invalid"} busy={save.isPending || recovery.loading || navigating || Boolean(uploadCategory)} error={recovery.error} onRetry={() => void retrySave()} onReload={() => void recovery.reload()} /></div>
     {stage === "voice" && narrationEnabled === true && removedVoiceCount > 0 && <div className="inline-notice" role="status">{t("voice.unavailableRemoved", { count: removedVoiceCount })}</div>}
     <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "voice" ? 3 : 5} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadCategory)} />
     <form autoComplete="off" onSubmit={continueStep} inert={navigating} aria-busy={navigating}>
@@ -384,7 +414,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
           <Field className="field-wide" label={t("voice.fields.avoidContent")} icon={<FieldIcon name="avoid" />} htmlFor="avoid-content" error={form.formState.errors.avoidContent?.message}><textarea id="avoid-content" rows={2} maxLength={200} autoComplete="off" {...form.register("avoidContent")} /></Field>
         </div></section></>}
       </div><VoiceSummary stage={stage} control={form.control} voices={voices} /></div>
-      <div className="sticky-actions"><RevisionLink hideWhenLocked className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/${revisionPrevious ?? (stage === "voice" ? "characters" : "style")}`)} onClick={guardLink}>{revisionPrevious ? t("clientUx.backTo",{unit:t("wizard.steps."+revisionPrevious)}) : t(stage === "voice" ? "wizard.actions.backCharacters" : "wizard.actions.backStyle")}</RevisionLink><div><button className="button button-quiet" type="button" disabled={navigating || Boolean(uploadCategory)} onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}>{t("common.backHome")}</button>{conflict && <button className="button button-secondary" type="button" onClick={() => { failedSaveSnapshotRef.current = undefined; form.reset(); void draftQuery.refetch(); }}>{t("common.reload")}</button>}<button className="button button-primary" type="submit" disabled={navigating || Boolean(uploadCategory)}>{t(revisionNext ? `wizard.steps.${revisionNext}` : (stage === "voice" ? "wizard.actions.toStyle" : "voice.continueToReview"))}<span aria-hidden="true">→</span></button></div></div>
+      <div className="sticky-actions"><RevisionLink hideWhenLocked className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/${revisionPrevious ?? (stage === "voice" ? "characters" : "style")}`)} onClick={guardLink}>{revisionPrevious ? t("clientUx.backTo",{unit:t("wizard.steps."+revisionPrevious)}) : t(stage === "voice" ? "wizard.actions.backCharacters" : "wizard.actions.backStyle")}</RevisionLink><div><button className="button button-quiet" type="button" disabled={navigating || Boolean(uploadCategory)} onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}>{t("common.backHome")}</button><button className="button button-primary" type="submit" disabled={navigating || Boolean(uploadCategory)}>{t(revisionNext ? `wizard.steps.${revisionNext}` : (stage === "voice" ? "wizard.actions.toStyle" : "voice.continueToReview"))}<span aria-hidden="true">→</span></button></div></div>
     </form>
   </div>;
 }

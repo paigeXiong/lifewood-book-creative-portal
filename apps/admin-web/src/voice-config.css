@@ -247,3 +247,24 @@ button.danger:hover:not(:disabled) { background: #f2cec7; }
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+/* Compact sample playback and explicit audio/configuration actions. */
+.voice-config-page .config-removable th:last-child { width: 185px; }
+.voice-config-page td { padding-top: 12px; padding-bottom: 12px; }
+.voice-sample { min-width: 0; }
+.voice-sample-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.voice-sample-line button { min-height: 34px; padding: 6px 9px; box-shadow: none; white-space: nowrap; }
+.voice-sample-line .voice-play { width: 34px; flex: 0 0 34px; border-radius: 50%; background: #e3eee8; color: #194c3b; }
+.voice-sample-time { color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 38px; }
+.voice-sample-time.is-error { color: #a3342a; }
+.voice-sample-empty { font-size: .8rem; color: var(--muted); }
+.voice-sample-line .voice-sample-upload { background: transparent; color: var(--accent); }
+.voice-sample-more { position: relative; }
+.voice-sample-more > button { background: transparent; font-size: 18px; line-height: 1; }
+.voice-sample-menu { position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 5; background: #fff; border-radius: 8px; padding: 4px; box-shadow: 0 4px 18px #173f3026; }
+.voice-sample-menu button { color: #a3342a; background: #fff1ee; }
+.voice-config-page .config-row-actions { flex-wrap: nowrap; }
+@media (max-width: 640px) {
+  .voice-config-page td[data-label] { min-width: 0; }
+  .voice-sample-line { gap: 6px; }
+}

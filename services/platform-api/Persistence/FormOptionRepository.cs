@@ -66,6 +66,7 @@ internal sealed class FormOptionRepository(string connectionString)
                 applied_at TEXT NOT NULL
             );
             """);
+        if (!HasColumn(connection, "form_options", "is_removed")) Execute(connection, "ALTER TABLE form_options ADD COLUMN is_removed INTEGER NOT NULL DEFAULT 0;");
         var zh = FormOptionCatalog.ForLocale("zh-CN");
         foreach (var column in new[] { "preview_image_url", "preview_video_url" })
             if (!HasColumn(connection, "form_options", column))
@@ -129,6 +130,7 @@ internal sealed class FormOptionRepository(string connectionString)
             }
         }
         transaction.Commit();
+        InstallRemovalGuards(connection);
     }
 
     private static void MigrateColorTones(SqliteConnection connection, SqliteTransaction transaction)
@@ -374,7 +376,7 @@ internal sealed class FormOptionRepository(string connectionString)
         command.CommandText = """
             SELECT group_id, id, label_zh_cn, label_en_us, description_zh_cn, description_en_us,
                    tone, preview_color, allows_custom_value, enabled, sort_order, updated_at, preview_image_url, preview_video_url
-            FROM form_options WHERE group_id = $group ORDER BY sort_order, id;
+            FROM form_options WHERE group_id = $group AND is_removed = 0 ORDER BY sort_order, id;
             """;
         command.Parameters.AddWithValue("$group", groupId);
         using var reader = command.ExecuteReader();
@@ -388,12 +390,90 @@ internal sealed class FormOptionRepository(string connectionString)
         if (!FormOptionGroups.Configurable.Contains(groupId)) return new HashSet<string>(StringComparer.Ordinal);
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id FROM form_options WHERE group_id = $group AND enabled = 1;";
+        command.CommandText = "SELECT id FROM form_options WHERE group_id = $group AND enabled = 1 AND is_removed = 0;";
         command.Parameters.AddWithValue("$group", groupId);
         using var reader = command.ExecuteReader();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         while (reader.Read()) ids.Add(reader.GetString(0));
         return ids;
+    }
+
+    private static void InstallRemovalGuards(SqliteConnection connection)
+    {
+        bool Exists(string table) {using var c=connection.CreateCommand();c.CommandText="SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$table";c.Parameters.AddWithValue("$table",table);return Convert.ToInt32(c.ExecuteScalar())>0;}
+        var fieldCase = "CASE f.group_id " + string.Join(" ", FormOptionGroups.Configurable.Select(g => $"WHEN '{g}' THEN '{ReferenceField(g)}'")) + " END";
+        foreach(var (table,columns) in new (string,string[])[] { ("projects",["project_json","book_json","creative_json","voice_json"]),("character_presets",["document"]) })
+        {
+            if(!Exists(table))continue;
+            var check = string.Join(" OR ",columns.Select(column=>$"EXISTS(SELECT 1 FROM form_options f, json_tree(NEW.{column}) j WHERE f.is_removed=1 AND j.type='text' AND j.atom=f.id AND (j.key=({fieldCase}) OR j.path LIKE '%.' || ({fieldCase})))"));
+            foreach(var operation in new[]{"INSERT","UPDATE OF " + string.Join(',',columns)})
+            {
+                var trigger = $"{table}_removed_option_{(operation=="INSERT"?"insert":"update")}";
+                Execute(connection,$"CREATE TRIGGER IF NOT EXISTS {trigger} BEFORE {operation} ON {table} WHEN {check} BEGIN SELECT RAISE(ABORT,'config.option_removed'); END;");
+            }
+        }
+        if(Exists("voice_references")) foreach(var operation in new[]{"INSERT","UPDATE OF tag_ids"})
+            Execute(connection,$"CREATE TRIGGER IF NOT EXISTS voices_removed_option_{(operation=="INSERT"?"insert":"update")} BEFORE {operation} ON voice_references WHEN EXISTS(SELECT 1 FROM form_options f WHERE f.group_id='voice-tags' AND f.is_removed=1 AND instr(',' || NEW.tag_ids || ',', ',' || f.id || ',')>0) BEGIN SELECT RAISE(ABORT,'config.option_removed'); END;");
+    }
+
+    public string? Remove(string groupId, string id, DateTimeOffset? expectedUpdatedAt)
+    {
+        if (!FormOptionGroups.Configurable.Contains(groupId) || !ValidId(id)) return "missing";
+        using var connection = Open(); using var transaction = connection.BeginTransaction(deferred: false);
+        if (IsRemoved(connection, transaction, groupId, id)) return "missing";
+        var current = GetAdmin(connection, groupId, id, transaction);
+        if (current is null) return "missing";
+        if (expectedUpdatedAt != current.UpdatedAt) return "conflict";
+        if (IsReferenced(connection, transaction, groupId, id)) return "referenced";
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        // Keep a tombstone so built-in seeding cannot recreate removed items on restart.
+        command.CommandText = "UPDATE form_options SET is_removed=1, enabled=0, updated_at=$now WHERE group_id=$group AND id=$id;";
+        command.Parameters.AddWithValue("$group",groupId);command.Parameters.AddWithValue("$id",id);command.Parameters.AddWithValue("$now",DateTimeOffset.UtcNow.ToString("O"));command.ExecuteNonQuery();
+        transaction.Commit(); return null;
+    }
+    private static bool IsRemoved(SqliteConnection connection, SqliteTransaction transaction, string group, string id)
+    {
+        using var command=connection.CreateCommand();command.Transaction=transaction;
+        command.CommandText="SELECT is_removed FROM form_options WHERE group_id=$group AND id=$id;";
+        command.Parameters.AddWithValue("$group",group);command.Parameters.AddWithValue("$id",id);
+        return Convert.ToInt32(command.ExecuteScalar() ?? 0)==1;
+    }
+    private static string ReferenceField(string group) => group switch {
+            FormOptionGroups.Brands=>"brandId", FormOptionGroups.VideoGoals=>"videoGoalId", FormOptionGroups.Audiences=>"audienceIds",
+            FormOptionGroups.Genres=>"genreId", FormOptionGroups.ContentLanguages=>"contentLanguageId", FormOptionGroups.VideoDurations=>"videoDurationId",
+            FormOptionGroups.PublishingPlatforms=>"publishingPlatformIds", FormOptionGroups.RoleTypes=>"roleTypeId", FormOptionGroups.AgeRanges=>"ageRangeId",
+            FormOptionGroups.Genders=>"genderId", FormOptionGroups.VisualStyles=>"visualStyleId", FormOptionGroups.MoodTags=>"moodTagIds",
+            FormOptionGroups.ImageStyleTags=>"imageStyleTagIds", FormOptionGroups.PaceTags=>"paceTagIds", FormOptionGroups.NarrationTones=>"narrationToneId",
+            FormOptionGroups.SpeechRates=>"speechRateId", FormOptionGroups.VoiceGenders=>"voiceGenderId", FormOptionGroups.VoiceAges=>"voiceAgeId",
+            FormOptionGroups.Accents=>"accentId", FormOptionGroups.VoiceEmotions=>"emotionStyleId", FormOptionGroups.VoiceTags=>"tagIds", _=>throw new InvalidOperationException()
+        };
+
+    private static bool IsReferenced(SqliteConnection connection, SqliteTransaction transaction, string group, string id)
+    {
+        var field = ReferenceField(group);
+        bool Exists(string table) {using var c=connection.CreateCommand();c.Transaction=transaction;c.CommandText="SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$table";c.Parameters.AddWithValue("$table",table);return Convert.ToInt32(c.ExecuteScalar())>0;}
+        foreach(var (table,columns) in new (string,string[])[] {
+            ("projects",["project_json","book_json","creative_json","voice_json","submission_snapshot_json"]),
+            ("revision_rounds",["before_snapshot","after_snapshot"]), ("character_presets",["document"])
+        })
+        {
+            if(!Exists(table))continue;
+            foreach(var column in columns)
+            {
+                using var command=connection.CreateCommand();command.Transaction=transaction;
+                // Table/column names come only from the fixed schema list above; values stay parameterized.
+                var activeOnly = table == "character_presets" ? "character_presets.is_removed=0 AND " : "";
+                command.CommandText=$"SELECT 1 FROM {table}, json_tree({column}) AS j WHERE {activeOnly}j.type='text' AND j.atom=$id AND (j.key=$field OR j.path LIKE '%.' || $field) LIMIT 1;";
+                command.Parameters.AddWithValue("$id",id);command.Parameters.AddWithValue("$field",field);
+                if(command.ExecuteScalar() is not null)return true;
+            }
+        }
+        if(group==FormOptionGroups.VoiceTags && Exists("voice_references"))
+        {
+            using var command=connection.CreateCommand();command.Transaction=transaction;command.CommandText="SELECT 1 FROM voice_references WHERE is_removed=0 AND instr(',' || tag_ids || ',', ',' || $id || ',') > 0 LIMIT 1;";command.Parameters.AddWithValue("$id",id);
+            if(command.ExecuteScalar() is not null)return true;
+        }
+        return false;
     }
 
     public bool AllowsCustomValue(string groupId, string? id)
@@ -426,6 +506,7 @@ internal sealed class FormOptionRepository(string connectionString)
 
         using var connection = Open();
         using var transaction = connection.BeginTransaction(deferred: false);
+        if (IsRemoved(connection, transaction, groupId, id)) return new(FormOptionWriteOutcome.Conflict);
         var current = GetAdmin(connection, groupId, id, transaction);
         if (current is not null && request.ExpectedUpdatedAt != current.UpdatedAt) return new(FormOptionWriteOutcome.Conflict);
         if (current is null && request.ExpectedUpdatedAt is not null) return new(FormOptionWriteOutcome.Conflict);
@@ -452,7 +533,7 @@ internal sealed class FormOptionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, label_zh_cn, label_en_us, description_zh_cn, description_en_us, tone, preview_color, allows_custom_value, preview_image_url, preview_video_url
-            FROM form_options WHERE group_id = $group AND enabled = $enabled ORDER BY sort_order, id;
+            FROM form_options WHERE group_id = $group AND enabled = $enabled AND is_removed = 0 ORDER BY sort_order, id;
             """;
         command.Parameters.AddWithValue("$group", groupId);
         command.Parameters.AddWithValue("$enabled", enabled ? 1 : 0);
