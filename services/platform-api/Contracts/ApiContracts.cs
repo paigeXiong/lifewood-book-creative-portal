@@ -328,7 +328,8 @@ public sealed record ProjectStatsDto(
     int Total,
     int Drafts,
     int Active,
-    int Completed);
+    int Completed,
+    int ActionRequired = 0);
 
 public sealed record AdminProjectSummaryDto(
     string Id, string? TaskNumber, string ProjectName, string ClientName, string BookTitle, string AuthorName, string? CoverUrl,

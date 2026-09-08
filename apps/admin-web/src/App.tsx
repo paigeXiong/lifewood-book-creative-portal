@@ -1,3 +1,6 @@
+import {AccountSwitcher,AccountSessionGuard} from "@lifewood/ui/account-switcher";
+import {NotificationBell,NotificationCenter} from "@lifewood/ui/notifications";
+import {NotificationSettingsPage} from "./NotificationSettingsPage";
 import { useConfirm } from "./useConfirm";
 import { readRevisionSnapshot } from "./revision-snapshot";
 import { ProjectReturns } from "./ProjectReturns";
@@ -138,6 +141,25 @@ export function customerPortalUrl(
       ? `${window.location.protocol}//${window.location.hostname}:5173`
       : "");
   return `${base.replace(/\/$/, "")}/${locale}/tasks`;
+}
+
+function AccountRoleOptions({ includeOwner = false }: { includeOwner?: boolean }) {
+  const { i18n } = useTranslation();
+  const locale = i18n.language === "en-US" ? "en-US" : "zh-CN";
+  const roles = useQuery({ queryKey: ["admin-roles", locale], queryFn: () => adminService.listRoles(locale) });
+  return <>{roles.data?.filter(role => includeOwner || role.id !== "owner").map(role => <option key={role.id} value={role.id}>{role.label}</option>)}</>;
+}
+
+function AccountRoleSelect({ initialRole }: { initialRole: string }) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language === "en-US" ? "en-US" : "zh-CN";
+  const roles = useQuery({ queryKey: ["admin-roles", locale], queryFn: () => adminService.listRoles(locale) });
+  const [role, setRole] = useState(initialRole);
+  return <><select name="role" required value={roles.data ? role : ""} onChange={event => setRole(event.target.value)}>
+    {!roles.data && <option value="" disabled>{t(roles.isError ? "common.retry" : "common.loading")}</option>}
+    {roles.data?.filter(item => item.id !== "owner").map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+  </select>{roles.isError && <button type="button" onClick={() => void roles.refetch()}>{t("common.retry")}</button>}
+  {role === "operator" && <small>{t("admin.users.operatorHint")}</small>}</>;
 }
 
 function adminUserAvatarUrl(userId: string) {
@@ -283,6 +305,7 @@ function AdminShell({
   const location = useLocation();
   const currentArea = location.pathname.split("/")[2];
   const areaTitles: Record<string, string> = {
+    notifications: "notifications.title",
     overview: "admin.nav.overview", projects: "admin.nav.projects",
     users: "admin.nav.users", organizations: "admin.nav.organizations",
     audit: "admin.nav.audit", settings: "admin.nav.settings",
@@ -313,7 +336,7 @@ function AdminShell({
         setAccountOpen(false);
     };
     const closeEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest("dialog"))) {
         setAccountOpen(false);
         accountTriggerRef.current?.focus();
       }
@@ -368,26 +391,26 @@ function AdminShell({
           </div>
         </div>
         <nav className="admin-navigation" aria-label={t("admin.navGroups.label")}>
-          <a className="nav-home" href={customerPortalUrl(locale)}>
+          {user.permissions.includes("tasks.read") && <a className="nav-home" href={customerPortalUrl(locale)}>
             <span className="nav-icon" aria-hidden="true">
               <AdminNavIcon name="home" />
             </span>
             <span className="nav-label">{t("admin.nav.home")}</span>
-          </a>
+          </a>}
           <section className="nav-group" aria-labelledby="nav-group-operations">
             <h2 id="nav-group-operations">{t("admin.navGroups.operations")}</h2>
             <div className="nav-grid">
-              <NavLink to={localizedPath(locale, "/overview")}>
+              {user.permissions.includes("admin.overview.read") && <NavLink to={localizedPath(locale, "/overview")}>
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="overview" /></span>
                 <span className="nav-label">{t("admin.nav.overview")}</span>
-              </NavLink>
+              </NavLink>}
               <NavLink to={localizedPath(locale, "/projects")}>
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="projects" /></span>
                 <span className="nav-label">{t("admin.nav.projects")}</span>
               </NavLink>
             </div>
           </section>
-          <section className="nav-group" aria-labelledby="nav-group-directory">
+          {user.permissions.includes("admin.users.manage") && <section className="nav-group" aria-labelledby="nav-group-directory">
             <h2 id="nav-group-directory">{t("admin.navGroups.directory")}</h2>
             <div className="nav-grid">
               <NavLink to={localizedPath(locale, "/users")}>
@@ -399,8 +422,8 @@ function AdminShell({
                 <span className="nav-label">{t("admin.nav.organizations")}</span>
               </NavLink>
             </div>
-          </section>
-          <section className="nav-group" aria-labelledby="nav-group-governance">
+          </section>}
+          {user.permissions.includes("admin.config.manage") && <section className="nav-group" aria-labelledby="nav-group-governance">
             <h2 id="nav-group-governance">{t("admin.navGroups.governance")}</h2>
             <div className="nav-grid">
               <NavLink to={localizedPath(locale, "/audit")}>
@@ -412,13 +435,13 @@ function AdminShell({
                 <span className="nav-label">{t("admin.nav.settings")}</span>
               </NavLink>
             </div>
-          </section>
+          </section>}
         </nav>
       </aside>
       <div className="workspace">
-        <header className="topbar">
+        <header className={`topbar ${currentArea==="notifications"?"notification-topbar":""}`}>
           <span>{t(areaTitles[currentArea] ?? "admin.internalWorkspace")}</span>
-          <div className="topbar-actions">
+          <div className="topbar-actions"><NotificationBell key={user.id} admin/>
             <label>
               <span className="sr-only">{t("nav.language")}</span>
               <select
@@ -469,6 +492,7 @@ function AdminShell({
                   >
                     {t("admin.account.changePassword")}
                   </button>
+                  <AccountSwitcher user={user} destination={next=>next.permissions.includes("admin.access")?`${import.meta.env.BASE_URL.replace(/\/$/, "")}/${locale}/projects`:customerPortalUrl(locale)}/>
                   <button
                     type="button"
                     disabled={logoutPending}
@@ -490,6 +514,7 @@ function AdminShell({
           {children}
         </div>
       </div>
+      <AccountSessionGuard key={user.id} userId={user.id}/>
       {avatarFeedback && <p className="avatar-update-toast" role="status" aria-live="polite">{avatarFeedback}</p>}
       <ToastHost />
       {changePasswordOpen && (
@@ -515,7 +540,7 @@ function AdminShell({
   );
 }
 
-function ProjectsPage({ locale }: { locale: SupportedLocale }) {
+function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: CurrentUser }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -558,14 +583,16 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
   const staff = useQuery({
     queryKey: ["admin-assignees"],
     queryFn: adminService.listAssignees,
+    enabled: user.permissions.includes("admin.projects.assign"),
   });
   const options = useQuery({
     queryKey: ["form-options", locale],
     queryFn: () => optionService.getFormOptions(locale),
   });
   const voices = useQuery({
-    queryKey: ["admin-voices"],
-    queryFn: adminService.listVoiceReferences,
+    queryKey: ["admin-project-voices", selectedId],
+    queryFn: () => adminService.listProjectVoiceReferences(selectedId!),
+    enabled: Boolean(selectedId),
   });
   const workflowOptions = options.data?.workflowStatuses ?? [];
   const priorityOptions = options.data?.projectPriorities ?? [];
@@ -719,10 +746,11 @@ function ProjectsPage({ locale }: { locale: SupportedLocale }) {
           </nav>
         </section>
         <ProjectDetail
+          permissions={user.permissions}
           detail={detail.data}
           switching={detail.isPlaceholderData && detail.isFetching}
           loading={
-            (detail.isPending && Boolean(selectedId)) || options.isPending || voices.isPending
+            (detail.isPending && Boolean(selectedId)) || options.isPending || (voices.isPending && Boolean(selectedId))
           }
           locale={locale}
           assignees={assignees}
@@ -806,6 +834,7 @@ function ProjectRow({
 }
 
 function ProjectDetail({
+  permissions,
   detail,
   switching,
   loading,
@@ -820,6 +849,7 @@ function ProjectDetail({
   onWorkflow,
   onNote,
 }: {
+  permissions: string[];
   detail?: AdminProjectDetail;
   switching: boolean;
   loading: boolean;
@@ -862,7 +892,7 @@ function ProjectDetail({
     onWorkflow({
       workflowStatus: String(data.get("workflowStatus")) as WorkflowStatus,
       priority: String(data.get("priority")) as ProjectPriority,
-      assigneeUserId: String(data.get("assigneeUserId") || "") || undefined,
+      assigneeUserId: permissions.includes("admin.projects.assign") ? String(data.get("assigneeUserId") || "") || undefined : detail.assigneeUserId,
     });
   };
   const saveNote = (event: FormEvent<HTMLFormElement>) => {
@@ -892,8 +922,8 @@ function ProjectDetail({
             ?.label ?? detail.workflowStatus}
         </span>
       </div>
-      <ProjectReturns key={task.id} id={task.id} version={task.version} status={task.status} workflowUpdatedAt={detail.workflowUpdatedAt} locale={locale} renderSnapshot={snapshot=><RevisionSnapshotDetails snapshot={snapshot} task={task} locale={locale} />} />
-      {task.status === "submitted" && <form
+      <ProjectReturns canReturn={permissions.includes("admin.projects.return")} canReply={permissions.includes("admin.projects.reply")} key={task.id} id={task.id} version={task.version} status={task.status} workflowUpdatedAt={detail.workflowUpdatedAt} locale={locale} renderSnapshot={snapshot=><RevisionSnapshotDetails snapshot={snapshot} task={task} locale={locale} />} />
+      {task.status === "submitted" && permissions.includes("admin.projects.workflow") && <form
         className="workflow-form"
         onSubmit={saveWorkflow}
         key={`${task.id}-${detail.workflowStatus}-${detail.priority}-${detail.assigneeUserId}`}
@@ -922,9 +952,11 @@ function ProjectDetail({
           <span>{t("admin.projects.assignee")}</span>
           <select
             name="assigneeUserId"
+            disabled={!permissions.includes("admin.projects.assign")}
             defaultValue={detail.assigneeUserId ?? ""}
           >
             <option value="">{t("admin.projects.unassigned")}</option>
+            {!permissions.includes("admin.projects.assign") && detail.assigneeUserId && <option value={detail.assigneeUserId}>{detail.assigneeName}</option>}
             {assignees.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.displayName}
@@ -940,6 +972,7 @@ function ProjectDetail({
         <div className="message error">{localizedApiError(error, t)}</div>
       )}
       <FinalDeliveryPanel
+        canDeliver={permissions.includes("admin.projects.deliver")}
         projectId={task.id}
         projectStatus={task.status}
         locale={locale}
@@ -973,7 +1006,7 @@ function ProjectDetail({
       </section>
       <section className="detail-section notes">
         <h3>{t("admin.projects.notes")}</h3>
-        {task.status === "submitted" && <form onSubmit={saveNote}>
+        {task.status === "submitted" && permissions.includes("admin.projects.note") && <form onSubmit={saveNote}>
           <textarea
             name="body"
             rows={2}
@@ -1345,7 +1378,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
       id: string;
       displayName: string;
       phone?: string;
-      role: "owner" | "customer" | "admin";
+      role: "owner" | "customer" | "admin" | "operator";
       active: boolean;
       organizationId?: string;
     }) => adminService.updateUser(id, { displayName, phone, role, active, organizationId }),
@@ -1401,9 +1434,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
           }}
         >
           <option value="">{t("admin.users.allRoles")}</option>
-          <option value="customer">{t("admin.roles.customer")}</option>
-          <option value="admin">{t("admin.roles.admin")}</option>
-          <option value="owner">{t("admin.roles.owner")}</option>
+          <AccountRoleOptions includeOwner />
         </select>
         <span className="result-count">
           {t("admin.users.count", { count: users.data?.total ?? 0 })}
@@ -1590,7 +1621,7 @@ function CreateUserDialog({
     email: string;
     phone?: string;
     password: string;
-    role: "customer" | "admin";
+    role: "customer" | "admin" | "operator";
     organizationId?: string;
   }) => void;
 }) {
@@ -1604,7 +1635,7 @@ function CreateUserDialog({
       email: String(data.get("email")),
       phone: String(data.get("phone") ?? "").trim() || undefined,
       password: String(data.get("password")),
-      role: String(data.get("role")) as "customer" | "admin",
+      role: String(data.get("role")) as "customer" | "admin" | "operator",
       organizationId: String(data.get("organizationId") ?? "") || undefined,
     });
   };
@@ -1656,10 +1687,7 @@ function CreateUserDialog({
         </label>
         <label>
           <span>{t("admin.users.role")}</span>
-          <select name="role" defaultValue="customer">
-            <option value="customer">{t("admin.roles.customer")}</option>
-            <option value="admin">{t("admin.roles.admin")}</option>
-          </select>
+          <AccountRoleSelect initialRole="customer" />
         </label>
         <label>
           <span>{t("admin.users.organization")}</span>
@@ -1693,7 +1721,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
   busy: boolean;
   error: unknown;
   onClose: () => void;
-  onSave: (value: { id: string; displayName: string; phone?: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) => void;
+  onSave: (value: { id: string; displayName: string; phone?: string; role: "owner" | "customer" | "admin" | "operator"; active: boolean; organizationId?: string }) => void;
 }) {
   const { t } = useTranslation();
   const { markDirty, requestClose } = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
@@ -1704,7 +1732,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
       id: user.id,
       displayName: String(data.get("displayName") ?? ""),
       phone: String(data.get("phone") ?? "").trim() || undefined,
-      role: user.role === "owner" ? "owner" : String(data.get("role")) as "customer" | "admin",
+      role: user.role === "owner" ? "owner" : String(data.get("role")) as "customer" | "admin" | "operator",
       active: user.role === "owner" || data.get("active") === "on",
       organizationId: String(data.get("organizationId") ?? "") || undefined,
     });
@@ -1723,10 +1751,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
         <label>
           <span>{t("admin.users.role")}</span>
           {user.role === "owner" ? <input value={t("admin.roles.owner")} readOnly aria-readonly="true" /> : (
-            <select name="role" defaultValue={user.role}>
-              <option value="customer">{t("admin.roles.customer")}</option>
-              <option value="admin">{t("admin.roles.admin")}</option>
-            </select>
+            <AccountRoleSelect initialRole={user.role} />
           )}
         </label>
         <label>
@@ -1746,6 +1771,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
 }
 
 function AdminRoot() {
+  const location = useLocation();
   const { locale: routeLocale } = useParams();
   const locale: SupportedLocale = isSupportedLocale(routeLocale)
     ? routeLocale
@@ -1829,13 +1855,18 @@ function AdminRoot() {
         </div>
       </main>
     );
+  const area = location.pathname.split(`/${locale}/`)[1]?.split("/")[0] ?? "";
+  const required = ({ overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
+  const home = me.data.permissions.includes("admin.overview.read") ? "overview" : "projects";
   return (
     <AdminShell user={me.data} locale={locale}>
+      {required && !me.data.permissions.includes(required) ? <Navigate replace to={localizedPath(locale, "/" + home)} /> :
       <Suspense fallback={<main className="center-state" role="status" aria-busy="true">{t("common.loading")}</main>}>
         <Routes>
-        <Route index element={<Navigate replace to="overview" />} />
+        <Route index element={<Navigate replace to={home} />} />
+        <Route path="notifications" element={<NotificationCenter key={me.data.id} admin/>}/><Route path="settings/notifications" element={<NotificationSettingsPage/>}/>
         <Route path="overview" element={<OverviewPage locale={locale} />} />
-        <Route path="projects" element={<ProjectsPage locale={locale} />} />
+        <Route path="projects" element={<ProjectsPage locale={locale} user={me.data} />} />
         <Route path="users" element={<UsersPage locale={locale} />} />
         <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
         <Route path="audit" element={<AuditPage locale={locale} />} />
@@ -1865,9 +1896,9 @@ function AdminRoot() {
             <Navigate replace to={localizedPath(locale, "/settings/voices")} />
           }
         />
-        <Route path="*" element={<Navigate replace to="overview" />} />
+        <Route path="*" element={<Navigate replace to={home} />} />
         </Routes>
-      </Suspense>
+      </Suspense>}
     </AdminShell>
   );
 }

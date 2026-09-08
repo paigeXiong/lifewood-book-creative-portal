@@ -79,6 +79,13 @@ interface RequestOptions extends RequestInit {
 }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
+let boundAccount: string | undefined;
+let accountBlocked = false;
+function reportAccountChange() {
+  if(accountBlocked)return;
+  accountBlocked = true;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("lw-account-changed"));
+}
 let csrfToken: string | undefined;
 let csrfRequest: Promise<string> | undefined;
 
@@ -131,7 +138,9 @@ async function getCsrfToken(): Promise<string> {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}, retryCsrf = true): Promise<T> {
+  if (accountBlocked && !path.startsWith("/auth/")) throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
   const headers = new Headers(options.headers);
+  if (boundAccount && !["/auth/login", "/auth/bootstrap", "/auth/status"].includes(path)) headers.set("X-LW-Account", boundAccount);
   headers.set("Accept", "application/json");
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -162,6 +171,7 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
       clearCsrfToken();
       return request<T>(path, options, false);
     }
+    if (details.code === "auth.account_changed") reportAccountChange();
     throw new ApiError(details);
   }
 
@@ -176,7 +186,13 @@ export interface BootstrapAccount { displayName: string; email: string; password
 
 export const authService = {
   getStatus: () => request<{ requiresBootstrap: boolean }>("/auth/status"),
-  getCurrentUser: () => request<CurrentUser>("/me"),
+  getCurrentUser: async () => { const user=await request<CurrentUser>("/me"); boundAccount=user.id; return user; },
+  savedAccounts: () => request<{items: Array<{id:string;displayName:string;email?:string;current:boolean;expiresAt:string}>;limit:number}>("/auth/accounts"),
+  addAccount: async (credentials: LoginCredentials) => { const user=await request<CurrentUser>("/auth/accounts/add",{method:"POST",body:JSON.stringify(credentials)}); clearCsrfToken();return user; },
+  switchAccount: async (id:string) => { const user=await request<CurrentUser>("/auth/accounts/switch",{method:"POST",body:JSON.stringify({id})});clearCsrfToken();return user; },
+  removeAccount: (id:string) => request<void>(`/auth/accounts/${encodeURIComponent(id)}`,{method:"DELETE"}),
+  notifyAccountChanged: reportAccountChange,
+  checkActiveAccount: async (id:string) => { const r=await fetchResponse(`${apiBaseUrl}/auth/active`,{credentials:"include",cache:"no-store"});if(r.status===401)return false;if(!r.ok)throw new Error("Account check unavailable");return await r.text()===id; },
   updateProfile: (profile: { displayName: string; phone?: string; clientName?: string }) =>
     request<CurrentUser>("/me/profile", { method: "PUT", body: JSON.stringify(profile) }),
   updatePreferences: (preferences: { locale: SupportedLocale }) =>
@@ -184,11 +200,13 @@ export const authService = {
   login: async (credentials: LoginCredentials) => {
     const user = await request<CurrentUser>("/auth/login", { method: "POST", body: JSON.stringify(credentials) });
     clearCsrfToken();
+    boundAccount=user.id;accountBlocked=false;
     return user;
   },
   bootstrap: async (account: BootstrapAccount) => {
     const user = await request<CurrentUser>("/auth/bootstrap", { method: "POST", body: JSON.stringify(account) });
     clearCsrfToken();
+    boundAccount=user.id;accountBlocked=false;
     return user;
   },
   changePassword: async (credentials: { currentPassword: string; newPassword: string }) => {
@@ -204,6 +222,7 @@ export const authService = {
   logout: async () => {
     await request<void>("/auth/logout", { method: "POST" });
     clearCsrfToken();
+    boundAccount=undefined;accountBlocked=false;
   },
 };
 
@@ -324,6 +343,8 @@ function getCsrfTokenForUpload(signal?: AbortSignal): Promise<string> {
 }
 
 async function upload<T>(path: string, body: FormData, options: UploadOptions = {}, retryCsrf = true): Promise<T> {
+  if(accountBlocked)throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
+  const expectedAccount=boundAccount;
   if (options.signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
   const token = await getCsrfTokenForUpload(options.signal);
   if (options.signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
@@ -333,6 +354,7 @@ async function upload<T>(path: string, body: FormData, options: UploadOptions = 
     xhr.withCredentials = true;
     xhr.setRequestHeader("Accept", "application/json");
     xhr.setRequestHeader("X-CSRF-TOKEN", token);
+    if(expectedAccount)xhr.setRequestHeader("X-LW-Account",expectedAccount);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) options.onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
     };
@@ -363,6 +385,7 @@ async function upload<T>(path: string, body: FormData, options: UploadOptions = 
         void upload<T>(path, body, options, false).then(resolve, reject);
         return;
       }
+      if(details.code==="auth.account_changed")reportAccountChange();
       reject(new ApiError(details));
     };
     xhr.onerror = () => {
@@ -453,9 +476,10 @@ export const adminService = {
     if (role) query.set("role", role);
     return request<PagedResult<AdminUser>>(`/admin/users?${query}`);
   },
-  createUser: (account: { displayName: string; email: string; phone?: string; password: string; role: "customer" | "admin"; organizationId?: string }) =>
+  listRoles: (locale: SupportedLocale) => request<ConfigOption[]>("/admin/roles", { locale }),
+  createUser: (account: { displayName: string; email: string; phone?: string; password: string; role: "customer" | "admin" | "operator"; organizationId?: string }) =>
     request<AdminUser>("/admin/users", { method: "POST", body: JSON.stringify(account) }),
-  updateUser: (id: string, account: { displayName: string; phone?: string; role: "owner" | "customer" | "admin"; active: boolean; organizationId?: string }) =>
+  updateUser: (id: string, account: { displayName: string; phone?: string; role: "owner" | "customer" | "admin" | "operator"; active: boolean; organizationId?: string }) =>
     request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(account) }),
   resetUserPassword: (id: string, newPassword: string) =>
     request<void>(`/admin/users/${encodeURIComponent(id)}/password`, { method: "PUT", body: JSON.stringify({ newPassword }) }),
@@ -477,6 +501,7 @@ export const adminService = {
     const body = new FormData(); body.append("file", file); body.append("expectedUpdatedAt", preset.updatedAt ?? "");
     return request<AdminCharacterPreset>(`/admin/character-presets/${encodeURIComponent(preset.id)}/image`, { method: "POST", body });
   },
+  listProjectVoiceReferences: (id: string) => request<AdminVoiceReference[]>(`/admin/projects/${encodeURIComponent(id)}/voices`),
   listVoiceReferences: () => request<AdminVoiceReference[]>("/admin/voices"),
   listSupportedFileContentTypes: () => request<string[]>("/admin/file-content-types"),
   listFileCategories: (scope: "source" | "reference") => request<AdminFileCategory[]>(`/admin/file-categories/${scope}`),
@@ -516,10 +541,33 @@ export const revisionService = {
 };
 
 export const announcementService = {
+  preview: (id: string, version: number) => request<{count: number | null}>(`/admin/announcements/${id}/preview?version=${version}`),
+  deleteDraft: (id: string, version: number) => request<void>(`/admin/announcements/${id}?version=${version}`, {method:"DELETE"}),
   dismissMany: (ids: string[]) => request<void>("/announcements/dismiss", { method: "POST", body: JSON.stringify({ids}) }),
   feed: (locale: SupportedLocale, before?: number, unread = false, publicOnly = false) => request<import("@lifewood/domain").AnnouncementFeed>(`/announcements${publicOnly ? "/public" : ""}?unread=${unread}${before ? `&before=${before}` : ""}`, { locale }),
   dismiss: (id: string) => request<void>(`/announcements/${encodeURIComponent(id)}/dismiss`, { method: "POST" }),
-  list: (search: string, before?: number) => request<import("@lifewood/domain").AnnouncementPage>(`/admin/announcements?search=${encodeURIComponent(search)}${before ? `&before=${before}` : ""}`),
+  list: (search: string, before?: number, status = "", placement = "") => request<import("@lifewood/domain").AnnouncementPage>(`/admin/announcements?status=${encodeURIComponent(status)}&placement=${encodeURIComponent(placement)}&search=${encodeURIComponent(search)}${before ? `&before=${before}` : ""}`),
   save: (id: string, content: import("@lifewood/domain").AnnouncementInput) => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}`, {method:"PUT", body:JSON.stringify(content)}),
   transition: (id: string, version: number, action: "publish" | "withdraw") => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}/${action}`, {method:"POST",body:JSON.stringify({version})}),
+};
+
+export interface NotificationItem { id:number;kind:string;projectId:string;projectTitle:string;actor:string;createdAt:string;read:boolean;archived:boolean;state:string;targetId:string;title:string;level:string }
+export interface NotificationPage {items:NotificationItem[];nextCursor:number|null;watermark:number;unread:number}
+export interface NotificationRule {kind:string;titleZh:string;titleEn:string;level:string;enabled:boolean;allowMute:boolean;audience:string;version:number}
+export interface NotificationRules {items:NotificationRule[];retentionDays:number}
+export interface NotificationPreferences {toast:boolean;sound:boolean;quietStart:string|null;quietEnd:string|null;timeZone:string;mutedKinds:string[]|null}
+export interface NotificationLog {id:number;kind:string;projectId:string;createdAt:string;status:string;attempts:number;recipients:number;error:string|null}
+export const notificationService={
+ target:(id:number,locale:SupportedLocale,admin:boolean)=>request<{path:string}>(`/notifications/${id}/target?admin=${admin}`,{locale}),
+ list:(locale:SupportedLocale,params:Record<string,string>={},before?:number)=>request<NotificationPage>(`/notifications?${new URLSearchParams({...params,...(before?{before:String(before)}:{})})}`,{locale}),
+ counts:()=>request<{unread:number;watermark:number}>("/notifications/counts"),
+ update:(action:string,ids?:number[],through?:number)=>request<void>("/notifications/state",{method:"POST",body:JSON.stringify({action,ids,through})}),
+ preferences:()=>request<NotificationPreferences>("/notifications/preferences"),
+ savePreferences:(p:NotificationPreferences)=>request<NotificationPreferences>("/notifications/preferences",{method:"PUT",body:JSON.stringify(p)}),
+ catalog:()=>request<NotificationRules>("/notifications/catalog"),
+ rules:()=>request<NotificationRules>("/admin/notifications/rules"),
+ saveRule:(r:NotificationRule)=>request<NotificationRules>("/admin/notifications/rules",{method:"PUT",body:JSON.stringify(r)}),
+ retention:(days:number)=>request<void>("/admin/notifications/retention",{method:"PUT",body:JSON.stringify({days})}),
+ logs:(before?:number)=>request<{items:NotificationLog[];nextCursor:number|null;pending:number;failed:number}>(`/admin/notifications/logs${before?`?before=${before}`:""}`),
+ retry:(id:number)=>request<void>(`/admin/notifications/retry/${id}`,{method:"POST"}),
 };

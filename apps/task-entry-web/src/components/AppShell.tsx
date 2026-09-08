@@ -1,3 +1,5 @@
+import {AccountSwitcher,AccountSessionGuard} from "@lifewood/ui/account-switcher";
+import {NotificationBell} from "@lifewood/ui/notifications";
 import { Announcements } from "./Announcements";
 import { useConfirm, useConfirmLink } from "../useConfirm";
 import { useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
@@ -41,7 +43,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
       if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest("dialog"))) {
         setAccountOpen(false);
         accountTriggerRef.current?.focus();
       }
@@ -70,7 +72,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
         </Link>
 
         <div className="topbar-actions">
-          <Announcements key={user.id} userId={user.id} locale={locale} />
+          <NotificationBell key={`notifications-${user.id}`}/><Announcements key={user.id} userId={user.id} locale={locale} />
           {canAccessAdmin ? (
             <a className="admin-entry" href={adminCenterUrl(locale)} aria-label={t("nav.adminCenter")} onClick={event => guardLink(event, undefined, true)}>
               <span className="admin-entry-icon" aria-hidden="true">⚙</span>
@@ -105,6 +107,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
                 <Link className="account-action" to={`/${locale}/profile`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
                   {t("nav.profile")}
                 </Link>
+                <AccountSwitcher user={user} destination={()=>`/${locale}/tasks`}/>
                 <button className="account-action" type="button" disabled={logout.isPending} onClick={async () => { if (await confirmLeave()) logout.mutate(); }}>
                   {logout.isPending ? t("nav.loggingOut") : t("nav.logout")}
                 </button>
@@ -114,6 +117,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </div>
         </div>
       </header>
+      <AccountSessionGuard key={user.id} userId={user.id}/>
       <main id="main-content" tabIndex={-1}>{children}</main>
     </div>
   );

@@ -267,7 +267,7 @@ export interface VoiceAndReferencesInfo {
 }
 
 
-export type AdminRole = "owner" | "admin" | "customer";
+export type AdminRole = "owner" | "admin" | "operator" | "customer";
 export type WorkflowStatus = "new" | "contacting" | "confirmed" | "in_production" | "awaiting_customer" | "completed" | "closed";
 export type ProjectPriority = "low" | "normal" | "high" | "urgent";
 
@@ -412,6 +412,7 @@ export interface ProjectStats {
   drafts: number;
   active: number;
   completed: number;
+  actionRequired: number;
 }
 
 export interface ProjectValidationResult {
@@ -436,7 +437,7 @@ export interface AdminCharacterPreset {
   enabled: boolean; sortOrder: number; updatedAt: string | null;
 }
 
-export interface AnnouncementInput { titleZh: string; bodyZh: string; titleEn: string; bodyEn: string; placement: "login" | "personal"; audience: "all" | "specified"; languages: string[]; organizationIds: string[]; startsAt: string | null; endsAt: string | null; version: number }
+export interface AnnouncementInput { displayDays?: number | null; title?: string; body?: string; titleZh?: string; bodyZh?: string; titleEn?: string; bodyEn?: string; placement: "login" | "personal"; audience: "all" | "specified"; languages: string[]; organizationIds: string[]; startsAt: string | null; endsAt: string | null; version: number }
 export interface AnnouncementDocument { id: string; sequence: number; content: AnnouncementInput; status: "draft" | "published" | "withdrawn"; version: number; createdAt: string; recipients: number }
 export interface AnnouncementItem { id: string; sequence: number; title: string; body: string; publishedAt: string; dismissed: boolean; popup: boolean }
 export interface AnnouncementFeed { items: AnnouncementItem[]; nextCursor: number | null }

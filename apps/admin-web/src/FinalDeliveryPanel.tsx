@@ -15,8 +15,8 @@ function formatDate(value: string, locale: SupportedLocale) {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-export function FinalDeliveryPanel({ projectId, projectStatus, locale }: { projectId: string; projectStatus: string; locale: SupportedLocale }) {
-  const canPublish = projectStatus === "submitted";
+export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDeliver = true }: { canDeliver?: boolean; projectId: string; projectStatus: string; locale: SupportedLocale }) {
+  const canPublish = canDeliver && projectStatus === "submitted";
   const { t } = useTranslation();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -79,7 +79,7 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale }: { proje
           <button
             className="danger-link"
             type="button"
-            disabled={revoke.isPending}
+            disabled={!canDeliver || revoke.isPending}
             onClick={async () => { if (await confirm(t("admin.delivery.revokeConfirm"))) revoke.mutate(item.id); }}
           >{t("admin.delivery.revoke")}</button>
         </>}

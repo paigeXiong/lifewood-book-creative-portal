@@ -1,16 +1,31 @@
 using System.Text.Json.Serialization;
 using Lifewood.PlatformApi.Contracts;
 using Lifewood.PlatformApi.Features;
+using Lifewood.PlatformApi.Persistence;
 
 namespace Lifewood.PlatformApi.Serialization;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(SavedAccountsDto))]
+[JsonSerializable(typeof(SwitchAccountRequest))]
+[JsonSerializable(typeof(NotificationTarget))]
+[JsonSerializable(typeof(NotificationItem))]
+[JsonSerializable(typeof(NotificationPage))]
+[JsonSerializable(typeof(NotificationCounts))]
+[JsonSerializable(typeof(NotificationSelection))]
+[JsonSerializable(typeof(NotificationPreferences))]
+[JsonSerializable(typeof(NotificationRule))]
+[JsonSerializable(typeof(NotificationRules))]
+[JsonSerializable(typeof(NotificationRetention))]
+[JsonSerializable(typeof(NotificationLogPage))]
+[JsonSerializable(typeof(long[]))]
 [JsonSerializable(typeof(AdminCharacterPresetDto))]
 [JsonSerializable(typeof(AdminCharacterPresetDto[]))]
 [JsonSerializable(typeof(UpsertCharacterPresetRequest))]
 [JsonSerializable(typeof(DismissAnnouncementsRequest))]
+[JsonSerializable(typeof(AnnouncementPreview))]
 [JsonSerializable(typeof(AnnouncementInput))]
 [JsonSerializable(typeof(AnnouncementDocument))]
 [JsonSerializable(typeof(AnnouncementPage))]

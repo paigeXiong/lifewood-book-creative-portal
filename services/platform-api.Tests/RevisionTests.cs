@@ -19,6 +19,23 @@ public sealed class RevisionTests : IDisposable {
         return DateTimeOffset.Parse((string)cmd.ExecuteScalar()!);
     }
     TaskDraftDto Submitted(){var draft=projects.Create(customer.Id);return projects.Submit(customer.Id,draft.Id,draft.Version,Guid.NewGuid().ToString(),null).Draft!;}
+    [Fact] public void ReturnedDeletionChecksOwnerVersionAndStateBeforeRemovingHistory() {
+        var task=Submitted();
+        Assert.True(store.Return(task.Id,new(task.Version,[new("style","Reason")],WorkflowTime(task.Id)),admin));
+        var draft=projects.Get(customer.Id,task.Id)!;
+        Assert.Equal(SaveOutcome.NotFound,projects.DeleteDraft("someone-else",task.Id,draft.Version).Outcome);
+        Assert.Equal(SaveOutcome.VersionConflict,projects.DeleteDraft(customer.Id,task.Id,task.Version).Outcome);
+        Assert.Single(store.View(task.Id,true,"en-US").Rounds);
+        var resubmitted=projects.Submit(customer.Id,task.Id,draft.Version,Guid.NewGuid().ToString(),null).Draft!;
+        Assert.Equal(SaveOutcome.NotEditable,projects.DeleteDraft(customer.Id,task.Id,resubmitted.Version).Outcome);
+        Assert.True(store.Return(task.Id,new(resubmitted.Version,[new("style","Again")],WorkflowTime(task.Id)),admin));
+        draft=projects.Get(customer.Id,task.Id)!;
+        Assert.Equal(SaveOutcome.Saved,projects.DeleteDraft(customer.Id,task.Id,draft.Version).Outcome);
+        Assert.Null(projects.Get(customer.Id,task.Id));
+        Assert.Empty(store.View(task.Id,true,"en-US").Rounds);
+        Assert.Empty(projects.List(customer.Id,"action_required",null,1,10).Items);
+        Assert.Equal(0,projects.GetStats(customer.Id).ActionRequired);
+    }
     [Fact] public void AttentionFilterUsesReturnStateOwnershipSearchAndPaging() {
         var first=Submitted(); var second=Submitted();
         var ordinary=projects.Create(customer.Id);

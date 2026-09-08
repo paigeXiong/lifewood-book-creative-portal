@@ -22,16 +22,20 @@ internal sealed class AnnouncementRepository(string connectionString)
         c.Parameters.AddWithValue("$id",d.Id); c.Parameters.AddWithValue("$doc",JsonSerializer.Serialize(d,AppJsonContext.Default.AnnouncementDocument)); c.ExecuteNonQuery();
     }
     private static bool Valid(AnnouncementInput? p) => p is not null &&
-        !string.IsNullOrWhiteSpace(p.TitleZh) && p.TitleZh.Length<=160 && !string.IsNullOrWhiteSpace(p.TitleEn) && p.TitleEn.Length<=160 &&
-        !string.IsNullOrWhiteSpace(p.BodyZh) && p.BodyZh.Length<=12000 && !string.IsNullOrWhiteSpace(p.BodyEn) && p.BodyEn.Length<=12000 &&
+        (p.Title is not null || p.Body is not null
+            ? !string.IsNullOrWhiteSpace(p.Title) && p.Title.Length<=160 && !string.IsNullOrWhiteSpace(p.Body) && p.Body.Length<=12000
+            : !string.IsNullOrWhiteSpace(p.TitleZh) && p.TitleZh.Length<=160 && !string.IsNullOrWhiteSpace(p.TitleEn) && p.TitleEn.Length<=160 &&
+              !string.IsNullOrWhiteSpace(p.BodyZh) && p.BodyZh.Length<=12000 && !string.IsNullOrWhiteSpace(p.BodyEn) && p.BodyEn.Length<=12000) &&
+        (p.DisplayDays is null || p.DisplayDays is >=1 and <=3650) &&
         p.Placement is "login" or "personal" && p.Audience is "all" or "specified" && p.Languages is {Length:<=2} && p.OrganizationIds is {Length:<=200} &&
         p.Languages.All(x=>x is "zh-CN" or "en-US") && p.OrganizationIds.All(x=>!string.IsNullOrWhiteSpace(x) && x.Length<=64) &&
         (p.Audience!="all" || p.Languages.Length+p.OrganizationIds.Length==0) &&
         (p.Audience!="specified" || p.Languages.Length+p.OrganizationIds.Length>0) && (p.Placement!="login" || p.OrganizationIds.Length==0) &&
-        (p.StartsAt is null || DateTimeOffset.TryParse(p.StartsAt,out _)) && (p.EndsAt is null || DateTimeOffset.TryParse(p.EndsAt,out _)) &&
-        (p.EndsAt is null || DateTimeOffset.Parse(p.EndsAt)>(p.StartsAt is null ? DateTimeOffset.UtcNow : DateTimeOffset.Parse(p.StartsAt)));
+        (p.DisplayDays is not null || ((p.StartsAt is null || DateTimeOffset.TryParse(p.StartsAt,out _)) && (p.EndsAt is null || DateTimeOffset.TryParse(p.EndsAt,out _)) &&
+        (p.EndsAt is null || DateTimeOffset.Parse(p.EndsAt)>(p.StartsAt is null ? DateTimeOffset.UtcNow : DateTimeOffset.Parse(p.StartsAt)))));
     public string? Save(string id,AnnouncementInput? input,out AnnouncementDocument? result) {
         result=null; if(!Valid(input)) return "invalid"; var p=input!;
+        if(p.DisplayDays is not null)p=p with {StartsAt=null,EndsAt=null};
         using var db=Open(); using var tx=db.BeginTransaction(deferred:false); var old=Read(db,id,tx);
         if(old is null ? p.Version!=0 : old.Version!=p.Version) return "conflict";
         // Published audiences are immutable; copy a notice to deliberately send a new one.
@@ -45,6 +49,7 @@ internal sealed class AnnouncementRepository(string connectionString)
     public string? Transition(string id,long version,bool publish,out AnnouncementDocument? result) {
         result=null;using var db=Open();using var tx=db.BeginTransaction(deferred:false);var old=Read(db,id,tx);
         if(old is null)return "missing";if(old.Version!=version || (publish ? old.Status!="draft" : old.Status!="published"))return "conflict";
+        if(publish)old=old with {Content=old.Content with {DisplayDays=old.Content.DisplayDays??30,StartsAt=null,EndsAt=null}};
         if(publish && !Valid(old.Content))return "invalid";
         var count=0;
         if(publish && old.Content.Placement=="personal") {
@@ -60,12 +65,31 @@ internal sealed class AnnouncementRepository(string connectionString)
         }
         var sequence=old.Sequence;
         if(publish){using var sequenceCommand=db.CreateCommand();sequenceCommand.Transaction=tx;sequenceCommand.CommandText="UPDATE announcements SET seq=(SELECT COALESCE(MAX(seq),0)+1 FROM announcements) WHERE id=$id RETURNING seq";sequenceCommand.Parameters.AddWithValue("$id",id);sequence=Convert.ToInt64(sequenceCommand.ExecuteScalar());}
-        result=old with {Sequence=sequence,Status=publish?"published":"withdrawn",Version=old.Version+1,CreatedAt=publish?DateTimeOffset.UtcNow.ToString("O"):old.CreatedAt,Recipients=publish?count:old.Recipients};
+        var publishedAt=DateTimeOffset.UtcNow;
+        var content=publish && old.Content.DisplayDays is int days ? old.Content with {StartsAt=null,EndsAt=publishedAt.AddDays(days).ToString("O")} : old.Content;
+        result=old with {Content=content,Sequence=sequence,Status=publish?"published":"withdrawn",Version=old.Version+1,CreatedAt=publish?publishedAt.ToString("O"):old.CreatedAt,Recipients=publish?count:old.Recipients};
         Write(db,tx,result);tx.Commit();return null;
     }
-    public AnnouncementPage List(long? before,string? search) {
-        using var db=Open();using var c=db.CreateCommand();c.CommandText="SELECT document FROM announcements WHERE seq<$before AND ($q='' OR instr(lower(json_extract(document,'$.content.titleZh')),lower($q))>0 OR instr(lower(json_extract(document,'$.content.titleEn')),lower($q))>0) ORDER BY seq DESC LIMIT 21";
-        c.Parameters.AddWithValue("$before",before??long.MaxValue);c.Parameters.AddWithValue("$q",(search??"")[..Math.Min((search??"").Length,160)]);
+    public string? Preview(string id,long version,out AnnouncementPreview? preview) {
+        preview=null;using var db=Open();using var tx=db.BeginTransaction();var d=Read(db,id,tx);
+        if(d is null)return "missing";if(d.Version!=version || d.Status!="draft")return "conflict";
+        if(d.Content.Placement=="login"){preview=new(null);return null;}
+        using var c=db.CreateCommand();c.Transaction=tx;c.CommandText="""
+        SELECT COUNT(*) FROM users WHERE is_active=1
+        AND ($langs='[]' OR COALESCE(locale,'zh-CN') IN (SELECT value FROM json_each($langs)))
+        AND ($orgs='[]' OR organization_id IN (SELECT value FROM json_each($orgs)));
+        """;
+        c.Parameters.AddWithValue("$langs",JsonSerializer.Serialize(d.Content.Languages,AppJsonContext.Default.StringArray));c.Parameters.AddWithValue("$orgs",JsonSerializer.Serialize(d.Content.OrganizationIds,AppJsonContext.Default.StringArray));
+        preview=new(Convert.ToInt32(c.ExecuteScalar()));return null;
+    }
+    public string? DeleteDraft(string id,long version) {
+        using var db=Open();using var tx=db.BeginTransaction(deferred:false);var d=Read(db,id,tx);
+        if(d is null)return "missing";if(d.Status!="draft" || d.Version!=version)return "conflict";
+        using var c=db.CreateCommand();c.Transaction=tx;c.CommandText="DELETE FROM announcements WHERE id=$id";c.Parameters.AddWithValue("$id",id);c.ExecuteNonQuery();tx.Commit();return null;
+    }
+    public AnnouncementPage List(long? before,string? search,string? status=null,string? placement=null) {
+        using var db=Open();using var c=db.CreateCommand();c.CommandText="SELECT document FROM announcements WHERE seq<$before AND ($status='' OR json_extract(document,'$.status')=$status) AND ($placement='' OR json_extract(document,'$.content.placement')=$placement) AND ($q='' OR instr(lower(json_extract(document,'$.content.title')),lower($q))>0 OR instr(lower(json_extract(document,'$.content.titleZh')),lower($q))>0 OR instr(lower(json_extract(document,'$.content.titleEn')),lower($q))>0) ORDER BY seq DESC LIMIT 21";
+        c.Parameters.AddWithValue("$status",status??"");c.Parameters.AddWithValue("$placement",placement??"");c.Parameters.AddWithValue("$before",before??long.MaxValue);c.Parameters.AddWithValue("$q",(search??"")[..Math.Min((search??"").Length,160)]);
         using var reader=c.ExecuteReader();var list=new List<AnnouncementDocument>();while(reader.Read())list.Add(JsonSerializer.Deserialize(reader.GetString(0),AppJsonContext.Default.AnnouncementDocument)!);
         return new(list.Take(20).ToArray(),list.Count>20?list[19].Sequence:null);
     }
@@ -84,7 +108,7 @@ internal sealed class AnnouncementRepository(string connectionString)
         ORDER BY a.seq DESC LIMIT 21;
         """;
         c.Parameters.AddWithValue("$user",(object?)userId??DBNull.Value);c.Parameters.AddWithValue("$before",before??long.MaxValue);c.Parameters.AddWithValue("$locale",locale);c.Parameters.AddWithValue("$unread",unread?1:0);
-        using var reader=c.ExecuteReader();var list=new List<AnnouncementItem>();while(reader.Read()) {var d=JsonSerializer.Deserialize(reader.GetString(0),AppJsonContext.Default.AnnouncementDocument)!;var dismissed=reader.GetInt32(1)==1;list.Add(new(d.Id,d.Sequence,locale=="en-US"?d.Content.TitleEn:d.Content.TitleZh,locale=="en-US"?d.Content.BodyEn:d.Content.BodyZh,d.CreatedAt,dismissed,!dismissed && (d.Content.EndsAt is null || DateTimeOffset.Parse(d.Content.EndsAt)>DateTimeOffset.UtcNow)));}
+        using var reader=c.ExecuteReader();var list=new List<AnnouncementItem>();while(reader.Read()) {var d=JsonSerializer.Deserialize(reader.GetString(0),AppJsonContext.Default.AnnouncementDocument)!;var dismissed=reader.GetInt32(1)==1;list.Add(new(d.Id,d.Sequence,d.Content.Title ?? (locale=="en-US"?d.Content.TitleEn:d.Content.TitleZh) ?? "",d.Content.Body ?? (locale=="en-US"?d.Content.BodyEn:d.Content.BodyZh) ?? "",d.CreatedAt,dismissed,!dismissed && (d.Content.EndsAt is null || DateTimeOffset.Parse(d.Content.EndsAt)>DateTimeOffset.UtcNow)));}
         return new(list.Take(20).ToArray(),list.Count>20?list[19].Sequence:null);
     }
     public bool DismissMany(string userId,string[]? ids) {

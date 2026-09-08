@@ -47,7 +47,7 @@ describe("API client", () => {
   });
 
   it("loads authenticated project statistics from the dedicated endpoint", async () => {
-    const payload = { total: 4, drafts: 1, active: 2, completed: 1 };
+    const payload = { total: 4, drafts: 1, active: 2, completed: 1, actionRequired: 0 };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), {
       status: 200,
       headers: { "Content-Type": "application/json" },

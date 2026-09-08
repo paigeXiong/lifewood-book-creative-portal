@@ -18,7 +18,9 @@ type ReplyAttempt = {
 
 export function RevisionWorkspace({children}: {children: ReactNode}) {
   const { locale } = useParams();
-  const path=useLocation().pathname;
+  const location=useLocation();
+  const path=location.pathname;
+  const notification=new URLSearchParams(location.search).get("notification");
   const taskId=path.match(/\/tasks\/([^/]+)/)?.[1];
   const {t}=useTranslation();
   const confirm = useConfirm();
@@ -57,6 +59,8 @@ export function RevisionWorkspace({children}: {children: ReactNode}) {
     setUnit("");
     setBody("");
   }, [conversation, resetSend]);
+  useEffect(()=>{if(!notification||!round)return;const message=round.messages.find(m=>m.id===notification);if(message){setUnit(message.unit);setOpen(true);}else if(round.id===notification)setOpen(true);},[notification,round?.id]);
+  useEffect(()=>{if(open&&notification)document.getElementById(`notification-${notification}`)?.scrollIntoView({block:"center"});},[open,unit,notification,query.data]);
   const selected=round?.reasons.some(r=>r.unit===unit)?unit:round?.reasons[0]?.unit??"";
   const sendReply = () => {
     if (!taskId || !round || round.submittedAt || !body.trim() || send.isPending || inFlightRef.current) return;
@@ -95,7 +99,7 @@ export function RevisionWorkspace({children}: {children: ReactNode}) {
         <Link to={step==="review"?"/"+lang+"/tasks/"+taskId+"/edit/"+selected:"/"+lang+"/tasks/"+taskId+"/edit/review"} onClick={guardLink}>{step==="review"?t("review.edit"):data!.labels.review}</Link>
         </div>
         <div className="revision-pinned-reason"><strong>{t("clientUx.returnReason")}</strong><p>{round.reasons.find(r=>r.unit===selected)?.body}</p></div>
-        <div className="revision-messages" aria-live="polite">{round.messages.filter(m=>m.unit===selected).map(m=><article key={m.id} className={m.isAdmin?"revision-message from-admin":"revision-message"}>
+        <div className="revision-messages" aria-live="polite">{round.messages.filter(m=>m.unit===selected).map(m=><article id={`notification-${m.id}`} key={m.id} className={m.isAdmin?"revision-message from-admin":"revision-message"}>
           {m.avatarUrl?<img src={m.avatarUrl} alt=""/>:<span className="revision-avatar">{m.authorName.slice(0,2)}</span>}
           <div><strong>{m.authorName}</strong><time>{new Date(m.createdAt).toLocaleString(lang)}</time><p>{m.body}</p></div>
         </article>)}</div>

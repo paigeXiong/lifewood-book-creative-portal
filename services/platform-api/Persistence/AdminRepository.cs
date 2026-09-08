@@ -12,8 +12,8 @@ internal sealed record AdminWriteResult(AdminWriteOutcome Outcome, string? Field
 
 internal sealed class AdminRepository(string connectionString)
 {
-    private static readonly IReadOnlySet<string> CreatableRoles = new HashSet<string>(["customer", "admin"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> UpdatableRoles = new HashSet<string>(["owner", "customer", "admin"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> CreatableRoles = new HashSet<string>(["customer", "admin", "operator"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> UpdatableRoles = new HashSet<string>(["owner", "customer", "admin", "operator"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> WorkflowStatuses = new HashSet<string>(["new", "contacting", "confirmed", "in_production", "awaiting_customer", "completed", "closed"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> Priorities = new HashSet<string>(["low", "normal", "high", "urgent"], StringComparer.Ordinal);
     private readonly PasswordHasher<PasswordTarget> passwordHasher = new();
@@ -38,6 +38,7 @@ internal sealed class AdminRepository(string connectionString)
             );
             CREATE INDEX IF NOT EXISTS ix_project_notes_project_created ON project_notes(project_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS ix_projects_workflow_updated ON projects(workflow_status, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS ix_projects_assignee ON projects(assignee_user_id);
             CREATE INDEX IF NOT EXISTS ix_projects_status ON projects(status);
             CREATE INDEX IF NOT EXISTS ix_projects_priority ON projects(priority);
             """);
@@ -55,7 +56,7 @@ internal sealed class AdminRepository(string connectionString)
         command.CommandText = """
             SELECT u.id, u.email, u.display_name, u.phone, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at
             FROM users u LEFT JOIN organizations o ON o.id = u.organization_id
-            WHERE u.is_active = 1 AND u.role IN ('owner', 'admin')
+            WHERE u.is_active = 1 AND u.role IN ('owner', 'admin', 'operator')
             ORDER BY u.display_name COLLATE NOCASE;
             """;
         using var reader = command.ExecuteReader();
@@ -155,7 +156,7 @@ internal sealed class AdminRepository(string connectionString)
         }
     }
 
-    public AdminWriteResult UpdateUser(string id, UpdateUserRequest? request, out AdminUserDto? user)
+    public AdminWriteResult UpdateUser(string id, UpdateUserRequest? request, out AdminUserDto? user, string actorId="")
     {
         user = null;
         if (request is null || string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Trim().Length is < 2 or > 100) return new(AdminWriteOutcome.Invalid, "displayName");
@@ -187,16 +188,18 @@ internal sealed class AdminRepository(string connectionString)
         command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
+        if(currentRole!=request.Role||currentOrganizationId!=request.OrganizationId)NotificationRepository.Capture(connection,transaction,"account:"+id+":"+command.Parameters["$now"].Value,"account","",actorId,id);
         transaction.Commit();
         user = GetUser(id);
         return new(AdminWriteOutcome.Saved);
     }
 
-    public PagedAdminProjectsDto ListProjects(string? workflowStatus, string? priority, string? search, int page, int pageSize)
+    public PagedAdminProjectsDto ListProjects(string? workflowStatus, string? priority, string? search, int page, int pageSize, string? actorId = null)
     {
         using var connection = Open();
         const string where = """
             WHERE (p.status = 'submitted' OR EXISTS(SELECT 1 FROM revision_rounds rr WHERE rr.project_id=p.id))
+              AND ($actor IS NULL OR EXISTS(SELECT 1 FROM users staff WHERE staff.id=$actor AND staff.is_active=1 AND (staff.role IN ('owner','admin') OR (staff.role='operator' AND p.assignee_user_id=staff.id))))
               AND ($workflow = '' OR p.workflow_status = $workflow)
               AND ($priority = '' OR p.priority = $priority)
               AND ($search = '' OR p.task_number LIKE '%' || $search || '%' COLLATE NOCASE OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.project_json, '$.projectName') LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE)
@@ -204,6 +207,7 @@ internal sealed class AdminRepository(string connectionString)
         using var count = connection.CreateCommand();
         count.CommandText = $"SELECT COUNT(*) FROM projects p JOIN users u ON u.id = p.owner_id {where};";
         AddProjectFilters(count, workflowStatus, priority, search);
+        count.Parameters.AddWithValue("$actor", (object?)actorId ?? DBNull.Value);
         var total = Convert.ToInt32(count.ExecuteScalar());
         using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -213,6 +217,7 @@ internal sealed class AdminRepository(string connectionString)
             {where} ORDER BY COALESCE(p.workflow_updated_at, p.updated_at) DESC LIMIT $pageSize OFFSET $offset;
             """;
         AddProjectFilters(command, workflowStatus, priority, search);
+        command.Parameters.AddWithValue("$actor", (object?)actorId ?? DBNull.Value);
         command.Parameters.AddWithValue("$pageSize", pageSize);
         command.Parameters.AddWithValue("$offset", (long)(page - 1) * pageSize);
         using var reader = command.ExecuteReader();
@@ -221,7 +226,7 @@ internal sealed class AdminRepository(string connectionString)
         return new([.. items], page, pageSize, total);
     }
 
-    public AdminProjectDetailDto? GetProject(string id)
+    public AdminProjectDetailDto? GetProject(string id, string? actorId = null)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
@@ -230,9 +235,10 @@ internal sealed class AdminRepository(string connectionString)
                    p.created_at, p.updated_at, p.owner_id, u.display_name, u.email, p.workflow_status, p.priority,
                    p.assignee_user_id, a.display_name, COALESCE(p.workflow_updated_at, p.updated_at)
             FROM projects p JOIN users u ON u.id = p.owner_id LEFT JOIN users a ON a.id = p.assignee_user_id
-            WHERE p.id = $id AND (p.status = 'submitted' OR EXISTS(SELECT 1 FROM revision_rounds rr WHERE rr.project_id=p.id));
+            WHERE p.id = $id AND ($actor IS NULL OR EXISTS(SELECT 1 FROM users staff WHERE staff.id=$actor AND staff.is_active=1 AND (staff.role IN ('owner','admin') OR (staff.role='operator' AND p.assignee_user_id=staff.id)))) AND (p.status = 'submitted' OR EXISTS(SELECT 1 FROM revision_rounds rr WHERE rr.project_id=p.id));
             """;
         command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$actor", (object?)actorId ?? DBNull.Value);
         using var reader = command.ExecuteReader();
         if (!reader.Read()) return null;
         var project = ReadDraft(reader);
@@ -248,20 +254,31 @@ internal sealed class AdminRepository(string connectionString)
         return new(project, ownerId, ownerName, ownerEmail, workflow, priority, assigneeId, assigneeName, workflowUpdatedAt, ListNotes(connection, id));
     }
 
-    public AdminWriteResult UpdateWorkflow(string id, UpdateProjectWorkflowRequest? request)
+    public AdminWriteResult UpdateWorkflow(string id, UpdateProjectWorkflowRequest? request, string actorId="", string? accessActorId = null, bool canAssign = true)
     {
         if (request is null || !WorkflowStatuses.Contains(request.WorkflowStatus)) return new(AdminWriteOutcome.Invalid, "workflowStatus");
         if (!Priorities.Contains(request.Priority)) return new(AdminWriteOutcome.Invalid, "priority");
         using var connection = Open();
         using var transaction = connection.BeginTransaction(deferred: false);
+        if (!ProjectAccess.Allows(connection, transaction, id, accessActorId)) return new(AdminWriteOutcome.NotFound);
+        if (accessActorId is not null && request.AssigneeUserId != accessActorId)
+        {
+            using var assign = connection.CreateCommand();
+            assign.Transaction = transaction;
+            assign.CommandText = "SELECT EXISTS(SELECT 1 FROM users WHERE id=$actor AND is_active=1 AND role IN ('owner','admin'))";
+            assign.Parameters.AddWithValue("$actor", accessActorId);
+            if (Convert.ToInt32(assign.ExecuteScalar()) != 1) return new(AdminWriteOutcome.Protected, "assigneeUserId");
+        }
+        if (!canAssign && request.AssigneeUserId != accessActorId) return new(AdminWriteOutcome.Protected, "assigneeUserId");
         if (request.AssigneeUserId is not null)
         {
             using var assignee = connection.CreateCommand();
             assignee.Transaction = transaction;
-            assignee.CommandText = "SELECT COUNT(*) FROM users WHERE id = $id AND is_active = 1 AND role IN ('owner', 'admin');";
+            assignee.CommandText = "SELECT COUNT(*) FROM users WHERE id = $id AND is_active = 1 AND role IN ('owner', 'admin', 'operator');";
             assignee.Parameters.AddWithValue("$id", request.AssigneeUserId);
             if (Convert.ToInt32(assignee.ExecuteScalar()) == 0) return new(AdminWriteOutcome.Invalid, "assigneeUserId");
         }
+        using var previous=connection.CreateCommand();previous.Transaction=transaction;previous.CommandText="SELECT workflow_status FROM projects WHERE id=$id";previous.Parameters.AddWithValue("$id",id);var previousStatus=previous.ExecuteScalar() as string;
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "UPDATE projects SET workflow_status = $workflow, priority = $priority, assignee_user_id = $assignee, workflow_updated_at = $now WHERE id = $id AND status = 'submitted' AND COALESCE(workflow_updated_at, updated_at) = $expectedWorkflowUpdatedAt;";
@@ -273,6 +290,7 @@ internal sealed class AdminRepository(string connectionString)
         command.Parameters.AddWithValue("$id", id);
         if (command.ExecuteNonQuery() == 1)
         {
+            if(previousStatus!=request.WorkflowStatus)NotificationRepository.Capture(connection,transaction,"workflow:"+id+":"+command.Parameters["$now"].Value,"workflow",id,actorId);
             transaction.Commit();
             return new(AdminWriteOutcome.Saved);
         }
@@ -285,13 +303,14 @@ internal sealed class AdminRepository(string connectionString)
             : new(AdminWriteOutcome.NotFound);
     }
 
-    public AdminWriteResult AddNote(string projectId, string authorUserId, AddAdminNoteRequest? request, out AdminNoteDto? note)
+    public AdminWriteResult AddNote(string projectId, string authorUserId, AddAdminNoteRequest? request, out AdminNoteDto? note, string? accessActorId = null)
     {
         note = null;
         var body = request?.Body.Trim();
         if (string.IsNullOrWhiteSpace(body) || body.Length > 4000) return new(AdminWriteOutcome.Invalid, "body");
         using var connection = Open();
         using var transaction = connection.BeginTransaction(deferred: false);
+        if (!ProjectAccess.Allows(connection, transaction, projectId, accessActorId)) return new(AdminWriteOutcome.NotFound);
         using var exists = connection.CreateCommand();
         exists.Transaction = transaction;
         exists.CommandText = "SELECT COUNT(*) FROM projects WHERE id = $id AND status = 'submitted';";

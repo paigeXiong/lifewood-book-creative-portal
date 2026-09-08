@@ -485,9 +485,11 @@ internal sealed class UserRepository
     {
         var permissions = role switch
         {
-            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage", "admin.runtime.manage" },
-            "admin" => new[] { "admin.access", "admin.projects.manage", "admin.users.manage", "admin.config.manage" },
-            _ => new[] { "tasks.read", "tasks.write", "tasks.submit" }
+            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.config.manage", "admin.runtime.manage" },
+            "admin" => new[] { "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.config.manage" },
+            "operator" => new[] { "admin.access", "admin.projects.read", "admin.projects.workflow", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver" },
+            "customer" => new[] { "tasks.read", "tasks.write", "tasks.submit" },
+            _ => Array.Empty<string>()
         };
         var avatarVersion = avatarFileName ?? id;
         var organization = organizationId is not null && organizationName is not null ? new OrganizationDto(organizationId, organizationName) : null;

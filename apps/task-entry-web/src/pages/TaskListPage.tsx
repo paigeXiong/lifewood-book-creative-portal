@@ -9,11 +9,12 @@ import { DeleteDraftDialog } from "../components/DeleteDraftDialog";
 import { TaskFilters } from "../components/TaskFilters";
 import { buildPagination } from "../pagination";
 
-function TaskStatIcon({ kind }: { kind: "total" | "drafts" | "active" | "completed" }) {
+function TaskStatIcon({ kind }: { kind: "total" | "drafts" | "active" | "completed" | "actionRequired" }) {
   return <svg className="reference-stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
     {kind === "total" && <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>}
     {kind === "drafts" && <><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="m16 3 5 5-9 9-6 1 1-6 9-9Z M13 6l5 5" /></>}
     {kind === "active" && <><path d="M20 10a8 8 0 0 0-14-4L3 9m0-5v5h5M4 14a8 8 0 0 0 14 4l3-3m0 5v-5h-5" /></>}
+    {kind === "actionRequired" && <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>}
     {kind === "completed" && <><circle cx="12" cy="12" r="9" /><path d="m7.5 12 3 3 6-6" /></>}
   </svg>;
 }
@@ -70,7 +71,7 @@ export function TaskListPage() {
       navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
     },
   });
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; version: number; title: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; version: number; title: string; returned: boolean } | null>(null);
   const deletingRef = useRef(false);
   const deleteDraft = useMutation({
     mutationFn: ({ id, version }: { id: string; version: number }) => projectService.deleteDraft(id, version, validLocale),
@@ -79,6 +80,7 @@ export function TaskListPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["project-stats"] }),
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
       ]);
       setDeleteTarget(null);
       if ((tasks.data?.items.length ?? 0) <= 1 && page > 1) {
@@ -166,6 +168,7 @@ export function TaskListPage() {
 
       <section className="reference-stat-row" aria-label={t("tasks.stats.label")}>
         <div className="reference-stat-card"><span>{t("tasks.stats.total")}</span><strong>{stats.data?.total ?? "—"}</strong><TaskStatIcon kind="total" /></div>
+        <div className="reference-stat-card"><span>{t("tasks.stats.actionRequired")}</span><strong>{stats.data?.actionRequired ?? "—"}</strong><TaskStatIcon kind="actionRequired" /></div>
         <div className="reference-stat-card"><span>{t("tasks.stats.drafts")}</span><strong>{stats.data?.drafts ?? "—"}</strong><TaskStatIcon kind="drafts" /></div>
         <div className="reference-stat-card"><span>{t("tasks.stats.active")}</span><strong>{stats.data?.active ?? "—"}</strong><TaskStatIcon kind="active" /></div>
         <div className="reference-stat-card"><span>{t("tasks.stats.completed")}</span><strong>{stats.data?.completed ?? "—"}</strong><TaskStatIcon kind="completed" /></div>
@@ -179,9 +182,16 @@ export function TaskListPage() {
         {tasks.isPending && <span className="sr-only" role="status">{t("common.loading")}</span>}
         {tasks.isError && <div className="inline-error" role="alert">{localizedApiError(tasks.error, t)} <button className="button button-secondary" type="button" onClick={() => void tasks.refetch()}>{t("common.retry")}</button></div>}
           <div className="task-list-toolbar">
+          <div className="task-list-navigation">
+            <div className="task-attention-tabs" aria-label={t("tasks.filterLabel")}>
+              <button type="button" aria-pressed={status!=="action_required"} onClick={()=>updateFilters({status:"",page:1})}>{t("clientUx.allProjects")}</button>
+              <button type="button" aria-pressed={status==="action_required"} onClick={()=>updateFilters({status:"action_required",page:1})}>{t("clientUx.actionRequired")}</button>
+            </div>
+            <span className="task-result-count" role="status">{tasks.data && t("tasks.count", { count: tasks.data.total })}</span>
+
+          </div>
             <form className="task-search" role="search" aria-label={t("tasks.searchLabel")} onSubmit={event => { event.preventDefault(); updateFilters({ q: searchDraft.trim(), page: 1 }); }}>
               <input type="search" aria-label={t("tasks.searchLabel")} placeholder={t("tasks.searchPlaceholder")} value={searchDraft} onChange={event => setSearchDraft(event.target.value)} />
-              <button className="button button-secondary" type="submit">{t("tasks.searchAction")}</button>
             </form>
             <div className="task-table-controls">
               <TaskFilters status={status} statuses={options.data?.taskStatuses ?? []} onApply={updateFilters} />
@@ -196,14 +206,6 @@ export function TaskListPage() {
                 {createDraft.isPending ? t("common.creating") : t("common.createTask")}
               </button>
             </div>
-          </div>
-          <div className="task-list-navigation">
-            <div className="task-attention-tabs" aria-label={t("tasks.filterLabel")}>
-              <button type="button" aria-pressed={status!=="action_required"} onClick={()=>updateFilters({status:"",page:1})}>{t("clientUx.allProjects")}</button>
-              <button type="button" aria-pressed={status==="action_required"} onClick={()=>updateFilters({status:"action_required",page:1})}>{t("clientUx.actionRequired")}</button>
-            </div>
-            <span className="task-result-count" role="status">{tasks.data && t("tasks.count", { count: tasks.data.total })}</span>
-
           </div>
           {filtered && <div className="task-filter-chips" aria-label={t("tasks.listUx.activeFilters")}>
             {search && <button type="button" className="task-filter-chip" aria-label={t("tasks.listUx.removeSearch", { value: search })} onClick={() => updateFilters({ q: "", page: 1 })}><span>{t("tasks.filters.keyword")}: {search}</span><span aria-hidden="true">×</span></button>}
@@ -249,14 +251,14 @@ export function TaskListPage() {
                   <td data-label={t("tasks.columns.book")}>{authorName}</td>
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${returned ? "danger" : statusOption?.tone ?? "neutral"}`}>{returned ? t("clientUx.returnedStatus") : statusOption?.label ?? statusId}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.status === "draft" && !returned && <details className="task-more"><summary aria-label={t("clientUx.more")}>···</summary><button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t("tasks.deleteDraft")}</button></details>}</div></td>
+                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.status === "draft" && <details className="task-more"><summary aria-label={t("clientUx.more")}>···</summary><button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle, returned }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t(returned ? "tasks.deleteReturned" : "tasks.deleteDraft")}</button></details>}</div></td>
                 </tr>;
               })}</tbody>
             </table>
           </div>
       </section>
 
-      {deleteTarget && <DeleteDraftDialog title={deleteTarget.title} busy={deleteDraft.isPending} fallbackFocusRef={createButtonRef}
+      {deleteTarget && <DeleteDraftDialog returned={deleteTarget.returned} title={deleteTarget.title} busy={deleteDraft.isPending} fallbackFocusRef={createButtonRef}
         error={deleteDraft.isError ? (deleteDraft.error instanceof ApiError ? localizedApiError(deleteDraft.error, t) : t("tasks.deleteDraftFailed")) : undefined}
         onClose={() => { if (!deletingRef.current) setDeleteTarget(null); }}
         onConfirm={() => {

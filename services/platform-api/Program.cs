@@ -199,6 +199,13 @@ builder.Services.AddSingleton(deliveries);
 var announcements = new AnnouncementRepository(databaseConnection);
 announcements.Initialize();
 builder.Services.AddSingleton(announcements);
+var savedAccounts = new AccountSwitchStore(databaseConnection, users);
+savedAccounts.Initialize();
+builder.Services.AddSingleton(savedAccounts);
+var notifications = new NotificationRepository(databaseConnection);
+notifications.Initialize();
+builder.Services.AddSingleton(notifications);
+builder.Services.AddHostedService<NotificationWorker>();
 var characterPresets = new CharacterPresetRepository(databaseConnection);
 builder.Services.AddSingleton(characterPresets);
 var voiceReferences = new VoiceReferenceRepository(databaseConnection);
@@ -324,6 +331,17 @@ app.UseAuthorization();
 app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
+    var expected = context.Request.Headers["X-LW-Account"].ToString();
+    if (context.Request.Path.StartsWithSegments("/api") && expected.Length > 0 && context.Request.Path != "/api/auth/active" &&
+        expected != CurrentUser(context)?.Id)
+    {
+        await Error(context,409,"auth.account_changed","accountSwitch.changed","The active account changed. Refresh before continuing.",false).ExecuteAsync(context);
+        return;
+    }
+    await next();
+});
+app.Use(async (context, next) =>
+{
     if (context.Request.Path.StartsWithSegments("/api") &&
         !HttpMethods.IsGet(context.Request.Method) &&
         !HttpMethods.IsHead(context.Request.Method) &&
@@ -420,8 +438,33 @@ api.MapPost("/auth/login", async (LoginRequest? request, HttpContext context, Us
 }).RequireRateLimiting("authentication");
 api.MapPost("/auth/logout", async (HttpContext context) =>
 {
+    context.RequestServices.GetRequiredService<AccountSwitchStore>().Remove(context);
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.NoContent();
+});
+api.MapGet("/auth/active", (HttpContext c) => CurrentUser(c) is {} u ? Results.Text(u.Id) : Results.Unauthorized());
+api.MapGet("/auth/accounts", (HttpContext c, AccountSwitchStore store) => CurrentUser(c) is {} u ? Results.Ok(store.List(c,u)) : Results.Unauthorized());
+api.MapPost("/auth/accounts/add", async (LoginRequest? request,HttpContext c,UserRepository users,AccountSwitchStore store) => {
+    var current=CurrentUser(c);if(current is null)return Results.Unauthorized();
+    if(request is null||string.IsNullOrWhiteSpace(request.Email)||string.IsNullOrEmpty(request.Password))return Results.BadRequest();
+    var result=users.Authenticate(request.Email,request.Password);
+    if(result.Outcome!=AccountLoginOutcome.Success)return Error(c,401,"auth.invalid_credentials","errors.auth.invalidCredentials","The email or password is incorrect.",false);
+    if(!store.HasRoom(c,result.User!.Id,current.Id))return Error(c,409,"auth.account_limit","accountSwitch.limit","Remove an account before adding another.",false);
+    var auth=await c.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    store.Remember(c,current,int.Parse(c.User.FindFirstValue("lw_session_version")!,CultureInfo.InvariantCulture),auth.Properties?.ExpiresUtc??DateTimeOffset.UtcNow.AddHours(8),auth.Properties?.IsPersistent==true);
+    await SignIn(c,result.User,request.RememberMe);
+    return Results.Ok(result.User);
+}).RequireRateLimiting("authentication");
+api.MapPost("/auth/accounts/switch", async (SwitchAccountRequest request,HttpContext c,UserRepository users,AccountSwitchStore store) => {
+    if(CurrentUser(c) is null)return Results.Unauthorized();
+    var saved=store.Find(c,request.Id);
+    if(saved is null || users.Get(saved.UserId,saved.Version) is not {} user)return Error(c,401,"auth.account_expired","accountSwitch.expired","Sign in to this account again.",false);
+    await SignIn(c,user,saved.Persistent,saved.ExpiresAt,saved.Version);
+    return Results.Ok(user);
+}).RequireRateLimiting("authentication");
+api.MapDelete("/auth/accounts/{id}",(string id,HttpContext c,AccountSwitchStore store)=>{
+    var current=CurrentUser(c);if(current is null)return Results.Unauthorized();
+    if(current.Id==id)return Results.Conflict();store.Remove(c,id);return Results.NoContent();
 });
 api.MapGet("/me", (HttpContext context) =>
 {
@@ -526,8 +569,38 @@ api.MapPost("/announcements/dismiss", (DismissAnnouncementsRequest? request,Http
 api.MapPost("/announcements/{id}/dismiss", (string id,HttpContext context,AnnouncementRepository notices) => {
     var user=CurrentUser(context);return user is null?Results.Unauthorized():notices.Dismiss(user.Id,id)?Results.NoContent():Results.NotFound();
 });
-api.MapGet("/admin/announcements", (HttpContext context,AnnouncementRepository notices,long? before,string? search) => {
-    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);return user is null?Results.Unauthorized():!Can(user,"admin.config.manage")?Results.Forbid():Results.Ok(notices.List(before,search));
+// Notification APIs always derive the account from the current, revalidated session.
+api.MapGet("/notifications", (HttpContext c, NotificationRepository n, long? before, string? search, string? kind, string? state, string? project, string? from, string? to, bool unread=false, bool archived=false) => {
+ var u=CurrentUser(c);return u is null?Results.Unauthorized():Results.Ok(n.List(u.Id,Locale(c),before,search,kind,state,project,from,to,unread,archived));
+});
+api.MapGet("/notifications/{id:long}/target",(long id,HttpContext c,NotificationRepository n,bool admin=false)=>CurrentUser(c) is {} u?(n.Target(u.Id,id,Locale(c),admin) is {} target?Results.Ok(target):Results.NotFound()):Results.Unauthorized());
+api.MapGet("/notifications/counts", (HttpContext c,NotificationRepository n)=>CurrentUser(c) is {} u?Results.Ok(n.Counts(u.Id)):Results.Unauthorized());
+api.MapPost("/notifications/state",(HttpContext c,NotificationRepository n,NotificationSelection input)=>CurrentUser(c) is {} u?(n.Update(u.Id,input)?Results.NoContent():Results.BadRequest()):Results.Unauthorized());
+api.MapGet("/notifications/preferences",(HttpContext c,NotificationRepository n)=>CurrentUser(c) is {} u?Results.Ok(n.Preferences(u.Id)):Results.Unauthorized());
+api.MapPut("/notifications/preferences",(HttpContext c,NotificationRepository n,NotificationPreferences input)=>CurrentUser(c) is {} u?(n.SavePreferences(u.Id,input)?Results.Ok(input):Results.BadRequest()):Results.Unauthorized());
+api.MapGet("/notifications/catalog",(HttpContext c,NotificationRepository n)=>CurrentUser(c) is not null?Results.Ok(n.Rules()):Results.Unauthorized());
+api.MapGet("/notifications/stream",async (HttpContext c,NotificationRepository n,string? account)=>{
+ if(CurrentUser(c) is not {} user){c.Response.StatusCode=401;return;}
+ if(account is not null&&account!=user.Id){c.Response.StatusCode=409;return;}
+ c.Response.ContentType="text/event-stream";c.Response.Headers.CacheControl="no-cache, no-store";
+ try{while(!c.RequestAborted.IsCancellationRequested){if(CurrentUser(c) is null)break;var counts=n.Counts(user.Id);await c.Response.WriteAsync("data: "+JsonSerializer.Serialize(counts,AppJsonContext.Default.NotificationCounts)+"\n\n",c.RequestAborted);await c.Response.Body.FlushAsync(c.RequestAborted);await Task.Delay(5000,c.RequestAborted);}}catch(OperationCanceledException){}
+});
+api.MapGet("/admin/notifications/rules",(HttpContext c,NotificationRepository n)=>CurrentUser(c) is {} u&&Can(u,"admin.config.manage")?Results.Ok(n.Rules()):Results.StatusCode(403));
+api.MapPut("/admin/notifications/rules",(HttpContext c,NotificationRepository n,NotificationRule input)=>CurrentUser(c) is {} u&&Can(u,"admin.config.manage")?(n.SaveRule(input)?Results.Ok(n.Rules()):Results.Conflict()):Results.StatusCode(403));
+api.MapPut("/admin/notifications/retention",(HttpContext c,NotificationRepository n,NotificationRetention input)=>CurrentUser(c) is {} u&&Can(u,"admin.config.manage")?(n.Retention(input.Days)?Results.NoContent():Results.BadRequest()):Results.StatusCode(403));
+api.MapGet("/admin/notifications/logs",(HttpContext c,NotificationRepository n,long? before)=>CurrentUser(c) is {} u&&u.Roles.Contains("owner")?Results.Ok(n.Logs(before)):Results.StatusCode(403));
+api.MapPost("/admin/notifications/retry/{id:long}",(long id,HttpContext c,NotificationRepository n)=>CurrentUser(c) is {} u&&u.Roles.Contains("owner")?(n.Retry(id)?Results.NoContent():Results.Conflict()):Results.StatusCode(403));
+
+api.MapGet("/admin/announcements", (HttpContext context,AnnouncementRepository notices,long? before,string? search,string? status,string? placement) => {
+    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);return user is null?Results.Unauthorized():!Can(user,"admin.config.manage")?Results.Forbid():status is not (null or "" or "draft" or "published" or "withdrawn") || placement is not (null or "" or "login" or "personal") ? Results.BadRequest() : Results.Ok(notices.List(before,search,status,placement));
+});
+api.MapGet("/admin/announcements/{id}/preview", (string id,long version,HttpContext context,AnnouncementRepository notices) => {
+    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    var error=notices.Preview(id,version,out var preview);return error is null?Results.Ok(preview):Error(context,error=="missing"?404:409,"announcement."+error,"announcements.conflict","Announcement changed or was removed.",false);
+});
+api.MapDelete("/admin/announcements/{id}", (string id,long version,HttpContext context,AnnouncementRepository notices) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    var error=notices.DeleteDraft(id,version);return error is null?Results.NoContent():Error(context,error=="missing"?404:409,"announcement."+error,"announcements.conflict","Announcement changed or cannot be deleted.",false);
 });
 api.MapPut("/admin/announcements/{id}", (string id,AnnouncementInput? input,HttpContext context,AnnouncementRepository notices) => {
     var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
@@ -648,7 +721,7 @@ api.MapGet("/admin/overview", (HttpContext context, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (!Can(user, "admin.overview.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     return Results.Ok(admin.GetOverview());
 });
 
@@ -656,7 +729,7 @@ api.MapGet("/admin/audit-actions", (HttpContext context) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.access")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (!Can(user, "admin.audit.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     return Results.Ok(AuditActionCatalog.ForLocale(Locale(context)));
 });
 
@@ -664,7 +737,7 @@ api.MapGet("/admin/audit-events", (HttpContext context, AuditRepository audit, s
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.access")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (!Can(user, "admin.audit.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     return Results.Ok(audit.List(search, actionId, from, to, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
 });
 
@@ -672,11 +745,24 @@ api.MapGet("/admin/audit-avatar/{actorId}", (string actorId, string? name, HttpC
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.access")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (!Can(user, "admin.audit.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     context.Response.Headers.CacheControl = "private, no-store";
     var avatar = accounts.OpenAvatar(actorId);
     if (avatar is not null) return Results.Stream(avatar.Stream, avatar.ContentType);
     return Results.Text(AvatarImage.Create(actorId, string.IsNullOrWhiteSpace(name) ? "?" : name), "image/svg+xml", Encoding.UTF8);
+});
+
+api.MapGet("/admin/roles", (HttpContext context) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "User management permission is required.", false);
+    var zh = Locale(context) == "zh-CN";
+    return Results.Ok(new ConfigOptionDto[] {
+        new("owner", zh ? "平台负责人" : "Platform owner"),
+        new("admin", zh ? "管理员" : "Administrator"),
+        new("operator", zh ? "运营人员" : "Operations staff"),
+        new("customer", zh ? "客户" : "Customer")
+    });
 });
 
 api.MapGet("/admin/users", (HttpContext context, AdminRepository admin, string? search, string? role, int page = 1, int pageSize = 20) =>
@@ -704,7 +790,7 @@ api.MapGet("/admin/assignees", (HttpContext context, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    if (!Can(user, "admin.projects.assign")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     return Results.Ok(admin.ListAssignees());
 });
 
@@ -730,7 +816,7 @@ api.MapPut("/admin/users/{id}", (string id, UpdateUserRequest? request, HttpCont
     if (current is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(current, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     if (id == current.Id && request is { Active: false }) return Error(context, 409, "user.self_deactivate", "errors.admin.selfDeactivate", "You cannot deactivate your own account.", false);
-    var result = admin.UpdateUser(id, request, out var updated);
+    var result = admin.UpdateUser(id, request, out var updated, current.Id);
     return result.Outcome switch
     {
         AdminWriteOutcome.Saved => Results.Ok(updated),
@@ -763,22 +849,22 @@ api.MapGet("/admin/projects", (HttpContext context, AdminRepository admin, strin
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    return Results.Ok(admin.ListProjects(workflowStatus, priority, search, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+    if (!Can(user, "admin.projects.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    return Results.Ok(admin.ListProjects(workflowStatus, priority, search, Math.Max(1, page), Math.Clamp(pageSize, 1, 100), user.Id));
 });
 
 api.MapGet("/admin/projects/{id}", (string id, HttpContext context, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    var project = admin.GetProject(id);
+    if (!Can(user, "admin.projects.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var project = admin.GetProject(id, user.Id);
     return project is null ? Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false) : Results.Ok(project);
 });
 
-api.MapGet("/projects/{id}/revision-avatar/{messageId}", (string id,string messageId,HttpContext context,RevisionStore store,UserRepository accounts) => {
+api.MapGet("/projects/{id}/revision-avatar/{messageId}", (string id,string messageId,HttpContext context,RevisionStore store,UserRepository accounts, AdminRepository admin) => {
     var user=CurrentUser(context);
-    if(user is null || (store.Owner(id)!=user.Id && !Can(user,"admin.projects.manage")))return Results.NotFound();
+    if(user is null || ((store.Owner(id)!=user.Id || !Can(user,"tasks.read")) && (!Can(user,"admin.projects.read") || admin.GetProject(id,user.Id) is null)))return Results.NotFound();
     var actor=store.MessageAuthor(id,messageId);if(actor is null)return Results.NotFound();
     context.Response.Headers.CacheControl="private, no-store";
     var avatar=accounts.OpenAvatar(actor);
@@ -787,19 +873,20 @@ api.MapGet("/projects/{id}/revision-avatar/{messageId}", (string id,string messa
 api.MapGet("/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store) => {
     var user=CurrentUser(context);
     if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in required.",false);
-    if(store.Owner(id)!=user.Id)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    if(!Can(user,"tasks.read") || store.Owner(id)!=user.Id)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
     return Results.Ok(store.View(id,false,Locale(context)));
 });
-api.MapGet("/admin/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store, int page=1) => {
+api.MapGet("/admin/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store, AdminRepository admin, int page=1) => {
     var user=CurrentUser(context);
-    if(user is null || !Can(user,"admin.projects.manage"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
-    if(store.Owner(id) is null)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    if(user is null || !Can(user,"admin.projects.read"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
+    if(admin.GetProject(id, user.Id) is null)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
     return Results.Ok(store.View(id,true,Locale(context),page));
 });
-api.MapPost("/admin/projects/{id}/return", (string id, ReturnProjectRequest request, HttpContext context, RevisionStore store) => {
+api.MapPost("/admin/projects/{id}/return", (string id, ReturnProjectRequest request, HttpContext context, RevisionStore store, AdminRepository admin) => {
     var user=CurrentUser(context);
-    if(user is null || !Can(user,"admin.projects.manage"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
-    return store.Return(id,request,user)?Results.Ok(store.View(id,true,Locale(context))):Error(context,409,"project.workflow_conflict","errors.project.workflowConflict","Return request is invalid or project changed.",true);
+    if(user is null || !Can(user,"admin.projects.return"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
+    if(admin.GetProject(id, user.Id) is null)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    return store.Return(id,request,user,user.Id)?Results.Ok(store.View(id,true,Locale(context))):Error(context,409,"project.workflow_conflict","errors.project.workflowConflict","Return request is invalid or project changed.",true);
 });
 api.MapPost("/projects/{id}/revisions/{round}/messages", (string id,string round,RevisionReplyRequest request,HttpContext context,RevisionStore store) => {
     var user=CurrentUser(context);
@@ -807,30 +894,32 @@ api.MapPost("/projects/{id}/revisions/{round}/messages", (string id,string round
     if(store.Owner(id)!=user.Id)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
     return store.Reply(id,round,request,user,false)?Results.Ok(store.View(id,false,Locale(context))):Error(context,409,"validation.failed","errors.validation.failed","Message could not be sent.",true);
 });
-api.MapPost("/admin/projects/{id}/revisions/{round}/messages", (string id,string round,RevisionReplyRequest request,HttpContext context,RevisionStore store) => {
+api.MapPost("/admin/projects/{id}/revisions/{round}/messages", (string id,string round,RevisionReplyRequest request,HttpContext context,RevisionStore store, AdminRepository admin) => {
     var user=CurrentUser(context);
-    if(user is null || !Can(user,"admin.projects.manage"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
-    return store.Reply(id,round,request,user,true)?Results.Ok(store.View(id,true,Locale(context))):Error(context,409,"validation.failed","errors.validation.failed","Message could not be sent.",true);
+    if(user is null || !Can(user,"admin.projects.reply"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission required.",false);
+    if(admin.GetProject(id, user.Id) is null)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    return store.Reply(id,round,request,user,true,user.Id)?Results.Ok(store.View(id,true,Locale(context))):Error(context,409,"validation.failed","errors.validation.failed","Message could not be sent.",true);
 });
 
 api.MapPut("/admin/projects/{id}/workflow", (string id, UpdateProjectWorkflowRequest? request, HttpContext context, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    var result = admin.UpdateWorkflow(id, request);
+    if (!Can(user, "admin.projects.workflow")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.UpdateWorkflow(id, request, user.Id, user.Id, Can(user, "admin.projects.assign"));
+    if (result.Outcome == AdminWriteOutcome.Protected) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Assignment permission is required.", false);
     if (result.Outcome == AdminWriteOutcome.NotFound) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false);
     if (result.Outcome == AdminWriteOutcome.Conflict) return Error(context, 409, "project.workflow_conflict", "errors.project.workflowConflict", "The workflow was changed by another administrator. Reload and try again.", true);
     if (result.Outcome != AdminWriteOutcome.Saved) return Error(context, 400, "validation.failed", "errors.validation.failed", "The workflow values are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")]);
-    return Results.Ok(admin.GetProject(id));
+    return Results.Ok(admin.GetProject(id, user.Id));
 });
 
 api.MapPost("/admin/projects/{id}/notes", (string id, AddAdminNoteRequest? request, HttpContext context, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    var result = admin.AddNote(id, user.Id, request, out var note);
+    if (!Can(user, "admin.projects.note")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.AddNote(id, user.Id, request, out var note, user.Id);
     return result.Outcome switch
     {
         AdminWriteOutcome.Saved => Results.Ok(note),
@@ -843,8 +932,8 @@ api.MapGet("/admin/projects/{id}/files/{fileId}", (string id, string fileId, Htt
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    var detail = admin.GetProject(id);
+    if (!Can(user, "admin.projects.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var detail = admin.GetProject(id, user.Id);
     var asset = detail is null ? null : (AllProjectAssets(detail.Project).FirstOrDefault(item => item.Id == fileId) ?? revisions.HistoryAsset(id, fileId));
     if (detail is null || asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     var folder = Path.Combine(dataDirectory, "uploads", detail.OwnerId, id);
@@ -1229,12 +1318,24 @@ api.MapPost("/projects", async (HttpContext context, ProjectRepository projects,
     }
 });
 
-api.MapGet("/admin/projects/{id}/submission-snapshot", (string id, HttpContext context, ProjectRepository projects) =>
+api.MapGet("/admin/projects/{id}/voices", (string id, HttpContext context, AdminRepository admin, ProjectRepository projects, VoiceReferenceRepository voices) =>
+{
+    var user = CurrentUser(context);
+    if (user is null || !Can(user, "admin.projects.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Read permission is required.", false);
+    var detail = admin.GetProject(id, user.Id);
+    if (detail is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "Project not found.", false);
+    var selected = detail.Project.VoiceAndReferences.Voiceover;
+    var ids = selected.SelectedVoiceIds.Append(selected.PreferredVoiceId).ToHashSet();
+    var saved = projects.GetSubmissionSnapshotForAdmin(id)?.Voices ?? [];
+    return Results.Ok(saved.Concat(voices.ListAdmin()).DistinctBy(voice => voice.Id).Where(voice => ids.Contains(voice.Id)).ToArray());
+});
+
+api.MapGet("/admin/projects/{id}/submission-snapshot", (string id, HttpContext context, ProjectRepository projects, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    var snapshot = projects.GetSubmissionSnapshotForAdmin(id);
+    if (!Can(user, "admin.projects.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var snapshot = admin.GetProject(id, user.Id) is null ? null : projects.GetSubmissionSnapshotForAdmin(id);
     return snapshot is null
         ? Error(context, 404, "submission.snapshot_not_found", "errors.http.notFound", "The submission configuration snapshot was not found.", false)
         : Results.Ok(snapshot);
@@ -1299,7 +1400,7 @@ api.MapDelete("/projects/{id}", async (string id, int version, HttpContext conte
 
     var current = projects.Get(user.Id, id);
     if (current is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The project was not found.", false);
-    if (revisions.HasHistory(id)) return Error(context,409,"project.not_editable","errors.project.notEditable","Returned projects cannot be deleted.",false);
+    if (current.TaskNumber is not null && current.WorkflowStatus != "awaiting_customer") return Error(context,409,"project.not_editable","errors.project.notEditable","Only returned projects can be deleted.",false);
     if (!current.Status.Equals("draft", StringComparison.Ordinal))
         return Error(context, 409, "project.not_editable", "errors.project.notEditable", "Submitted projects cannot be deleted.", false, currentVersion: current.Version);
     if (current.Version != version)
@@ -1313,7 +1414,13 @@ api.MapDelete("/projects/{id}", async (string id, int version, HttpContext conte
         return Error(context, 500, "system.unexpected", "errors.system.unexpected", "The draft could not be safely deleted. Try again.", true);
     }
 
-    var result = projects.DeleteDraft(user.Id, id, version);
+    SaveResult result;
+    try { result = projects.DeleteDraft(user.Id, id, version); }
+    catch
+    {
+        if (stagedUploads is not null) RestoreDraftUploadDeletion(dataDirectory, user.Id, id, stagedUploads, app.Logger);
+        throw;
+    }
     if (result.Outcome != SaveOutcome.Saved)
     {
         if (stagedUploads is not null) RestoreDraftUploadDeletion(dataDirectory, user.Id, id, stagedUploads, app.Logger);
@@ -1746,9 +1853,9 @@ static CurrentUserDto? CurrentUser(HttpContext context)
         : context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
 }
 
-static Task SignIn(HttpContext context, CurrentUserDto user, bool persistent)
+static Task SignIn(HttpContext context, CurrentUserDto user, bool persistent, DateTimeOffset? expires = null, int? savedVersion = null)
 {
-    var sessionVersion = context.RequestServices.GetRequiredService<UserRepository>().GetSessionVersion(user.Id)
+    var sessionVersion = savedVersion ?? context.RequestServices.GetRequiredService<UserRepository>().GetSessionVersion(user.Id)
         ?? throw new InvalidOperationException("Cannot create a session for an inactive or missing user.");
     var identity = new ClaimsIdentity(
         [
@@ -1761,8 +1868,9 @@ static Task SignIn(HttpContext context, CurrentUserDto user, bool persistent)
     {
         IsPersistent = persistent,
         AllowRefresh = true,
-        ExpiresUtc = DateTimeOffset.UtcNow.Add(persistent ? TimeSpan.FromDays(30) : TimeSpan.FromHours(8))
+        ExpiresUtc = expires ?? DateTimeOffset.UtcNow.Add(persistent ? TimeSpan.FromDays(30) : TimeSpan.FromHours(8))
     };
+    context.RequestServices.GetRequiredService<AccountSwitchStore>().Remember(context,user,sessionVersion,properties.ExpiresUtc!.Value,persistent);
     return context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
 }
 static bool Can(CurrentUserDto user, string permission) => user.Permissions.Contains(permission, StringComparer.Ordinal);
@@ -2108,11 +2216,23 @@ static void RecoverDeletedReferenceFiles(string dataDirectory, ProjectRepository
 static string? StageDraftUploadDeletion(string dataDirectory, string ownerId, string projectId)
 {
     var source = Path.Combine(dataDirectory, "uploads", ownerId, projectId);
-    if (!Directory.Exists(source)) return null;
+    var deliverySource = Path.Combine(dataDirectory, "deliveries", projectId);
+    if (!Directory.Exists(source) && !Directory.Exists(deliverySource)) return null;
     var stagingParent = Path.Combine(dataDirectory, "uploads", ".deleted", ownerId);
     Directory.CreateDirectory(stagingParent);
     var staged = Path.Combine(stagingParent, $"{projectId}_{Guid.NewGuid():N}");
-    Directory.Move(source, staged);
+    if (Directory.Exists(source)) Directory.Move(source, staged);
+    else Directory.CreateDirectory(staged);
+    try
+    {
+        if (Directory.Exists(deliverySource)) Directory.Move(deliverySource, Path.Combine(staged, ".deliveries"));
+    }
+    catch
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        Directory.Move(staged, source);
+        throw;
+    }
     return staged;
 }
 
@@ -2121,6 +2241,18 @@ static void RestoreDraftUploadDeletion(string dataDirectory, string ownerId, str
     var destination = Path.Combine(dataDirectory, "uploads", ownerId, projectId);
     try
     {
+        var stagedDeliveries = Path.Combine(staged, ".deliveries");
+        if (Directory.Exists(stagedDeliveries))
+        {
+            var deliveryDestination = Path.Combine(dataDirectory, "deliveries", projectId);
+            Directory.CreateDirectory(Path.GetDirectoryName(deliveryDestination)!);
+            if (!Directory.Exists(deliveryDestination)) Directory.Move(stagedDeliveries, deliveryDestination);
+            else
+            {
+                foreach (var file in Directory.EnumerateFiles(stagedDeliveries)) File.Move(file, Path.Combine(deliveryDestination, Path.GetFileName(file)));
+                Directory.Delete(stagedDeliveries);
+            }
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         if (!Directory.Exists(destination)) Directory.Move(staged, destination);
         else

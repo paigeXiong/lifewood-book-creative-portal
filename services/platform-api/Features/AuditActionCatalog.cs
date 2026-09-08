@@ -11,6 +11,9 @@ internal static class AuditActionCatalog
 
     private static readonly Definition[] Definitions =
     [
+        new("notification.config", "修改通知配置", "Changed notification configuration"),
+        new("notification.retry", "重试通知", "Retried notification delivery"),
+        new("announcement.delete", "删除公告草稿", "Deleted announcement draft"),
         new("announcement.save", "保存公告草稿", "Saved announcement draft"),
         new("announcement.publish", "发布公告", "Published announcement"),
         new("announcement.withdraw", "下架公告", "Withdrew announcement"),
@@ -49,6 +52,9 @@ internal static class AuditActionCatalog
         if (segments is null || segments.Length < 3 || segments[0] != "api" || segments[1] != "admin") return null;
         string? Value(int index) => segments.Length > index ? Uri.UnescapeDataString(segments[index]) : null;
 
+        if (segments.Length >= 4 && segments[2] == "notifications" && method == "PUT") return new("notification.config", "notification", Value(3));
+        if (segments.Length >= 5 && segments[2] == "notifications" && method == "POST") return new("notification.retry", "notification", Value(4));
+        if (method == "DELETE" && segments.Length == 4 && segments[2] == "announcements") return new("announcement.delete", "announcement", Value(3));
         if (method == "PUT" && segments.Length == 4 && segments[2] == "announcements") return new("announcement.save", "announcement", Value(3));
         if (method == "POST" && segments.Length == 5 && segments[2] == "announcements" && (segments[4] is "publish" or "withdraw")) return new("announcement." + segments[4], "announcement", Value(3));
         if (method == "DELETE" && segments.Length == 5 && segments[2] == "file-categories") return new("file_category.remove", "file_category", $"{Value(3)}/{Value(4)}");

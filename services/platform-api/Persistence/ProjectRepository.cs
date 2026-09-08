@@ -261,14 +261,15 @@ internal sealed class ProjectRepository(string connectionString)
                 COUNT(*),
                 COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN status = 'submitted' AND COALESCE(workflow_status, 'new') NOT IN ('completed', 'closed') THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status = 'submitted' AND workflow_status = 'completed' THEN 1 ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN status = 'submitted' AND workflow_status = 'completed' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status = 'draft' AND workflow_status = 'awaiting_customer' THEN 1 ELSE 0 END), 0)
             FROM projects
             WHERE owner_id = $ownerId;
             """;
         command.Parameters.AddWithValue("$ownerId", ownerId);
         using var reader = command.ExecuteReader();
         if (!reader.Read()) return new ProjectStatsDto(0, 0, 0, 0);
-        return new ProjectStatsDto(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3));
+        return new ProjectStatsDto(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4));
     }
 
     public TaskDraftDto Create(string ownerId, string clientName = "", string contactName = "", string email = "", string? phone = null, string locale = "zh-CN")
@@ -348,16 +349,39 @@ internal sealed class ProjectRepository(string connectionString)
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
-        if (HasTable(connection, transaction, "project_notes"))
+        using (var eligible = connection.CreateCommand())
         {
-            using var notes = connection.CreateCommand();
-            notes.Transaction = transaction;
-            notes.CommandText = "DELETE FROM project_notes WHERE project_id = $id AND EXISTS (SELECT 1 FROM projects WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version);";
-            notes.Parameters.AddWithValue("$ownerId", ownerId);
-            notes.Parameters.AddWithValue("$id", id);
-            notes.Parameters.AddWithValue("$version", version);
-            notes.ExecuteNonQuery();
+            eligible.Transaction = transaction;
+            eligible.CommandText = "SELECT COUNT(*) FROM projects WHERE owner_id=$ownerId AND id=$id AND status='draft' AND (task_number IS NULL OR workflow_status='awaiting_customer') AND version=$version";
+            eligible.Parameters.AddWithValue("$ownerId", ownerId);
+            eligible.Parameters.AddWithValue("$id", id);
+            eligible.Parameters.AddWithValue("$version", version);
+            if (Convert.ToInt32(eligible.ExecuteScalar()) == 0)
+            {
+                transaction.Rollback();
+                var candidate = Get(ownerId, id);
+                if (candidate is null) return new SaveResult(SaveOutcome.NotFound, null, null);
+                return new SaveResult(candidate.Status != "draft" || (candidate.TaskNumber is not null && candidate.WorkflowStatus != "awaiting_customer")
+                    ? SaveOutcome.NotEditable : SaveOutcome.VersionConflict, candidate, candidate.Version);
+            }
         }
+        // Validate ownership, state and version before removing any dependent records.
+        void RemoveRelated(string table, string predicate)
+        {
+            if (!HasTable(connection, transaction, table)) return;
+            using var cleanup = connection.CreateCommand();
+            cleanup.Transaction = transaction;
+            cleanup.CommandText = $"DELETE FROM {table} WHERE {predicate}";
+            cleanup.Parameters.AddWithValue("$id", id);
+            cleanup.ExecuteNonQuery();
+        }
+        RemoveRelated("project_notes", "project_id=$id");
+        RemoveRelated("revision_messages", "round_id IN (SELECT id FROM revision_rounds WHERE project_id=$id)");
+        RemoveRelated("revision_rounds", "project_id=$id");
+        RemoveRelated("project_deliveries", "project_id=$id");
+        RemoveRelated("notifications", "event_id IN (SELECT id FROM notification_events WHERE project_id=$id)");
+        RemoveRelated("notification_targets", "event_id IN (SELECT id FROM notification_events WHERE project_id=$id)");
+        RemoveRelated("notification_events", "project_id=$id");
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "DELETE FROM projects WHERE owner_id = $ownerId AND id = $id AND status = 'draft' AND version = $version;";

@@ -14,13 +14,18 @@ meta:
 
 当前版本支持客户提交书籍视频项目资料，并由管理员人工跟进和交付最终成品：
 
-- 客户首次建号、密码登录、Cookie 会话、退出和密码修改
+- 本机首次创建平台负责人、管理员创建客户账号、密码登录、Cookie 会话、退出和密码修改
 - 中英文客户门户，路由前缀为 `/zh-CN` 和 `/en-US`
 - 项目草稿、真实文件上传、服务端校验和幂等提交
 - 提交记录、受理状态和最终成品下载
 - 管理员账号、用户、组织、动态选项、项目跟进和最终成品上传
 - SQLite 数据库、审计记录、容量限制和数据保护密钥
 - Windows x64 与 Linux x64/arm64 Native AOT 发布
+- 书籍资料 AI 辅助识别、模型服务商及业务绑定配置
+- 定向退回、双方沟通、重新提交及管理员历史追溯
+- 预设角色和图片、配置引用保护与音色试听管理
+- 公告发布、定向收件、关闭记忆和个人历史
+- 本地待发布改动：公告公示天数、单份内容，以及完整站内通知（见 [通知说明](./notifications.md)）
 
 平台不依赖外部登录或测试 API。正式发布物不包含默认账号、假头像、Mock Token 或测试控制台。
 
@@ -69,10 +74,13 @@ scripts/                测试、发布、安装和备份脚本
 /:locale/tasks/new/project
 /:locale/tasks/:taskId/edit/project
 /:locale/tasks/:taskId/edit/characters
+/:locale/tasks/:taskId/edit/style
 /:locale/tasks/:taskId/edit/voice
+/:locale/tasks/:taskId/edit/references
 /:locale/tasks/:taskId/edit/review
 /:locale/tasks/:taskId
 /:locale/tasks/:taskId/submitted
+/:locale/notifications
 ```
 
 首期 locale 为 `zh-CN` 和 `en-US`。语言切换必须保留项目 ID、当前步骤、查询参数和未保存表单状态。
@@ -83,7 +91,7 @@ scripts/                测试、发布、安装和备份脚本
 
 业务记录保存稳定 ID 或代码。接口按 locale 返回显示文案。没有真实头像时，服务端返回根据昵称生成的实际图片。
 
-已提交项目是不可变快照。客户只能查看提交记录、受理状态和最终成品；管理员可以修改内部跟进状态并上传最终成品。
+已提交项目保留不可变快照。客户默认查看提交记录、受理状态和最终成品；管理员定向退回后，客户可处理指定单元并重新提交。管理员可以修改内部跟进状态并上传最终成品，但不能改写客户提交的快照。
 
 ## 修改后的最低验证
 

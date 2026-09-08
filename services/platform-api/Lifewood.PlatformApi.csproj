@@ -20,6 +20,11 @@
     <Content Include="assets\voice-samples\*.wav" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Runtime data may exist in a local checkout but must never be published. -->
+    <Content Remove="data/**" />
+    <None Remove="data/**" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="Lifewood.PlatformApi.Tests" />
   </ItemGroup>
 </Project>

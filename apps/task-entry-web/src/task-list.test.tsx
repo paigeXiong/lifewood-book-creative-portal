@@ -14,7 +14,7 @@ async function mount(locale: SupportedLocale, query = "", total = 30, items: Tas
   await i18n.changeLanguage(locale);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(["form-options", locale], { taskStatuses: [{ id: "draft", label: locale === "zh-CN" ? "草稿" : "Draft" }], workflowStatuses: [] });
-  client.setQueryData(["project-stats"], { total, drafts: total, active: 0, completed: 0 });
+  client.setQueryData(["project-stats"], { total, drafts: total, active: 0, completed: 0, actionRequired: 0 });
   const list = vi.spyOn(projectService, "listProjects").mockImplementation(async params => ({ items, page: params.page ?? 1, pageSize: 10, total }));
   const container = document.createElement("div"); document.body.append(container);
   const root = createRoot(container);
@@ -35,22 +35,23 @@ async function mount(locale: SupportedLocale, query = "", total = 30, items: Tas
 
 for (const locale of ["zh-CN", "en-US"] as const) {
   describe(`project list (${locale})`, () => {
-    it("confirms deletion in the app, supports cancel, blocks duplicate requests and retains failures for retry", async () => {
+    it.each([false, true])("confirms deletion (returned=%s) in the app, supports cancel, blocks duplicate requests and retains failures for retry", async (returned) => {
       const show = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
       const close = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
       Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: function(this: HTMLDialogElement) { this.open = true; } });
       Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value: function(this: HTMLDialogElement) { this.open = false; } });
-      const item: TaskSummary = { id: "draft-1", version: 7, projectName: "Project", bookTitle: "Book to delete", authorName: "Author", clientName: "Client", status: "draft", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
+      const item: TaskSummary = { id: "draft-1", version: 7, workflowStatus: returned ? "awaiting_customer" : "new", projectName: "Project", bookTitle: "Book to delete", authorName: "Author", clientName: "Client", status: "draft", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
       const page = await mount(locale, "", 1, [item]);
       let resolve!: () => void;
       let reject!: (error: Error) => void;
       const remove = vi.spyOn(projectService, "deleteDraft").mockImplementation(() => new Promise<void>((ok, fail) => { resolve = ok; reject = fail; }));
-      const stats = vi.spyOn(projectService, "getStats").mockResolvedValue({ total: 0, drafts: 0, active: 0, completed: 0 });
+      const stats = vi.spyOn(projectService, "getStats").mockResolvedValue({ total: 0, drafts: 0, active: 0, completed: 0, actionRequired: 0 });
       const nativeConfirm = vi.spyOn(window, "confirm");
       try {
         await page.click(".task-delete");
         expect(page.container.querySelector("dialog")?.textContent).toContain(item.bookTitle);
         expect(document.activeElement?.textContent).toBe(i18n.t("common.cancel"));
+        expect(page.container.querySelector("dialog h2")?.textContent).toBe(i18n.t(returned ? "tasks.deleteReturnedTitle" : "tasks.deleteDialogTitle"));
         await page.click(".delete-draft-actions .button-secondary");
         expect(page.container.querySelector("dialog")).toBeNull();
         expect(remove).not.toHaveBeenCalled();

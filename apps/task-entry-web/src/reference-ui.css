@@ -980,3 +980,6 @@ body {
   }
   .step-marker { width: 26px; height: 26px; }
 }
+
+.announcement-entry-icon { display: none; }
+@media(max-width:600px){.reference-topbar .announcement-entry>span{display:none}.reference-topbar .announcement-entry-icon{display:block}.reference-topbar .announcement-entry{padding:6px;min-width:32px}}

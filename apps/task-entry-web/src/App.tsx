@@ -1,3 +1,4 @@
+import {NotificationCenter} from "@lifewood/ui/notifications";
 import { RevisionWorkspace } from "./components/RevisionWorkspace";
 import { lazy, Suspense, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -66,6 +67,7 @@ export const appRoutes = createRoutesFromElements(<>
       <Route path="/:locale" element={<LocaleLayout />}>
         <Route path="login" element={<LoginRoute />} />
         <Route element={<ProtectedLayout />}>
+          <Route path="notifications" element={<NotificationCenter/>}/>
           <Route path="tasks" element={<TaskListPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="tasks/:taskId" element={<TaskDetailPage />} />

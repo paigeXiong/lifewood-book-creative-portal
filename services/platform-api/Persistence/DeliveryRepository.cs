@@ -101,13 +101,14 @@ internal sealed class DeliveryRepository(string connectionString)
         return reader.Read() ? Read(reader) : null;
     }
 
-    public AdminWriteResult Publish(string deliveryId, string projectId, string uploaderUserId, string fileName, string contentType, long sizeBytes, string? note, out FinalDeliveryDto? delivery)
+    public AdminWriteResult Publish(string deliveryId, string projectId, string uploaderUserId, string fileName, string contentType, long sizeBytes, string? note, out FinalDeliveryDto? delivery, string? accessActorId = null)
     {
         delivery = null;
         var normalizedNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
         if (normalizedNote?.Length > 2000) return new(AdminWriteOutcome.Invalid, "note");
         using var connection = Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        if (!ProjectAccess.Allows(connection, transaction, projectId, accessActorId)) return new(AdminWriteOutcome.NotFound);
         using var project = connection.CreateCommand();
         project.Transaction = transaction;
         project.CommandText = "SELECT status FROM projects WHERE id = $id;";
@@ -160,10 +161,11 @@ internal sealed class DeliveryRepository(string connectionString)
         delivery = new(deliveryId, projectId, fileName, contentType, sizeBytes, normalizedNote, now);
         return new(AdminWriteOutcome.Saved);
     }
-    public AdminWriteResult Revoke(string projectId, string deliveryId)
+    public AdminWriteResult Revoke(string projectId, string deliveryId, string? accessActorId = null)
     {
         using var connection = Open();
-        using var transaction = connection.BeginTransaction();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        if (!ProjectAccess.Allows(connection, transaction, projectId, accessActorId)) return new(AdminWriteOutcome.NotFound);
         var now = DateTimeOffset.UtcNow.ToString("O");
         using var command = connection.CreateCommand();
         command.Transaction = transaction;

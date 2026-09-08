@@ -17,8 +17,8 @@ internal static class DeliveryEndpoints
         {
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
-            if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
-            return admin.GetProject(id) is null
+            if (!Can(user, "admin.projects.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
+            return admin.GetProject(id, user.Id) is null
                 ? Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.")
                 : Results.Ok(deliveries.ListForAdmin(id));
         });
@@ -27,8 +27,8 @@ internal static class DeliveryEndpoints
         {
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
-            if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
-            if (admin.GetProject(id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            if (!Can(user, "admin.projects.deliver")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
+            if (admin.GetProject(id, user.Id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
             if (!context.Request.HasFormContentType) return Error(context, 400, "validation.failed", "errors.validation.failed", "A multipart form is required.");
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var file = form.Files.GetFile("file");
@@ -73,7 +73,7 @@ internal static class DeliveryEndpoints
             {
                 CreatePendingMarker(pendingMarker);
                 File.Move(temporary, path);
-                var result = deliveries.Publish(deliveryId, id, user.Id, safeName, contentType, file.Length, note, out var delivery);
+                var result = deliveries.Publish(deliveryId, id, user.Id, safeName, contentType, file.Length, note, out var delivery, user.Id);
                 if (result.Outcome == AdminWriteOutcome.Saved)
                 {
                     try { File.Delete(pendingMarker); }
@@ -108,9 +108,9 @@ internal static class DeliveryEndpoints
         {
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
-            if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
-            if (admin.GetProject(id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
-            var result = deliveries.Revoke(id, deliveryId);
+            if (!Can(user, "admin.projects.deliver")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
+            if (admin.GetProject(id, user.Id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            var result = deliveries.Revoke(id, deliveryId, user.Id);
             if (result.Outcome != AdminWriteOutcome.Saved)
                 return Error(context, 404, "delivery.not_found", "admin.delivery.notFound", "The delivery was not found.");
             DeleteDeliveryFiles(dataDirectory, id, deliveryId, loggerFactory.CreateLogger("DeliveryCleanup"));
@@ -120,8 +120,8 @@ internal static class DeliveryEndpoints
         {
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
-            if (!Can(user, "admin.projects.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
-            if (admin.GetProject(id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            if (!Can(user, "admin.projects.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
+            if (admin.GetProject(id, user.Id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
             return DeliveryFile(id, deliveryId, dataDirectory, deliveries, context);
         });
 

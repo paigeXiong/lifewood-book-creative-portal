@@ -111,7 +111,7 @@ i18n.addResourceBundle(
         saving: "正在保存…",
       },
       priority: { low: "低", normal: "普通", high: "高", urgent: "紧急" },
-      roles: { owner: "所有者", admin: "管理员", customer: "客户" },
+      roles: { owner: "所有者", admin: "管理员", operator: "运营人员", customer: "客户" },
       overview: {
         summary: "平台概览",
         totalProjects: "已提交项目",
@@ -542,7 +542,7 @@ i18n.addResourceBundle(
         high: "High",
         urgent: "Urgent",
       },
-      roles: { owner: "Owner", admin: "Administrator", customer: "Customer" },
+      roles: { owner: "Owner", admin: "Administrator", operator: "Operations staff", customer: "Customer" },
       overview: {
         summary: "Platform overview",
         totalProjects: "Submitted projects",
@@ -876,3 +876,6 @@ for (const [locale, voices] of Object.entries({
   "zh-CN": { replaceAudio: "替换音频", removeAudio: "移除音频", deleteVoice: "删除音色", moreAudio: "{{name}}的音频操作", playSample: "试听{{name}}", pauseSample: "暂停{{name}}", retrySample: "重试播放{{name}}", durationLoading: "读取时长…", shortSample: "不足 1 秒", playbackFailed: "无法播放", playbackFailedFor: "{{name}}的音频无法播放，可点击重试或替换音频。" },
   "en-US": { replaceAudio: "Replace audio", removeAudio: "Remove audio", deleteVoice: "Delete voice", moreAudio: "Audio actions for {{name}}", playSample: "Play {{name}}", pauseSample: "Pause {{name}}", retrySample: "Retry {{name}}", durationLoading: "Loading duration…", shortSample: "Under 1 sec", playbackFailed: "Playback failed", playbackFailedFor: "Audio for {{name}} could not be played. Retry or replace the audio." }
 })) i18n.addResourceBundle(locale, "translation", { admin: { voices } }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", {admin:{users:{operatorHint:"仅可查看和处理分配给自己的项目；不能分配项目、管理账号或修改系统配置。"}}}, true, true);
+i18n.addResourceBundle("en-US", "translation", {admin:{users:{operatorHint:"Can view and handle assigned projects only. Cannot assign projects, manage accounts, or change system settings."}}}, true, true);

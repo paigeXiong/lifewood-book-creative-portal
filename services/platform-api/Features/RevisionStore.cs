@@ -48,22 +48,24 @@ internal sealed class RevisionStore(string connectionString)
     public string? Owner(string projectId) { using var c=Open(); using var cmd=Command(c,"SELECT owner_id FROM projects WHERE id=$id",("$id",projectId)); return cmd.ExecuteScalar() as string; }
     public string? MessageAuthor(string projectId,string messageId) { using var c=Open();using var cmd=Command(c,"SELECT author_id FROM revision_messages m JOIN revision_rounds r ON r.id=m.round_id WHERE r.project_id=$project AND m.id=$message",("$project",projectId),("$message",messageId));return cmd.ExecuteScalar() as string; }
     public bool HasHistory(string id) { using var c=Open(); using var cmd=Command(c,"SELECT COUNT(*) FROM revision_rounds WHERE project_id=$id",("$id",id)); return (long)cmd.ExecuteScalar()! > 0; }
-    public bool Return(string id, ReturnProjectRequest request, CurrentUserDto user) {
+    public bool Return(string id, ReturnProjectRequest request, CurrentUserDto user, string? accessActorId = null) {
         if(request.ExpectedWorkflowUpdatedAt is null || request.Reasons is not {Length: >=1 and <=5} || request.Reasons.Any(r=>r is null || !UnitIds.Contains(r.Unit) || string.IsNullOrWhiteSpace(r.Body) || r.Body.Length>2000) || request.Reasons.Select(r=>r.Unit).Distinct().Count()!=request.Reasons.Length) return false;
-        using var c=Open(); using var tx=c.BeginTransaction();
+        using var c=Open(); using var tx=c.BeginTransaction(deferred: false);
+        if (!Lifewood.PlatformApi.Persistence.ProjectAccess.Allows(c,tx,id,accessActorId)) return false;
         using var read=Command(c,"SELECT json_object('project',json(project_json),'book',json(book_json),'creative',json(creative_json),'voiceAndReferences',json(voice_json),'configuration',json(submission_snapshot_json)) FROM projects WHERE id=$id AND version=$version AND status='submitted' AND COALESCE(workflow_updated_at,updated_at)=$workflow",("$id",id),("$version",request.Version),("$workflow",request.ExpectedWorkflowUpdatedAt.Value.ToString("O"))); read.Transaction=tx;
         var snapshot=read.ExecuteScalar() as string; if(snapshot is null) return false;
         var round=Guid.NewGuid().ToString("N"); var now=DateTimeOffset.UtcNow.ToString("O");
         using var insert=Command(c,"INSERT INTO revision_rounds VALUES($round,$id,$now,NULL,$reasons,$snapshot,NULL)",("$round",round),("$id",id),("$now",now),("$reasons",JsonSerializer.Serialize(request.Reasons,AppJsonContext.Default.RevisionReasonArray)),("$snapshot",snapshot)); insert.Transaction=tx; insert.ExecuteNonQuery();
         foreach(var reason in request.Reasons) InsertMessage(c,tx,round,new(Guid.NewGuid().ToString("N"),reason.Unit,reason.Body.Trim()),user,true,now);
-        using var update=Command(c,"UPDATE projects SET status='draft',version=version+1,submission_key=NULL,workflow_status='awaiting_customer',updated_at=$now,workflow_updated_at=$now WHERE id=$id",("$id",id),("$now",now)); update.Transaction=tx; update.ExecuteNonQuery(); tx.Commit(); return true;
+        using var update=Command(c,"UPDATE projects SET status='draft',version=version+1,submission_key=NULL,workflow_status='awaiting_customer',updated_at=$now,workflow_updated_at=$now WHERE id=$id",("$id",id),("$now",now)); update.Transaction=tx; update.ExecuteNonQuery(); Lifewood.PlatformApi.Persistence.NotificationRepository.Capture(c,tx,"return:"+round,"returned",id,user.Id,round);tx.Commit(); return true;
     }
     private static void InsertMessage(SqliteConnection c, SqliteTransaction tx, string round, RevisionReplyRequest request, CurrentUserDto user,bool admin,string now) {
         using var cmd=Command(c,"INSERT INTO revision_messages VALUES($id,$round,$unit,$body,$author,$name,$avatar,$admin,$now)",("$id",request.Id),("$round",round),("$unit",request.Unit),("$body",request.Body.Trim()),("$author",user.Id),("$name",user.DisplayName),("$avatar",user.AvatarUrl),("$admin",admin?1:0),("$now",now)); cmd.Transaction=tx;cmd.ExecuteNonQuery();
     }
-    public bool Reply(string id,string round,RevisionReplyRequest request,CurrentUserDto user,bool admin) {
+    public bool Reply(string id,string round,RevisionReplyRequest request,CurrentUserDto user,bool admin, string? accessActorId = null) {
         if(!Guid.TryParse(request.Id,out _) || string.IsNullOrWhiteSpace(request.Body) || request.Body.Length>2000) return false;
-        using var c=Open(); using var tx=c.BeginTransaction();
+        using var c=Open(); using var tx=c.BeginTransaction(deferred: false);
+        if (admin && !Lifewood.PlatformApi.Persistence.ProjectAccess.Allows(c,tx,id,accessActorId)) return false;
         using var check=Command(c,"SELECT reasons FROM revision_rounds WHERE id=$round AND project_id=$id AND submitted_at IS NULL",("$round",round),("$id",id));check.Transaction=tx;
         var reasons=check.ExecuteScalar() as string; if(reasons is null || !JsonSerializer.Deserialize(reasons,AppJsonContext.Default.RevisionReasonArray)!.Any(r=>r.Unit==request.Unit))return false;
         using var existing=Command(c,"SELECT COUNT(*) FROM revision_messages WHERE id=$message AND round_id=$round AND author_id=$author AND body=$body AND unit=$unit",("$message",request.Id),("$round",round),("$author",user.Id),("$body",request.Body.Trim()),("$unit",request.Unit)); existing.Transaction=tx;

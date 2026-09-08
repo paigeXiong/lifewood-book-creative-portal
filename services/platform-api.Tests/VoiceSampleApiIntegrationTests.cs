@@ -809,6 +809,105 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AccountSwitchingRequiresVerifiedDeviceSessionsAndRejectsStalePageWrites()
+    {
+        await BootstrapOwner();
+        var csrf=await GetCsrf(ownerClient);
+        using var me=JsonDocument.Parse(await ownerClient.GetStringAsync("/api/me"));
+        var first=me.RootElement.GetProperty("id").GetString()!;
+        using var created=await Send(ownerClient,HttpMethod.Post,"/api/admin/users",csrf,JsonContent.Create(new{displayName="Switch Customer",email="switch@example.test",password="switch-password-123",role="customer"}));
+        Assert.Equal(HttpStatusCode.OK,created.StatusCode);
+        using var createdJson=JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var second=createdJson.RootElement.GetProperty("id").GetString()!;
+        using var unverified=await Send(ownerClient,HttpMethod.Post,"/api/auth/accounts/switch",csrf,JsonContent.Create(new{id=second}));
+        Assert.Equal(HttpStatusCode.Unauthorized,unverified.StatusCode);
+        using var bad=await Send(ownerClient,HttpMethod.Post,"/api/auth/accounts/add",csrf,JsonContent.Create(new{email="switch@example.test",password="wrong",rememberMe=true}));
+        Assert.Equal(HttpStatusCode.Unauthorized,bad.StatusCode);
+        using var added=await Send(ownerClient,HttpMethod.Post,"/api/auth/accounts/add",csrf,JsonContent.Create(new{email="switch@example.test",password="switch-password-123",rememberMe=true}));
+        Assert.Equal(HttpStatusCode.OK,added.StatusCode);
+        Assert.Contains(added.Headers.GetValues("Set-Cookie"),cookie=>cookie.StartsWith("lw_accounts=")&&cookie.Contains("httponly",StringComparison.OrdinalIgnoreCase));
+        csrf=await GetCsrf(ownerClient);
+        using(var list=JsonDocument.Parse(await ownerClient.GetStringAsync("/api/auth/accounts"))) Assert.Equal(2,list.RootElement.GetProperty("items").GetArrayLength());
+        using var staleRequest=new HttpRequestMessage(HttpMethod.Post,"/api/projects"){Content=JsonContent.Create(new{})};
+        staleRequest.Headers.Add("X-CSRF-TOKEN",csrf);staleRequest.Headers.Add("X-LW-Account",first);
+        using var stale=await ownerClient.SendAsync(staleRequest);
+        Assert.Equal(HttpStatusCode.Conflict,stale.StatusCode);Assert.Equal("auth.account_changed",await ErrorCode(stale));
+        using var switched=await Send(ownerClient,HttpMethod.Post,"/api/auth/accounts/switch",csrf,JsonContent.Create(new{id=first}));
+        Assert.Equal(HttpStatusCode.OK,switched.StatusCode);
+        using(var user=JsonDocument.Parse(await ownerClient.GetStringAsync("/api/me")))Assert.Equal(first,user.RootElement.GetProperty("id").GetString());
+        using var separate=factory.CreateClient(new WebApplicationFactoryClientOptions{HandleCookies=true});
+        var otherCsrf=await GetCsrf(separate);
+        using var login=await Send(separate,HttpMethod.Post,"/api/auth/login",otherCsrf,JsonContent.Create(new{email="switch@example.test",password="switch-password-123",rememberMe=false}));
+        Assert.Equal(HttpStatusCode.OK,login.StatusCode);otherCsrf=await GetCsrf(separate);
+        using var foreign=await Send(separate,HttpMethod.Post,"/api/auth/accounts/switch",otherCsrf,JsonContent.Create(new{id=first}));
+        Assert.Equal(HttpStatusCode.Unauthorized,foreign.StatusCode);
+        csrf=await GetCsrf(ownerClient);
+        using var removed=await Send(ownerClient,HttpMethod.Delete,$"/api/auth/accounts/{second}",csrf);
+        Assert.Equal(HttpStatusCode.NoContent,removed.StatusCode);
+        using var removedSwitch=await Send(ownerClient,HttpMethod.Post,"/api/auth/accounts/switch",csrf,JsonContent.Create(new{id=second}));
+        Assert.Equal(HttpStatusCode.Unauthorized,removedSwitch.StatusCode);
+        using var logout=await Send(ownerClient,HttpMethod.Post,"/api/auth/logout",csrf);
+        Assert.Equal(HttpStatusCode.NoContent,logout.StatusCode);
+        using var anonymous=await ownerClient.GetAsync("/api/auth/accounts");Assert.Equal(HttpStatusCode.Unauthorized,anonymous.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CustomerCanDeleteReturnedProjectWithHistoryAndFilesAndRecoverFromStorageFailure(bool hasUploads)
+    {
+        await BootstrapOwner();
+        var ownerCsrf = await GetCsrf(ownerClient);
+        using var created = await Send(ownerClient, HttpMethod.Post, "/api/admin/users", ownerCsrf,
+            JsonContent.Create(new { displayName = "Returning Customer", email = "return-delete@example.test", password = "return-delete-123", role = "customer" }));
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        var csrf = await GetCsrf(client);
+        using var login = await Send(client, HttpMethod.Post, "/api/auth/login", csrf,
+            JsonContent.Create(new { email = "return-delete@example.test", password = "return-delete-123", rememberMe = false }));
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        csrf = await GetCsrf(client);
+        using var me = JsonDocument.Parse(await client.GetStringAsync("/api/me"));
+        var userId = me.RootElement.GetProperty("id").GetString()!;
+        var connection = $"Data Source={Path.Combine(root, "platform.db")}";
+        var repository = new ProjectRepository(connection);
+        var revisions = new Lifewood.PlatformApi.Features.RevisionStore(connection);
+        var draft = repository.Create(userId);
+        var submitted = repository.Submit(userId, draft.Id, draft.Version, Guid.NewGuid().ToString(), null).Draft!;
+        using var ownerMe = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/me"));
+        var actor = new CurrentUserDto(ownerMe.RootElement.GetProperty("id").GetString()!, null, "Owner", null, null, null, [], [], "en-US", null);
+        Assert.True(revisions.Return(draft.Id, new(submitted.Version, [new("project", "Update details")], submitted.UpdatedAt), actor));
+        draft = repository.Get(userId, draft.Id)!;
+        var uploadFolder = Path.Combine(root, "uploads", userId, draft.Id);
+        var deliveryFolder = Path.Combine(root, "deliveries", draft.Id);
+        if (hasUploads) Directory.CreateDirectory(uploadFolder);
+        Directory.CreateDirectory(deliveryFolder);
+        var upload = Path.Combine(uploadFolder, "source.txt"); var delivery = Path.Combine(deliveryFolder, "video.mp4");
+        if (hasUploads) await File.WriteAllTextAsync(upload, "source");
+        await File.WriteAllTextAsync(delivery, "delivery");
+        using var stale = await Send(client, HttpMethod.Delete, $"/api/projects/{draft.Id}?version={draft.Version - 1}", csrf);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        using var wrongOwner = await Send(ownerClient, HttpMethod.Delete, $"/api/projects/{draft.Id}?version={draft.Version}", ownerCsrf);
+        Assert.Equal(HttpStatusCode.NotFound, wrongOwner.StatusCode);
+        void Sql(string sql) { using var c = new SqliteConnection(connection); c.Open(); using var q = c.CreateCommand(); q.CommandText=sql; q.ExecuteNonQuery(); }
+        Sql("CREATE TRIGGER reject_test_delete BEFORE DELETE ON projects BEGIN SELECT RAISE(ABORT,'test storage failure'); END;");
+        using var failed = await Send(client, HttpMethod.Delete, $"/api/projects/{draft.Id}?version={draft.Version}", csrf);
+        Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+        Assert.Equal(hasUploads, File.Exists(upload)); Assert.True(File.Exists(delivery));
+        Assert.Single(revisions.View(draft.Id, true, "en-US").Rounds);
+        Sql("DROP TRIGGER reject_test_delete;");
+        using var removed = await Send(client, HttpMethod.Delete, $"/api/projects/{draft.Id}?version={draft.Version}", csrf);
+        Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+        Assert.False(Directory.Exists(uploadFolder)); Assert.False(Directory.Exists(deliveryFolder));
+        Assert.Empty(revisions.View(draft.Id, true, "en-US").Rounds);
+        using var missing = await ownerClient.GetAsync($"/api/admin/projects/{draft.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        using var c = new SqliteConnection(connection); c.Open(); using var q = c.CreateCommand();
+        q.CommandText="SELECT (SELECT COUNT(*) FROM revision_messages) + (SELECT COUNT(*) FROM notification_events) + (SELECT COUNT(*) FROM notification_targets) + (SELECT COUNT(*) FROM notifications)";
+        Assert.Equal(0L, (long)q.ExecuteScalar()!);
+    }
+
+    [Fact]
     public async Task DraftDeletionRequiresCurrentVersionAndRemovesOnlyDrafts()
     {
         await BootstrapOwner();
@@ -1195,6 +1294,13 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         var history = (await ownerClient.GetFromJsonAsync<Lifewood.PlatformApi.Features.RevisionView>($"/api/admin/projects/{draft.Id}/revisions"))!;
         Assert.NotNull(Assert.Single(history.Rounds).AfterSnapshot);
         Assert.Equal("Clarified after review", draft.Book.Subtitle);
+        var notificationRepository=new NotificationRepository("Data Source="+Path.Combine(root,"platform.db"));notificationRepository.Dispatch();
+        var adminNotices=(await ownerClient.GetFromJsonAsync<NotificationPage>("/api/notifications"))!.Items;
+        var customerNotices=(await customer.GetFromJsonAsync<NotificationPage>("/api/notifications"))!.Items;
+        Assert.Contains(adminNotices,n=>n.Kind=="submitted");Assert.Contains(adminNotices,n=>n.Kind=="resubmitted");Assert.Contains(adminNotices,n=>n.Kind=="customer_reply");
+        Assert.Contains(customerNotices,n=>n.Kind=="returned"&&n.State=="done");Assert.Contains(customerNotices,n=>n.Kind=="delivery");
+        Assert.DoesNotContain(customerNotices,n=>n.Kind=="customer_reply");Assert.DoesNotContain(adminNotices,n=>n.Kind=="returned");
+
     }
 
     [Fact]
@@ -1205,6 +1311,10 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden,(await Send(customer,HttpMethod.Put,"/api/admin/announcements/"+id,customerCsrf,JsonContent.Create(input))).StatusCode);
         var saved=await Send(ownerClient,HttpMethod.Put,"/api/admin/announcements/"+id,csrf,JsonContent.Create(input));Assert.Equal(HttpStatusCode.OK,saved.StatusCode);
         var d=await saved.Content.ReadFromJsonAsync<AnnouncementDocument>();
+        Assert.Equal(HttpStatusCode.Forbidden,(await customer.GetAsync("/api/admin/announcements/"+id+"/preview?version=1")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,(await Send(customer,HttpMethod.Delete,"/api/admin/announcements/"+id+"?version=1",customerCsrf)).StatusCode);
+        Assert.Equal(2,(await ownerClient.GetFromJsonAsync<AnnouncementPreview>("/api/admin/announcements/"+id+"/preview?version=1"))!.Count);
+
         Assert.Equal(HttpStatusCode.OK,(await Send(ownerClient,HttpMethod.Post,"/api/admin/announcements/"+id+"/publish",csrf,JsonContent.Create(new AnnouncementVersion(d!.Version)))).StatusCode);
         using var anonymous=factory.CreateClient();Assert.Equal(HttpStatusCode.Unauthorized,(await anonymous.GetAsync("/api/announcements")).StatusCode);
         Assert.Empty((await anonymous.GetFromJsonAsync<AnnouncementFeed>("/api/announcements/public"))!.Items);
@@ -1213,6 +1323,21 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         Assert.Empty((await customer.GetFromJsonAsync<AnnouncementFeed>("/api/announcements?unread=true"))!.Items);
         Assert.Single((await customer.GetFromJsonAsync<AnnouncementFeed>("/api/announcements"))!.Items);
         Assert.Single((await ownerClient.GetFromJsonAsync<AnnouncementFeed>("/api/announcements?unread=true"))!.Items);
+    }
+
+    [Fact]
+    public async Task NotificationEndpointsEnforceSessionCsrfAndManagementPermissions()
+    {
+        await BootstrapOwner();var csrf=await GetCsrf(ownerClient);using var customer=await CreateCustomerClient(csrf);var token=await GetCsrf(customer);using var anonymous=factory.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized,(await anonymous.GetAsync("/api/notifications")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,(await customer.GetAsync("/api/notifications")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,(await customer.GetAsync("/api/admin/notifications/rules")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,(await customer.GetAsync("/api/admin/notifications/logs")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,(await customer.PostAsJsonAsync("/api/notifications/state",new NotificationSelection([1],null,"read"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,(await Send(customer,HttpMethod.Post,"/api/notifications/state",token,JsonContent.Create(new NotificationSelection([1],null,"read")))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,(await Send(customer,HttpMethod.Put,"/api/notifications/preferences",token,JsonContent.Create(new NotificationPreferences()))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,(await customer.GetAsync("/api/notifications/1/target?admin=true")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,(await ownerClient.GetAsync("/api/admin/notifications/rules")).StatusCode);
     }
 
     private async Task BootstrapOwner()
@@ -1426,6 +1551,129 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
     {
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.GetProperty("code").GetString();
+    }
+
+    [Fact]
+    public async Task OperatorsAreScopedAcrossProjectReadsWritesFilesAndReassignment()
+    {
+        await BootstrapOwner();
+        var ownerCsrf = await GetCsrf(ownerClient);
+        async Task<(HttpClient Client, string Id, string Csrf)> Operator(string name)
+        {
+            using var create = await Send(ownerClient, HttpMethod.Post, "/api/admin/users", ownerCsrf,
+                JsonContent.Create(new { displayName = name, email = name + "@example.test", password = "operator-password-123", role = "operator" }));
+            Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+            var account = (await create.Content.ReadFromJsonAsync<AdminUserDto>())!;
+            var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+            var token = await GetCsrf(client);
+            using var login = await Send(client, HttpMethod.Post, "/api/auth/login", token,
+                JsonContent.Create(new { email = account.Email, password = "operator-password-123", rememberMe = false }));
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+            var user = (await login.Content.ReadFromJsonAsync<CurrentUserDto>())!;
+            Assert.Contains("operator", user.Roles);
+            Assert.Contains("admin.projects.deliver", user.Permissions);
+            Assert.DoesNotContain("admin.projects.assign", user.Permissions);
+            Assert.DoesNotContain("admin.users.manage", user.Permissions);
+            return (client, account.Id, await GetCsrf(client));
+        }
+        var first = await Operator("OperatorOne");
+        var second = await Operator("OperatorTwo");
+        using var firstClient = first.Client;
+        using var secondClient = second.Client;
+        var connectionString = $"Data Source={Path.Combine(root, "platform.db")}";
+        var projects = new ProjectRepository(connectionString);
+        var admin = new AdminRepository(connectionString);
+        var ownerId = admin.ListUsers(null, "owner", 1, 20).Items.Single().Id;
+        TaskDraftDto Submitted()
+        {
+            var draft = projects.Create(ownerId);
+            return projects.Submit(ownerId, draft.Id, draft.Version, Guid.NewGuid().ToString(), null).Draft!;
+        }
+        var assigned = Submitted();
+        var another = Submitted();
+        var unassigned = Submitted();
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateWorkflow(assigned.Id, new("contacting", "normal", first.Id, admin.GetProject(assigned.Id)!.WorkflowUpdatedAt)).Outcome);
+        Assert.Equal(AdminWriteOutcome.Saved, admin.UpdateWorkflow(another.Id, new("contacting", "normal", second.Id, admin.GetProject(another.Id)!.WorkflowUpdatedAt)).Outcome);
+        var fileId = Guid.NewGuid().ToString("N");
+        var asset = new ReferenceAssetDto(fileId, "book-cover", "cover.png", "image/png", 3, $"/api/projects/{assigned.Id}/files/{fileId}");
+        using (var db = new SqliteConnection(connectionString))
+        {
+            db.Open(); using var command = db.CreateCommand();
+            command.CommandText = "UPDATE projects SET book_json=json_set(book_json,'$.sourceAssets',json($assets)), submission_snapshot_json=$snapshot WHERE id=$id";
+            command.Parameters.AddWithValue("$id", assigned.Id);
+            command.Parameters.AddWithValue("$assets", JsonSerializer.Serialize(new[] { asset }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            command.Parameters.AddWithValue("$snapshot", "{\"schemaVersion\":1,\"capturedAt\":\"2026-01-01T00:00:00Z\",\"formOptions\":[],\"voices\":[],\"fileCategories\":[]}");
+            command.ExecuteNonQuery();
+        }
+        var folder = Path.Combine(root, "uploads", ownerId, assigned.Id);
+        Directory.CreateDirectory(folder); File.WriteAllBytes(Path.Combine(folder, fileId + "_cover.png"), [1,2,3]);
+        var listing = (await firstClient.GetFromJsonAsync<PagedAdminProjectsDto>("/api/admin/projects?pageSize=1"))!;
+        Assert.Equal(1, listing.Total); Assert.Equal(assigned.Id, Assert.Single(listing.Items).Id);
+        Assert.Empty((await firstClient.GetFromJsonAsync<PagedAdminProjectsDto>("/api/admin/projects?page=2&pageSize=1"))!.Items);
+        foreach (var suffix in new[] { "", "/revisions", "/deliveries", "/voices", "/submission-snapshot", $"/files/{fileId}" })
+        {
+            Assert.Equal(HttpStatusCode.OK, (await firstClient.GetAsync($"/api/admin/projects/{assigned.Id}{suffix}")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await secondClient.GetAsync($"/api/admin/projects/{assigned.Id}{suffix}")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await firstClient.GetAsync($"/api/admin/projects/{unassigned.Id}{suffix}")).StatusCode);
+        }
+        foreach (var path in new[] { "overview", "users", "roles", "organizations", "assignees", "audit-events", "audit-actions", "voices", "runtime-settings" })
+            Assert.Equal(HttpStatusCode.Forbidden, (await firstClient.GetAsync("/api/admin/" + path)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(firstClient, HttpMethod.Post, "/api/admin/users", first.Csrf, JsonContent.Create(new { displayName = "Unauthorized", email = "unauthorized@example.test", password = "password-123", role = "admin" }))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await firstClient.GetAsync("/api/projects")).StatusCode);
+        var detail = admin.GetProject(assigned.Id)!;
+        using var forbiddenAssignment = await Send(firstClient, HttpMethod.Put, $"/api/admin/projects/{assigned.Id}/workflow", first.Csrf,
+            JsonContent.Create(new { workflowStatus = "contacting", priority = "high", assigneeUserId = second.Id, expectedWorkflowUpdatedAt = detail.WorkflowUpdatedAt }));
+        Assert.Equal(HttpStatusCode.Forbidden, forbiddenAssignment.StatusCode);
+        using var workflow = await Send(firstClient, HttpMethod.Put, $"/api/admin/projects/{assigned.Id}/workflow", first.Csrf,
+            JsonContent.Create(new { workflowStatus = "in_production", priority = "high", assigneeUserId = first.Id, expectedWorkflowUpdatedAt = detail.WorkflowUpdatedAt }));
+        Assert.Equal(HttpStatusCode.OK, workflow.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Send(firstClient, HttpMethod.Post, $"/api/admin/projects/{assigned.Id}/notes", first.Csrf, JsonContent.Create(new { body = "Scoped note" }))).StatusCode);
+        using var content = new MultipartFormDataContent(); var video = new ByteArrayContent(MinimalMp4()); video.Headers.ContentType = new("video/mp4"); content.Add(video, "file", "final.mp4");
+        using var publish = await Send(firstClient, HttpMethod.Post, $"/api/admin/projects/{assigned.Id}/deliveries", first.Csrf, content);
+        Assert.Equal(HttpStatusCode.OK, publish.StatusCode);
+        var delivery = (await publish.Content.ReadFromJsonAsync<FinalDeliveryDto>())!;
+        Assert.Equal(HttpStatusCode.OK, (await firstClient.GetAsync($"/api/admin/projects/{assigned.Id}/deliveries/{delivery.Id}/file")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await secondClient.GetAsync($"/api/admin/projects/{assigned.Id}/deliveries/{delivery.Id}/file")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(firstClient, HttpMethod.Delete, $"/api/admin/projects/{assigned.Id}/deliveries/{delivery.Id}", first.Csrf)).StatusCode);
+        detail = admin.GetProject(assigned.Id)!;
+        using var returned = await Send(firstClient, HttpMethod.Post, $"/api/admin/projects/{assigned.Id}/return", first.Csrf,
+            JsonContent.Create(new { version = detail.Project.Version, expectedWorkflowUpdatedAt = detail.WorkflowUpdatedAt, reasons = new[] { new { unit = "style", body = "Please clarify" } } }));
+        Assert.Equal(HttpStatusCode.OK, returned.StatusCode);
+        var revisions = new Lifewood.PlatformApi.Features.RevisionStore(connectionString);
+        var round = revisions.View(assigned.Id, true, "en-US").Rounds.Single();
+        Assert.Equal(HttpStatusCode.NotFound, (await secondClient.GetAsync($"/api/projects/{assigned.Id}/revision-avatar/{round.Messages[0].Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await firstClient.GetAsync($"/api/projects/{assigned.Id}/revision-avatar/{round.Messages[0].Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Send(firstClient, HttpMethod.Post, $"/api/admin/projects/{assigned.Id}/revisions/{round.Id}/messages", first.Csrf,
+            JsonContent.Create(new { id = Guid.NewGuid().ToString("N"), unit = "style", body = "Additional guidance" }))).StatusCode);
+        var draftAgain = projects.Get(ownerId, assigned.Id)!;
+        projects.Submit(ownerId, assigned.Id, draftAgain.Version, Guid.NewGuid().ToString(), null);
+        detail = admin.GetProject(assigned.Id)!;
+        using var reassign = await Send(ownerClient, HttpMethod.Put, $"/api/admin/projects/{assigned.Id}/workflow", ownerCsrf,
+            JsonContent.Create(new { workflowStatus = "contacting", priority = "normal", assigneeUserId = second.Id, expectedWorkflowUpdatedAt = detail.WorkflowUpdatedAt }));
+        Assert.Equal(HttpStatusCode.OK, reassign.StatusCode);
+        Assert.Empty((await firstClient.GetFromJsonAsync<PagedAdminProjectsDto>("/api/admin/projects"))!.Items);
+        foreach (var suffix in new[] { "", "/revisions", "/deliveries", "/voices", "/submission-snapshot", $"/files/{fileId}" })
+            Assert.Equal(HttpStatusCode.NotFound, (await firstClient.GetAsync($"/api/admin/projects/{assigned.Id}{suffix}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Send(firstClient, HttpMethod.Post, $"/api/admin/projects/{assigned.Id}/notes", first.Csrf, JsonContent.Create(new { body = "Stale note" }))).StatusCode);
+        // Model a mutation which passed its HTTP precheck before assignment changed.
+        Assert.Equal(AdminWriteOutcome.NotFound, admin.AddNote(assigned.Id, first.Id, new("Stale"), out _, first.Id).Outcome);
+        Assert.Equal(AdminWriteOutcome.NotFound, admin.UpdateWorkflow(assigned.Id, new("contacting", "normal", first.Id, detail.WorkflowUpdatedAt), first.Id, first.Id, false).Outcome);
+        var deliveries = new DeliveryRepository(connectionString);
+        Assert.Equal(AdminWriteOutcome.NotFound, deliveries.Publish(Guid.NewGuid().ToString("N"), assigned.Id, first.Id, "late.mp4", "video/mp4", 5, null, out _, first.Id).Outcome);
+        Assert.Equal(AdminWriteOutcome.NotFound, deliveries.Revoke(assigned.Id, delivery.Id, first.Id).Outcome);
+        var staleUser = new UserRepository(connectionString, root).Get(first.Id, 0)!;
+        detail = admin.GetProject(assigned.Id)!;
+        Assert.False(revisions.Return(assigned.Id, new(detail.Project.Version, [new("style", "Stale")], detail.WorkflowUpdatedAt), staleUser, first.Id));
+        Assert.False(revisions.Reply(assigned.Id, round.Id, new(Guid.NewGuid().ToString("N"), "style", "Stale"), staleUser, true, first.Id));
+        using var demote = await Send(ownerClient, HttpMethod.Put, $"/api/admin/users/{second.Id}", ownerCsrf,
+            JsonContent.Create(new { displayName = "OperatorTwo", role = "customer", active = true }));
+        Assert.Equal(HttpStatusCode.OK, demote.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await secondClient.GetAsync($"/api/admin/projects/{assigned.Id}")).StatusCode);
+        Assert.Null(admin.GetProject(assigned.Id, second.Id));
+        using var disable = await Send(ownerClient, HttpMethod.Put, $"/api/admin/users/{first.Id}", ownerCsrf,
+            JsonContent.Create(new { displayName = "OperatorOne", role = "operator", active = false }));
+        Assert.Equal(HttpStatusCode.OK, disable.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await firstClient.GetAsync("/api/admin/projects")).StatusCode);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;

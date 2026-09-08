@@ -127,7 +127,7 @@ const resources = {
         languageDescription: "切换后立即保存，并在下次登录时继续使用。",
         preferenceSaving: "正在保存语言偏好…",
         preferenceSaved: "语言偏好已保存。",
-        roles: { owner: "平台负责人", admin: "管理员", customer: "客户成员", member: "平台成员" },
+        roles: { owner: "平台负责人", admin: "管理员", operator: "运营人员", customer: "客户成员", member: "平台成员" },
         save: "保存个人资料",
         saved: "个人资料已更新，之后新建的草稿将自动使用最新客户与联系信息。",
       },
@@ -260,6 +260,9 @@ const resources = {
         continueEditing: "需求采集",
         view: "查看采集详情",
         deleteDraft: "删除草稿",
+        deleteReturned: "删除项目",
+        deleteReturnedTitle: "删除这个已退回的项目？",
+        deleteReturnedDescription: "项目资料、提交及退回记录、沟通记录和附件将永久删除，管理后台也将移除该项目。此操作无法撤销。",
         deleteDialogTitle: "删除这个草稿？",
         deleteDialogDescription: "已填写的资料和上传的文件将永久删除，此操作无法撤销。",
         deletingDraft: "正在删除…",
@@ -273,6 +276,7 @@ const resources = {
           drafts: "草稿 / 采集中",
           active: "进行中",
           completed: "已完成",
+          actionRequired: "待处理",
         },
       },
       taskDetail: {
@@ -733,7 +737,7 @@ const resources = {
         languageDescription: "Changes are saved immediately and reused at your next sign-in.",
         preferenceSaving: "Saving language preference…",
         preferenceSaved: "Language preference saved.",
-        roles: { owner: "Platform owner", admin: "Administrator", customer: "Customer member", member: "Platform member" },
+        roles: { owner: "Platform owner", admin: "Administrator", operator: "Operations staff", customer: "Customer member", member: "Platform member" },
         save: "Save profile",
         saved: "Profile updated. New drafts will use the latest client and contact details.",
       },
@@ -874,6 +878,9 @@ const resources = {
         continueEditing: "Intake",
         view: "View intake details",
         deleteDraft: "Delete draft",
+        deleteReturned: "Delete project",
+        deleteReturnedTitle: "Delete this returned project?",
+        deleteReturnedDescription: "Project details, submission and return history, discussions and attachments will be permanently deleted. The project will also be removed from the admin portal. This cannot be undone.",
         deleteDialogTitle: "Delete this draft?",
         deleteDialogDescription: "All entered details and uploaded files will be permanently deleted. This cannot be undone.",
         deletingDraft: "Deleting…",
@@ -887,6 +894,7 @@ const resources = {
           drafts: "Draft / Intake",
           active: "In progress",
           completed: "Completed",
+          actionRequired: "Action needed",
         },
       },
       taskDetail: {
@@ -1320,3 +1328,29 @@ i18n.addResourceBundle("en-US", "translation", { errors: { validation: { optionR
 i18n.addResourceBundle("zh-CN", "translation", {"announcements": {"title": "公告", "history": "我的公告", "new": "新建公告", "edit": "编辑草稿", "copy": "复制为新公告", "publish": "发布", "withdraw": "下架", "draft": "草稿", "published": "已发布", "withdrawn": "已下架", "save": "保存草稿", "close": "关闭", "cancel": "取消", "search": "搜索公告标题", "empty": "暂无公告", "more": "加载更多", "end": "已显示全部公告", "retry": "重试", "loading": "正在加载…", "placement": "展示位置", "login": "登录前（公开）", "personal": "登录后（个人）", "audience": "发布范围", "all": "全部账号", "specified": "指定范围", "languages": "语言偏好", "organizations": "指定组织", "chooseOrgs": "选择组织", "clear": "清除", "scopeHint": "语言与组织同时选择时取交集；未设置语言偏好的账号按简体中文匹配。", "snapshotHint": "发布时确定收件账号，新注册账号不会收到旧公告。", "publicHint": "登录前公告公开可见，只能按页面语言筛选，不支持组织定向。", "titleZh": "中文标题", "bodyZh": "中文正文", "titleEn": "英文标题", "bodyEn": "英文正文", "startsAt": "开始时间（可选）", "endsAt": "结束时间（可选）", "preview": "预览", "recipients": "收件账号", "status": "状态", "actions": "操作", "publishConfirm": "按当前范围发布此公告？发布后正文与收件范围将锁定。", "withdrawConfirm": "下架此公告？客户将无法继续查看。", "invalid": "请检查双语标题、正文、发布范围及时间。", "conflict": "公告已被其他管理员更改，请刷新列表后重试。", "select": "选择", "selected": "已选择", "done": "完成选择", "unsaved": "放弃未保存的公告修改？", "dismiss": "关闭并不再提醒", "newNotices": "新公告", "readHistory": "查看历史公告", "recipientCount": "{{count}} 个账号", "refresh": "刷新", "noSelection": "尚未选择组织"}}, true, true);
 
 i18n.addResourceBundle("en-US", "translation", {"announcements": {"title": "Announcements", "history": "My announcements", "new": "New announcement", "edit": "Edit draft", "copy": "Copy as new", "publish": "Publish", "withdraw": "Withdraw", "draft": "Draft", "published": "Published", "withdrawn": "Withdrawn", "save": "Save draft", "close": "Close", "cancel": "Cancel", "search": "Search announcement titles", "empty": "No announcements", "more": "Load more", "end": "All announcements loaded", "retry": "Retry", "loading": "Loading…", "placement": "Display location", "login": "Before sign-in (public)", "personal": "After sign-in (personal)", "audience": "Audience", "all": "All accounts", "specified": "Selected audience", "languages": "Language preference", "organizations": "Organizations", "chooseOrgs": "Choose organizations", "clear": "Clear", "scopeHint": "Language and organization filters both apply. Accounts without a language preference match Simplified Chinese.", "snapshotHint": "Recipients are fixed at publication. New accounts do not receive older notices.", "publicHint": "Public notices can target the page language, not an organization.", "titleZh": "Chinese title", "bodyZh": "Chinese body", "titleEn": "English title", "bodyEn": "English body", "startsAt": "Start time (optional)", "endsAt": "End time (optional)", "preview": "Preview", "recipients": "Recipients", "status": "Status", "actions": "Actions", "publishConfirm": "Publish to this audience? Content and recipients will be locked.", "withdrawConfirm": "Withdraw this announcement? Customers will no longer see it.", "invalid": "Check both translations, audience and dates.", "conflict": "Another administrator changed this announcement. Refresh and try again.", "select": "Select", "selected": "Selected", "done": "Finish selection", "unsaved": "Discard unsaved announcement changes?", "dismiss": "Dismiss and do not remind again", "newNotices": "New announcements", "readHistory": "View announcement history", "recipientCount": "{{count}} accounts", "refresh": "Refresh", "noSelection": "No organizations selected"}}, true, true);
+
+i18n.addResourceBundle("zh-CN","translation",{"announcements": {"allStatuses": "全部状态", "allPlacements": "全部展示位置", "estimate": "预计发送给 {{count}} 个账号", "publicEstimate": "公开公告，符合页面语言条件的访客均可查看，不按账号计数。", "estimateHint": "人数按当前账号资料计算，最终以发布时的匹配结果为准。", "deleteDraft": "删除草稿", "deleteConfirm": "删除公告草稿“{{title}}”？此操作无法撤销。"}},true,true);
+
+i18n.addResourceBundle("en-US","translation",{"announcements": {"allStatuses": "All statuses", "allPlacements": "All locations", "estimate": "Estimated audience: {{count}} accounts", "publicEstimate": "Public notice: visible to visitors matching the page language, without an account count.", "estimateHint": "The estimate uses current account data. Actual recipients are determined at publication.", "deleteDraft": "Delete draft", "deleteConfirm": "Delete announcement draft “{{title}}”? This cannot be undone."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{announcements:{contentTitle:"标题",contentBody:"正文",singleContentHint:"每条公告只需一份内容。可发给全部账号，也可按语言偏好定向；如需其他语言版本，可另行创建公告。",invalid:"请检查标题、正文、发布范围及时间。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{announcements:{contentTitle:"Title",contentBody:"Body",singleContentHint:"One version of the content per announcement. Send to all accounts or target a language preference. Create another announcement only if needed.",invalid:"Check the title, body, audience and dates."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{announcements:{legacyContentHint:"这是旧版双语公告，当前显示界面语言对应的内容。只调整范围或时间会保留原双语内容；编辑标题或正文、复制为新公告后，将以当前这份内容发送。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{announcements:{legacyContentHint:"This legacy notice has two translations. The current interface language is shown. Changing only audience or dates preserves both; editing text or copying as new sends the content shown here."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{announcements:{displayDays:"公示天数",displayDaysHint:"从发布时起计算，每天为 24 小时。公示期结束后不再自动弹出，个人历史仍可查看。可填写 1–3650 天。",invalid:"请检查标题、正文、发布范围和公示天数（1–3650 天）。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{announcements:{displayDays:"Display duration (days)",displayDaysHint:"Counted from publication in 24-hour days. Automatic pop-ups stop when the period ends; personal history remains available. Enter 1–3650 days.",invalid:"Check the title, body, audience and display duration (1–3650 days)."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{"notifications": {"title": "通知", "entry": "通知，{{count}} 条未读", "newArrivals": "你有新的通知，点击查看", "center": "进入通知中心", "search": "搜索项目名称或操作人", "type": "通知类型", "allTypes": "全部类型", "unread": "只看未读", "preferences": "通知偏好", "businessState": "处理状态", "allStates": "全部状态", "project": "项目编号", "from": "开始日期", "to": "结束日期", "archived": "已归档", "readAll": "全部标为已读", "readSelected": "选中标为已读", "restore": "取消归档", "archive": "归档选中", "refresh": "刷新", "unavailable": "关联事项已失效、无权访问或暂时无法加载，请刷新后重试。", "empty": "暂无通知", "select": "选择：{{title}}", "openProject": "查看关联事项", "markUnread": "标为未读", "markRead": "标为已读", "more": "加载更多", "details": "通知详情", "toast": "显示即时轻提示", "sound": "播放提示音", "quietStart": "免打扰开始", "quietEnd": "免打扰结束", "muteHint": "关闭下列类别的即时提醒，通知仍保留在通知中心。免打扰使用当前设备时区。", "save": "保存", "retention": "归档保留天数", "retentionHint": "仅清理超过保留期限且已读、已归档的历史通知。范围为 30–3650 天。", "enabled": "启用", "disabled": "停用", "edit": "编辑", "exampleProject": "示例项目", "exampleActor": "示例用户", "deliveryLogs": "通知发送记录", "queueCounts": "等待发送 {{pending}} 条 · 失败 {{failed}} 条", "deliveryCount": "{{count}} 个收件账号 · 连续失败 {{attempts}} 次", "storageFailure": "存储暂时不可用，可重试发送。", "editRule": "编辑通知规则", "titleZh": "中文模板", "titleEn": "英文模板", "templateHint": "可用变量：{project}（项目名称）、{actor}（操作人）。业务原文不会自动翻译。", "level": "提醒级别", "audience": "管理端接收范围", "responsible": "优先项目负责人，未分配时通知管理员", "allAdmins": "所有具有项目管理权限的管理员", "audienceHint": "仅影响发给管理端的通知；客户通知始终只发给项目所属账号，并排除操作人本人。", "allowMute": "允许用户关闭该类别即时提醒", "ruleConflict": "规则已变化或模板无效，请刷新后重试。", "kinds": {"submitted": "项目提交", "resubmitted": "资料重新提交", "returned": "资料退回", "customer_reply": "客户回复", "admin_reply": "管理员回复", "workflow": "项目进度", "delivery": "成品交付"}, "states": {"pending": "待处理", "done": "已处理", "info": "信息更新", "expired": "已失效"}, "levels": {"normal": "一般", "important": "重要", "action": "需要处理"}, "deliveryStates": {"pending": "等待发送", "sent": "已处理", "failed": "发送失败"}}},true,true);
+i18n.addResourceBundle("en-US","translation",{"notifications": {"title": "Notifications", "entry": "Notifications, {{count}} unread", "newArrivals": "New notifications — open to view", "center": "Notification center", "search": "Search project or actor", "type": "Notification type", "allTypes": "All types", "unread": "Unread only", "preferences": "Preferences", "businessState": "Action status", "allStates": "All states", "project": "Project ID", "from": "From", "to": "To", "archived": "Archived", "readAll": "Mark all read", "readSelected": "Mark selected read", "restore": "Restore selected", "archive": "Archive selected", "refresh": "Refresh", "unavailable": "The item is unavailable, inaccessible, or could not be loaded. Refresh and retry.", "empty": "No notifications", "select": "Select: {{title}}", "openProject": "Open related item", "markUnread": "Mark unread", "markRead": "Mark read", "more": "Load more", "details": "Notification details", "toast": "Show instant reminders", "sound": "Play a sound", "quietStart": "Quiet hours start", "quietEnd": "Quiet hours end", "muteHint": "Mute instant reminders for these categories. Records remain in the notification center. Quiet hours use this device’s time zone.", "save": "Save", "retention": "Archived retention (days)", "retentionHint": "Only read, archived notifications older than this period are removed. Range: 30–3650 days.", "enabled": "Enabled", "disabled": "Disabled", "edit": "Edit", "exampleProject": "Example project", "exampleActor": "Example user", "deliveryLogs": "Delivery records", "queueCounts": "{{pending}} pending · {{failed}} failed", "deliveryCount": "{{count}} recipients · {{attempts}} consecutive failures", "storageFailure": "Storage is temporarily unavailable. Retry delivery.", "editRule": "Edit notification rule", "titleZh": "Chinese template", "titleEn": "English template", "templateHint": "Variables: {project} (project name), {actor} (actor). User content is not translated.", "level": "Reminder level", "audience": "Admin recipients", "responsible": "Project assignee, or administrators when unassigned", "allAdmins": "All administrators with project access", "audienceHint": "Applies to admin notifications. Customer notifications go only to the project owner. The actor is excluded.", "allowMute": "Allow users to mute instant reminders", "ruleConflict": "The rule changed or the template is invalid. Refresh and retry.", "kinds": {"submitted": "Project submitted", "resubmitted": "Changes resubmitted", "returned": "Changes requested", "customer_reply": "Customer reply", "admin_reply": "Admin reply", "workflow": "Project progress", "delivery": "Final delivery"}, "states": {"pending": "Action needed", "done": "Handled", "info": "Update", "expired": "Unavailable"}, "levels": {"normal": "Normal", "important": "Important", "action": "Action needed"}, "deliveryStates": {"pending": "Pending", "sent": "Processed", "failed": "Failed"}}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{notifications:{kinds:{account:"账号变更"}}},true,true);
+i18n.addResourceBundle("en-US","translation",{notifications:{kinds:{account:"Account changes"}}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{"accountSwitch": {"title": "切换账号", "hint": "最多添加 5 个账号。首次添加需登录验证，登录有效期内可一键切换。请仅在可信设备上使用。", "current": "当前账号", "currentNamed": "当前账号：{{name}}", "switchNamed": "切换到 {{name}}", "removeNamed": "从此设备移除 {{name}}", "add": "添加账号", "addAndSwitch": "登录并切换", "switching": "正在切换…", "limit": "最多添加 5 个账号，请先移除一个账号。", "expired": "该账号的登录已失效，请重新添加并验证。", "changed": "账号已在其他页面切换或登录已失效。当前页面已暂停操作，请刷新后继续；刷新会丢弃未保存的内容。", "reload": "刷新页面", "logoutHint": "移除账号不会删除账号或项目。退出登录会清除此设备上所有已添加账号的快捷登录。"}},true,true);
+
+i18n.addResourceBundle("en-US","translation",{"accountSwitch": {"title": "Switch account", "hint": "Add up to 5 accounts. Sign in once per account, then switch while its session remains valid. Use only on a trusted device.", "current": "Current", "currentNamed": "Current account: {{name}}", "switchNamed": "Switch to {{name}}", "removeNamed": "Remove {{name}} from this device", "add": "Add account", "addAndSwitch": "Sign in and switch", "switching": "Switching…", "limit": "Up to 5 accounts can be added. Remove one first.", "expired": "This account session has expired. Add it again to sign in.", "changed": "The account changed in another page or the session expired. Actions on this page are paused. Reload to continue; unsaved changes will be lost.", "reload": "Reload page", "logoutHint": "Removing an account does not delete its account or projects. Signing out clears quick access to all accounts added on this device."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{notifications:{readStatus:"已读",unreadStatus:"未读"}},true,true);
+i18n.addResourceBundle("en-US","translation",{notifications:{readStatus:"Read",unreadStatus:"Unread"}},true,true);

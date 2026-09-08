@@ -197,6 +197,13 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Equal(1, stats.Drafts);
         Assert.Equal(1, stats.Active);
         Assert.Equal(1, stats.Completed);
+        Assert.Equal(0, stats.ActionRequired);
+        var returned = projects.Create("owner-id");
+        var otherReturned = projects.Create("other-owner");
+        Execute("UPDATE projects SET workflow_status = 'awaiting_customer' WHERE id IN ($id, $other);", ("$id", returned.Id), ("$other", otherReturned.Id));
+        Execute("UPDATE projects SET workflow_status = 'awaiting_customer' WHERE id = $id;", ("$id", active.Id));
+        Assert.Equal(1, projects.GetStats("owner-id").ActionRequired);
+        Assert.Equal(0, projects.GetStats("missing-owner").ActionRequired);
     }
 
     [Fact]
