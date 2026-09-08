@@ -53,3 +53,10 @@ python scripts/test-notification-upgrade.py --old-server <旧版服务端DLL路�
 
 - 最终本地 `npm run verify` 通过：客户前端 202、管理端 59、后端 201 项测试；运维回归和两端生产构建通过。独立发布审查未发现阻断问题，版本、序列化注册、升级兼容与敏感文件排除检查通过。
 - 最终 `npm run test:e2e` 通过，完整双语业务浏览器用例约 2.3 分钟；日志 `.tmp/v0.3.10-release-e2e.log`。
+
+
+## 远端发布记录
+
+- v0.3.10 对应产品提交 `155f233be964439646a1db460d8494418e60ce50`，Release packages 工作流 `34192209494` 全部通过，五种安装包和五份 SHA-256 文件已公开，校验文件与 GitHub 资产摘要一致。
+- 首轮 Verify 的浏览器用例在历史公告数据尚未返回时提前滚动，导致分页断言失败。后续仅修正测试等待顺序，先等待公告条目加载再滚动；本地完整 E2E 复验通过，产品源代码和已发布安装包未变更。
+- 最新 Verify 状态以 [GitHub Actions](https://github.com/paigeXiong/lifewood-book-creative-portal/actions/workflows/verify.yml) 为准。

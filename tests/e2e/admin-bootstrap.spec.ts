@@ -158,6 +158,8 @@ test("owner can initialize the platform and navigate the localized admin shell",
       await expect(customer).toHaveURL(/\/tasks$/);
       const modal = customer.locator("dialog.customer-announcements");
       await expect(modal).toBeVisible();
+      // The dialog opens before an uncached history page has returned.
+      await expect(modal.locator("article").first()).toBeAttached();
       await modal.evaluate(element => { element.scrollTop = element.scrollHeight; });
       await expect(modal.locator("article")).toHaveCount(23);
       await expect(modal.getByRole("heading", { name: "客户公告验收", exact: true })).toHaveCount(1);
@@ -169,6 +171,8 @@ test("owner can initialize the platform and navigate the localized admin shell",
       await expect(customer.getByRole("dialog")).toHaveCount(0);
       await customer.getByRole("button", { name: "查看历史公告", exact: true }).click();
       await expect(modal).toBeVisible();
+      // The dialog opens before an uncached history page has returned.
+      await expect(modal.locator("article").first()).toBeAttached();
       await modal.evaluate(element => { element.scrollTop = element.scrollHeight; });
       await expect(modal.locator("article")).toHaveCount(23);
     });
