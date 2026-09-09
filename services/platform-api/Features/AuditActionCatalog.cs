@@ -17,11 +17,14 @@ internal static class AuditActionCatalog
         new("announcement.save", "保存公告草稿", "Saved announcement draft"),
         new("announcement.publish", "发布公告", "Published announcement"),
         new("announcement.withdraw", "下架公告", "Withdrew announcement"),
+        new("user.close", "永久注销账号", "Permanently closed account"),
         new("user.create", "创建用户", "Created user"),
         new("user.update", "更新用户", "Updated user"),
         new("user.password_reset", "重置用户密码", "Reset user password"),
         new("organization.create", "创建组织", "Created organization"),
         new("organization.update", "更新组织", "Updated organization"),
+        new("project.followup_update", "更新项目跟进期限", "Updated project follow-up deadline"),
+        new("project.export", "导出项目资料包", "Exported project brief"),
         new("project.workflow_update", "更新项目跟进", "Updated project workflow"),
         new("project.note_add", "添加内部备注", "Added internal note"),
         new("delivery.publish", "发布最终成品", "Published final delivery"),
@@ -62,6 +65,7 @@ internal static class AuditActionCatalog
         if (method == "DELETE" && segments.Length == 4 && segments[2] == "voices") return new("voice.remove", "voice", Value(3));
         if (method == "PUT" && segments.Length == 4 && segments[2] == "character-presets") return new("preset.upsert", "character_preset", Value(3));
         if (method == "POST" && segments.Length == 5 && segments[2] == "character-presets" && segments[4] == "image") return new("preset.image_upload", "character_preset", Value(3));
+        if (method == "DELETE" && segments.Length == 4 && segments[2] == "users") return new("user.close", "user", Value(3));
         if (method == "POST" && segments is ["api", "admin", "users"])
             return new("user.create", "user", null);
         if (method == "PUT" && segments.Length == 4 && segments[2] == "users")
@@ -72,6 +76,10 @@ internal static class AuditActionCatalog
             return new("organization.create", "organization", null);
         if (method == "PUT" && segments.Length == 4 && segments[2] == "organizations")
             return new("organization.update", "organization", Value(3));
+        if (method == "PUT" && segments.Length == 5 && segments[2] == "projects" && segments[4] == "followup")
+            return new("project.followup_update", "project", Value(3));
+        if (method == "POST" && segments.Length == 5 && segments[2] == "projects" && segments[4] == "export")
+            return new("project.export", "project", Value(3));
         if (method == "PUT" && segments.Length == 5 && segments[2] == "projects" && segments[4] == "workflow")
             return new("project.workflow_update", "project", Value(3));
         if (method == "POST" && segments.Length == 5 && segments[2] == "projects" && segments[4] == "notes")

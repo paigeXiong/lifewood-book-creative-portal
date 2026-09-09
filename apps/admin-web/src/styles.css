@@ -592,7 +592,7 @@ a:focus-visible {
 }
 .project-row.selected {
   background: #e4f3ec;
-  box-shadow: inset 4px 0 #008763;
+  box-shadow: none;
 }
 .project-row img,
 .cover-placeholder {
@@ -835,7 +835,7 @@ label > small {
   gap: 0.4rem;
   margin: 0;
 }
-.fact-grid div {
+.fact-grid > div {
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(6rem, 34%) minmax(0, 1fr);
@@ -1510,3 +1510,15 @@ td {
 .config-row-actions .config-delete { color: #a3342a; background: #fff1ee; }
 
 .config-removable th { white-space: nowrap; }
+
+.organization-members-link {
+  color: #07543e;
+  text-decoration: underline;
+  text-decoration-color: #b9cfc4;
+  text-underline-offset: 3px;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+.organization-members-link:hover { color: #008568; text-decoration-color: currentColor; }
+.organization-members-link:focus-visible { outline: 2px solid #267754; outline-offset: 3px; }
+.organization-member-count { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; }

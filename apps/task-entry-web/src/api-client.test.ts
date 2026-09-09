@@ -137,20 +137,20 @@ describe("API client", () => {
   });
 
   it("updates the current user profile with CSRF protection", async () => {
-    const updatedUser = { id: "u1", displayName: "Updated User", clientName: "Updated Client", phone: "123456", roles: ["customer"], permissions: [] };
+    const updatedUser = { id: "u1", displayName: "Updated User", phone: "123456", roles: ["customer"], permissions: [] };
     const fetchMock = vi.fn().mockImplementation(async (input: string) =>
       input.endsWith("/auth/csrf")
         ? new Response(JSON.stringify({ token: "csrf-profile" }), { status: 200, headers: { "Content-Type": "application/json" } })
         : new Response(JSON.stringify(updatedUser), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(authService.updateProfile({ displayName: "Updated User", clientName: "Updated Client", phone: "123456" })).resolves.toEqual(updatedUser);
+    await expect(authService.updateProfile({ displayName: "Updated User", phone: "123456" })).resolves.toEqual(updatedUser);
 
     const [url, options] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
     expect(url).toBe("/api/me/profile");
     expect(options.method).toBe("PUT");
     expect(new Headers(options.headers).get("X-CSRF-TOKEN")).toBe("csrf-profile");
-    expect(JSON.parse(String(options.body))).toEqual({ displayName: "Updated User", clientName: "Updated Client", phone: "123456" });
+    expect(JSON.parse(String(options.body))).toEqual({ displayName: "Updated User", phone: "123456" });
     await authService.logout();
   });
 

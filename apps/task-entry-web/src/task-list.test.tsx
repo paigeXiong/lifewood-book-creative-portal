@@ -10,10 +10,11 @@ import { TaskListPage } from "./pages/TaskListPage";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-async function mount(locale: SupportedLocale, query = "", total = 30, items: TaskSummary[] = []) {
+async function mount(locale: SupportedLocale, query = "", total = 30, items: TaskSummary[] = [], withOrganization = true) {
   await i18n.changeLanguage(locale);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(["form-options", locale], { taskStatuses: [{ id: "draft", label: locale === "zh-CN" ? "草稿" : "Draft" }], workflowStatuses: [] });
+  client.setQueryData(["current-user"], { id: "customer", displayName: "Customer", roles: ["customer"], permissions: ["tasks.write"], organization: withOrganization ? { id: "org", name: "Organization" } : null });
   client.setQueryData(["project-stats"], { total, drafts: total, active: 0, completed: 0, actionRequired: 0 });
   const list = vi.spyOn(projectService, "listProjects").mockImplementation(async params => ({ items, page: params.page ?? 1, pageSize: 10, total }));
   const container = document.createElement("div"); document.body.append(container);
@@ -26,7 +27,7 @@ async function mount(locale: SupportedLocale, query = "", total = 30, items: Tas
   const settle = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); }); };
   await settle();
   return {
-    container, list, settle,
+    container, list, settle, client,
     params: () => new URLSearchParams(container.querySelector("[data-location]")!.textContent!),
     click: async (selector: string) => { await act(async () => { const button = container.querySelector<HTMLButtonElement>(selector)!; button.focus(); button.click(); }); await settle(); },
     close: async () => { await act(async () => root.unmount()); client.clear(); container.remove(); list.mockRestore(); },
@@ -35,6 +36,21 @@ async function mount(locale: SupportedLocale, query = "", total = 30, items: Tas
 
 for (const locale of ["zh-CN", "en-US"] as const) {
   describe(`project list (${locale})`, () => {
+    it("blocks creation without an organization and unlocks after assignment", async () => {
+      const page = await mount(locale, "", 0, [], false);
+      const create = vi.spyOn(projectService, "createDraft");
+      try {
+        const buttons = Array.from(page.container.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent?.includes(i18n.t("common.createTask")));
+        expect(buttons.length).toBeGreaterThanOrEqual(2);
+        expect(buttons.every(button => button.disabled)).toBe(true);
+        expect(page.container.querySelector('#task-organization-required')?.textContent).toBe(i18n.t("errors.project.organizationRequired"));
+        await page.click('.task-create-button');expect(create).not.toHaveBeenCalled();
+        await act(async () => page.client.setQueryData(["current-user"], { id: "customer", organization: { id: "org", name: "Assigned Organization" } }));await page.settle();
+        expect(page.container.querySelector<HTMLButtonElement>('.task-create-button')!.disabled).toBe(false);
+        expect(page.container.querySelector('#task-organization-required')).toBeNull();
+      } finally {create.mockRestore();await page.close();}
+    });
+
     it.each([false, true])("confirms deletion (returned=%s) in the app, supports cancel, blocks duplicate requests and retains failures for retry", async (returned) => {
       const show = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
       const close = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");

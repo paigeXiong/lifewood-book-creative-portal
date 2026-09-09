@@ -2,7 +2,7 @@ import type { NoticeEditor } from "./AnnouncementsPage";
 import { useConfirm } from "./useConfirm";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
+import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { adminService, localizedApiError } from "@lifewood/api-client";
 import type { AdminOrganization, SupportedLocale } from "@lifewood/domain";
@@ -93,8 +93,8 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
           </tr></thead>
           <tbody>{organizations.data?.items.map((organization) => (
             <tr key={organization.id}>
-              <td data-label={t("admin.organizations.name")}><strong>{organization.name}</strong></td>
-              <td data-label={t("admin.organizations.members")}>{organization.memberCount}</td>
+              <td data-label={t("admin.organizations.name")}><strong>{picking ? organization.name : <Link className="organization-members-link" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}>{organization.name}</Link>}</strong></td>
+              <td data-label={t("admin.organizations.members")}>{picking ? organization.memberCount : <Link className="organization-members-link organization-member-count" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} aria-label={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}>{organization.memberCount}</Link>}</td>
               <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
               <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>
               <td data-label={t("admin.organizations.action")}>{picking?<label><input type="checkbox" disabled={!organization.active || !selected.includes(organization.id)&&selected.length>=200} checked={selected.includes(organization.id)} onChange={e=>{setSelected(prev=>e.target.checked?[...prev,organization.id]:prev.filter(x=>x!==organization.id));setNames(prev=>({...prev,[organization.id]:organization.name}));}}/>{t("announcements.select")}</label>:<button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button>}</td>
@@ -143,7 +143,7 @@ function OrganizationDialog({ organization, busy, error, onClose, onSave }: {
     <ModalFrame labelledBy="organization-dialog-title" busy={busy} onClose={requestClose}>
       <div className="modal-title">
         <h2 id="organization-dialog-title">{t(organization ? "admin.organizations.edit" : "admin.organizations.create")}</h2>
-        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button>
+        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
       </div>
       <form onSubmit={submit} onChange={markDirty}>
         <label><span>{t("admin.organizations.name")}</span><input name="name" defaultValue={organization?.name} minLength={2} maxLength={120} required /></label>

@@ -1,3 +1,4 @@
+import {LoginSessions} from "@lifewood/ui/login-sessions";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { useConfirm, useConfirmLink } from "../useConfirm";
 import { lazy, Suspense, useRef, useState, type FormEvent } from "react";
@@ -21,7 +22,6 @@ export function ProfilePage() {
   const userQuery = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
   const user = userQuery.data;
   const [displayName, setDisplayName] = useState<string>();
-  const [clientName, setClientName] = useState<string>();
   const [phone, setPhone] = useState<string>();
   const [saved, setSaved] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -31,14 +31,12 @@ export function ProfilePage() {
   const updateProfile = useMutation({
     mutationFn: () => authService.updateProfile({
       displayName: (displayName ?? user?.displayName ?? "").trim(),
-      clientName: (clientName ?? user?.clientName ?? user?.organization?.name ?? user?.displayName ?? "").trim(),
       phone: (phone ?? user?.phone ?? "").trim(),
     }),
     onMutate: () => setSaved(false),
     onSuccess: (updated) => {
       queryClient.setQueryData(["current-user"], updated);
       setDisplayName(updated.displayName);
-      setClientName(updated.clientName ?? "");
       setPhone(updated.phone ?? "");
       setSaved(true);
     },
@@ -51,18 +49,16 @@ export function ProfilePage() {
     },
   });
   const updatePreferences = useMutation({
-    mutationFn: (nextLocale: SupportedLocale) => authService.updatePreferences({ locale: nextLocale }),
-    onSuccess: (updated, nextLocale) => {
+    mutationFn: (preferences: { locale: SupportedLocale; taskBackgroundMotion?: boolean }) => authService.updatePreferences(preferences),
+    onSuccess: (updated, preferences) => {
       queryClient.setQueryData(["current-user"], updated);
-      navigate(localizedPath(nextLocale, "/profile"), { replace: true });
+      if (preferences.taskBackgroundMotion === undefined && preferences.locale !== locale) navigate(localizedPath(preferences.locale, "/profile"), { replace: true });
     },
   });
 
   const currentDisplayName = displayName ?? user?.displayName ?? "";
-  const currentClientName = clientName ?? user?.clientName ?? user?.organization?.name ?? user?.displayName ?? "";
   const currentPhone = phone ?? user?.phone ?? "";
-  const storedClientName = user?.clientName ?? user?.organization?.name ?? user?.displayName ?? "";
-  const unchanged = !user || (currentDisplayName.trim() === user.displayName && currentClientName.trim() === storedClientName && currentPhone.trim() === (user.phone ?? ""));
+  const unchanged = !user || (currentDisplayName.trim() === user.displayName && currentPhone.trim() === (user.phone ?? ""));
   const dirty = Boolean(user) && !unchanged;
 
 
@@ -109,10 +105,6 @@ export function ProfilePage() {
             <span><h2 id="profile-contact-title">{t("profile.contactTitle")}</h2></span>
           </div>
           <div className="profile-fields">
-            <label className="profile-field" htmlFor="profile-client-name">
-              <span>{t("profile.clientName")}</span>
-              <input id="profile-client-name" name="clientName" type="text" autoComplete="organization" required maxLength={200} value={currentClientName} onChange={(event) => { setClientName(event.target.value); setSaved(false); }} />
-            </label>
             <label className="profile-field" htmlFor="profile-display-name">
               <span>{t("profile.displayName")}</span>
               <input id="profile-display-name" name="displayName" type="text" autoComplete="name" required minLength={2} maxLength={100} value={currentDisplayName} onChange={(event) => { setDisplayName(event.target.value); setSaved(false); }} />
@@ -145,6 +137,7 @@ export function ProfilePage() {
               <span><strong>{t("profile.passwordTitle")}</strong></span>
               <button className="profile-security-action" type="button" onClick={() => setPasswordOpen(true)}>{t("nav.changePassword")}</button>
             </div>
+              <div className="profile-security-row"><LoginSessions key={user.id} userId={user.id}/></div>
           </aside>
 
           <section className="profile-surface profile-preferences" aria-labelledby="profile-preferences-title" aria-busy={updatePreferences.isPending}>
@@ -168,12 +161,16 @@ export function ProfilePage() {
                     select.value = user.locale ?? locale;
                     return;
                   }
-                  updatePreferences.mutate(nextLocale);
+                  updatePreferences.mutate({ locale: nextLocale });
                 }}
               >
                 <option value="zh-CN">中文</option>
                 <option value="en-US">English</option>
               </select>
+            </label>
+            <label className="profile-motion-field" htmlFor="profile-task-motion">
+              <strong>{t("profile.taskBackgroundMotion")}</strong>
+              <input id="profile-task-motion" type="checkbox" role="switch" checked={user.taskBackgroundMotion ?? true} disabled={updatePreferences.isPending} onChange={event => updatePreferences.mutate({ locale: user.locale ?? locale, taskBackgroundMotion: event.target.checked })} />
             </label>
             <div className="profile-preference-feedback" aria-live="polite">
               {updatePreferences.isPending ? <span>{t("profile.preferenceSaving")}</span> : null}

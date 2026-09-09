@@ -1,5 +1,6 @@
+import {personalWorkspaceService} from "@lifewood/api-client";
 import { useConfirmLink } from "../useConfirm";
-import { useContext, useId, useState } from "react";
+import { useContext, useEffect, useId, useState } from "react";
 import { RevisionNavigation } from "../revision-navigation";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
@@ -18,6 +19,7 @@ export function StepProgress({ current, highestReachable, onNext, onNavigate, ca
   const { t } = useTranslation();
   const guardLink = useConfirmLink();
   const { locale, taskId } = useParams();
+  useEffect(()=>{if(taskId&&stepPaths[current-1])void personalWorkspaceService.saveResume(taskId,stepPaths[current-1]).catch(()=>{});},[taskId,current]);
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
   return (
     <nav className={"step-progress"+(expanded?" steps-expanded":"")} aria-label={t("wizard.stepProgress", { current, total: workflowStepCount })}>

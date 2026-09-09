@@ -605,22 +605,29 @@ public sealed class PersistenceIntegrationTests : IDisposable
         Assert.Equal("Deseret Book", owner.ClientName);
         Assert.Equal("en-US", owner.Locale);
 
+        Assert.True(owner.TaskBackgroundMotion);
+        Assert.False(users.UpdatePreferences(owner.Id, "en-US", false).User!.TaskBackgroundMotion);
+        users.Initialize();
+        Assert.False(users.Get(owner.Id)!.TaskBackgroundMotion);
+        Assert.False(users.Authenticate("owner@example.test", "initial-password-123").User!.TaskBackgroundMotion);
         var preference = users.UpdatePreferences(owner.Id, "zh-CN");
         Assert.Equal(ProfileUpdateOutcome.Updated, preference.Outcome);
         Assert.Equal("zh-CN", preference.User?.Locale);
+        Assert.False(preference.User!.TaskBackgroundMotion);
+        Assert.True(users.UpdatePreferences(owner.Id, "zh-CN", true).User!.TaskBackgroundMotion);
         Assert.Equal("zh-CN", users.Get(owner.Id)?.Locale);
         Assert.Equal(ProfileUpdateOutcome.Invalid, users.UpdatePreferences(owner.Id, "fr-FR").Outcome);
 
-        var updated = users.UpdateProfile(owner.Id, " Updated Owner ", " 987 654 ", " Updated Client ");
+        var updated = users.UpdateProfile(owner.Id, " Updated Owner ", " 987 654 ");
         Assert.Equal(ProfileUpdateOutcome.Updated, updated.Outcome);
         var current = Assert.IsType<CurrentUserDto>(updated.User);
         Assert.Equal("Updated Owner", current.DisplayName);
         Assert.Equal("987 654", current.Phone);
-        Assert.Equal("Updated Client", current.ClientName);
+        Assert.Equal("Deseret Book", current.ClientName);
         Assert.Equal("Deseret Book", current.Organization?.Name);
 
-        var draft = projects.Create(current.Id, current.ClientName ?? current.Organization?.Name ?? current.DisplayName, current.DisplayName, current.Email ?? "", current.Phone);
-        Assert.Equal("Updated Client", draft.Project.ClientName);
+        var draft = projects.Create(current.Id, current.Organization!.Name, current.DisplayName, current.Email ?? "", current.Phone);
+        Assert.Equal("Deseret Book", draft.Project.ClientName);
         Assert.Equal("Updated Owner", draft.Project.ContactName);
         Assert.Equal("owner@example.test", draft.Project.Email);
         Assert.Equal("987 654", draft.Project.Phone);

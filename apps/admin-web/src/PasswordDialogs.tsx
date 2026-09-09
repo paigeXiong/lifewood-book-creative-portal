@@ -25,7 +25,7 @@ export function ChangeOwnPasswordDialog({ onClose }: { onClose: () => void }) {
     change.mutate({ currentPassword: String(data.get("currentPassword") ?? ""), newPassword });
   };
   return <ModalFrame labelledBy="change-own-password-title" busy={change.isPending} onClose={requestClose}>
-    <div className="modal-title"><h2 id="change-own-password-title">{t("admin.account.changePassword")}</h2><button type="button" aria-label={t("common.close")} disabled={change.isPending} onClick={requestClose}>×</button></div>
+    <div className="modal-title"><h2 id="change-own-password-title">{t("admin.account.changePassword")}</h2><button type="button" aria-label={t("common.close")} disabled={change.isPending} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
     <form onSubmit={submit} onChange={markDirty} aria-busy={change.isPending}>
       <label><span>{t("admin.account.currentPassword")}</span><input name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required /></label>
       <label><span>{t("admin.account.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>
@@ -53,7 +53,7 @@ export function ResetUserPasswordDialog({ user, onClose }: { user: AdminUser; on
     reset.mutate(password);
   };
   return <ModalFrame labelledBy="reset-user-password-title" busy={reset.isPending} onClose={requestClose}>
-    <div className="modal-title"><div><h2 id="reset-user-password-title">{t("admin.users.resetTitle")}</h2><p>{t("admin.users.resetFor", { name: user.displayName })}</p></div><button type="button" aria-label={t("common.close")} disabled={reset.isPending} onClick={requestClose}>×</button></div>
+    <div className="modal-title"><div><h2 id="reset-user-password-title">{t("admin.users.resetTitle")}</h2><p>{t("admin.users.resetFor", { name: user.displayName })}</p></div><button type="button" aria-label={t("common.close")} disabled={reset.isPending} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
     <form onSubmit={submit} onChange={markDirty} aria-busy={reset.isPending}>
       <label><span>{t("admin.account.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>
       <label><span>{t("admin.account.confirmPassword")}</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>

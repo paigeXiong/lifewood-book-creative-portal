@@ -1,14 +1,16 @@
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import "./login-book-backdrop.css";
 
 /** Decorative only; kept separate so the background experiment can be removed independently. */
-export function LoginBookBackdrop() {
+export function LoginBookBackdrop({subtle = false}: {subtle?: boolean}) {
+  const [hidden, setHidden] = useState(() => document.hidden);
+  useEffect(() => { const update = () => setHidden(document.hidden); document.addEventListener("visibilitychange", update); return () => document.removeEventListener("visibilitychange", update); }, []);
   return (
-    <div className="login-book-backdrop" aria-hidden="true">
+    <div className={`login-book-backdrop${subtle ? " task-book-backdrop" : ""}${hidden ? " is-paused" : ""}`} aria-hidden="true">
       <div className="login-book-grid">
-      {Array.from({ length: 12 }, (_, row) => (
+      {Array.from({ length: subtle ? 8 : 12 }, (_, row) => (
         <div className="login-book-row" key={row}>
-        {Array.from({ length: 18 }, (_, column) => (
+        {Array.from({ length: subtle ? 14 : 18 }, (_, column) => (
         <div className="login-floating-book" key={column} style={{ "--book-phase": `${-(row * 2.7 + (column % 2) * 4)}s` } as CSSProperties}>
           <svg viewBox="0 0 160 120" fill="none" focusable="false">
             {(row + column) % 2 === 0 ? (

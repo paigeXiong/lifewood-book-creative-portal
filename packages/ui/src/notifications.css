@@ -140,11 +140,47 @@
 .notification-quick-dialog .notification-empty { box-sizing: border-box; min-height: 100%; margin: 0; display: flex; align-items: center; justify-content: center; }
 
 /* Read state has a text label as well as contrast, weight and an unread marker. */
-.notification-center .notification-list > li { background: #fff; border: 1px solid #e1e9e4; border-inline-start: 3px solid transparent; }
-.notification-center .notification-list > li.is-unread { background: #e8f3ec; border-color: #c6dfcf; border-inline-start-color: #2e7050; }
+.notification-center .notification-list > li {
+  --notice-rest: #fff;
+  --notice-hover: #eef3f0;
+  --notice-pressed: #e2ebe6;
+  background: var(--notice-rest);
+  border: 0;
+  transition: background-color 140ms ease;
+}
+.notification-center .notification-list > li.is-unread {
+  --notice-rest: #e8f3ec;
+  --notice-hover: #dcece1;
+  --notice-pressed: #cfe3d6;
+}
 .notification-heading { display: flex; align-items: flex-start; gap: 12px; }
 .notification-center .notification-heading .notification-title { flex: 1; min-width: 0; font-weight: 400; color: #52665b; }
 .notification-center .is-unread .notification-heading .notification-title { font-weight: 700; color: #173d2b; }
 .notification-read-state { display: inline-flex; align-items: center; gap: 5px; flex: none; margin-top: 2px; color: #697970; font-size: 11px; line-height: 1.5; white-space: nowrap; }
 .is-unread .notification-read-state { color: #25643f; font-weight: 600; }
 .is-unread .notification-read-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+.notification-list li { touch-action: pan-y; -webkit-touch-callout: none; }
+.notification-list li.is-selecting { cursor: pointer; user-select: none; }
+.notification-center .notification-list > li.is-selected {
+  --notice-rest: #d9eade;
+  --notice-hover: #c9dfd0;
+  --notice-pressed: #bcd5c4;
+}
+/* Keep read and selection states distinct while acknowledging card interaction. */
+.notification-center .notification-list > li:focus-within { background: var(--notice-hover); }
+@media (hover: hover) {
+  .notification-center .notification-list > li:hover { background: var(--notice-hover); }
+}
+.notification-center .notification-list > li:active { background: var(--notice-pressed); }
+@media (prefers-reduced-motion: reduce) {
+  .notification-center .notification-list > li { transition: none; }
+}
+.notification-selection-count { color: #315d47; font-size: 12px; margin-inline-end: auto; }
+.notification-bulk-actions small { flex-basis: 100%; color: #60746b; }
+.notification-selection-count + button { margin-inline-start: 0; }
+
+/* The admin workspace fixes content height; keep the results reachable. */
+.admin-shell .notification-center.content { display: flex; flex-direction: column; overflow: hidden; }
+.admin-shell .notification-center.content > .notification-toolbar { flex-shrink: 0; }
+.admin-shell .notification-center.content > .notification-results { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

@@ -1,8 +1,10 @@
+import {SavedViews} from "@lifewood/ui/saved-views";
+import {personalWorkspaceService} from "@lifewood/api-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ApiError, localizedApiError, optionService, projectService } from "@lifewood/api-client";
+import { ApiError, authService, localizedApiError, optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { ProjectCoverImage } from "../components/ProjectCoverImage";
 import { DeleteDraftDialog } from "../components/DeleteDraftDialog";
@@ -60,9 +62,18 @@ export function TaskListPage() {
     queryKey: ["projects", validLocale, status, search, sort, direction, page],
     queryFn: () => projectService.listProjects({ locale: validLocale, status: status || undefined, search: search || undefined, sort, direction, page, pageSize: 10 }),
   });
+  const resumeIds=tasks.data?.items.filter(task=>task.status==="draft").map(task=>task.id)??[];
+  const resume=useQuery({queryKey:["project-resume",resumeIds],queryFn:()=>personalWorkspaceService.resumeSteps(resumeIds),enabled:resumeIds.length>0,staleTime:0});
   const stats = useQuery({ queryKey: ["project-stats"], queryFn: projectService.getStats });
+  const account = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
+  const hasOrganization = Boolean(account.data?.organization?.id && account.data.organization.name.trim());
+  const canCreate = account.isSuccess && hasOrganization;
+  const organizationNotice = account.isSuccess && !hasOrganization ? "task-organization-required" : undefined;
   const createDraft = useMutation({
     mutationFn: () => projectService.createDraft(validLocale),
+    onError: error => {
+      if (error instanceof ApiError && error.details.code === "project.organization_required") void queryClient.invalidateQueries({ queryKey: ["current-user"] });
+    },
     onSuccess: async (draft) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
@@ -177,6 +188,8 @@ export function TaskListPage() {
       {stats.isError && <div className="inline-error stat-error" role="alert">{localizedApiError(stats.error, t)} <button className="button button-secondary" type="button" onClick={() => void stats.refetch()}>{t("common.retry")}</button></div>}
 
       <section className="task-surface main-panel reference-table-panel" aria-busy={tasks.isPending}>
+        {organizationNotice && <p id={organizationNotice} className="task-creation-note" role="status">{t("errors.project.organizationRequired")}</p>}
+        {account.isError && <div className="inline-error" role="alert">{localizedApiError(account.error, t)} <button className="button button-secondary" type="button" onClick={() => void account.refetch()}>{t("common.retry")}</button></div>}
         {createDraft.isError && <div className="inline-error" role="alert">{localizedApiError(createDraft.error, t)}</div>}
         {options.isError && <div className="inline-error" role="alert">{localizedApiError(options.error, t)} <button className="button button-secondary" type="button" onClick={() => void options.refetch()}>{t("common.retry")}</button></div>}
         {tasks.isPending && <span className="sr-only" role="status">{t("common.loading")}</span>}
@@ -195,13 +208,15 @@ export function TaskListPage() {
             </form>
             <div className="task-table-controls">
               <TaskFilters status={status} statuses={options.data?.taskStatuses ?? []} onApply={updateFilters} />
+          <SavedViews key={account.data?.id} userId={account.data?.id} area="tasks" filters={{q:search,status,sort,direction}} onApply={values=>setSearchParams(new URLSearchParams(values))}/>
+
             <label className="task-mobile-sort">
               <span className="sr-only">{t("tasks.listUx.sortLabel")}</span>
               <select value={`${sort}:${direction}`} onChange={event => { const [field, order] = event.target.value.split(":"); changeSort(field as TaskSortField, order as SortDirection); }}>
                 {taskSortFields.map(field => (["asc", "desc"] as const).map(order => <option key={`${field}:${order}`} value={`${field}:${order}`}>{t("tasks.listUx.sortOption", { column: sortLabel(field), direction: t(`tasks.sort.${order}`) })}</option>))}
               </select>
             </label>
-              <button ref={createButtonRef} className="button button-primary task-create-button" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>
+              <button ref={createButtonRef} className="button button-primary task-create-button" type="button" disabled={createDraft.isPending || !canCreate} aria-describedby={organizationNotice} onClick={() => { if (canCreate) createDraft.mutate(); }}>
                 {!createDraft.isPending && <span aria-hidden="true">＋</span>}
                 {createDraft.isPending ? t("common.creating") : t("common.createTask")}
               </button>
@@ -230,7 +245,7 @@ export function TaskListPage() {
                     <div className="empty-state">
                       <div className="empty-folio" aria-hidden="true">{emptyKind === "noAction" ? "✓" : emptyKind === "noResults" ? "⌕" : "01"}</div>
                       <div><h2>{t(emptyKind === "new" ? "tasks.emptyTitle" : `tasks.listUx.${emptyKind}Title`)}</h2><p>{t(emptyKind === "new" ? "tasks.emptyDescription" : `tasks.listUx.${emptyKind}Description`)}</p>
-                        {filtered ? <button className="button button-secondary" type="button" onClick={clearFilters}>{t(emptyKind === "noAction" ? "clientUx.allProjects" : "tasks.listUx.clearAll")}</button> : <button className="button button-primary" type="button" disabled={createDraft.isPending} onClick={() => createDraft.mutate()}>{t(createDraft.isPending ? "common.creating" : "common.createTask")}</button>}
+                        {filtered ? <button className="button button-secondary" type="button" onClick={clearFilters}>{t(emptyKind === "noAction" ? "clientUx.allProjects" : "tasks.listUx.clearAll")}</button> : <button className="button button-primary" type="button" disabled={createDraft.isPending || !canCreate} aria-describedby={organizationNotice} onClick={() => { if (canCreate) createDraft.mutate(); }}>{t(createDraft.isPending ? "common.creating" : "common.createTask")}</button>}
                       </div>
                     </div>
                   </td></tr>
@@ -239,7 +254,7 @@ export function TaskListPage() {
                 const returned = task.status === "draft" && task.workflowStatus === "awaiting_customer";
                 const statusId = returned ? "awaiting_customer" : task.status === "draft" ? task.status : (task.workflowStatus ?? task.status);
                 const statusOption = statusMap.get(statusId);
-                const target = task.status === "draft" ? `/tasks/${task.id}/edit/project` : `/tasks/${task.id}`;
+                const target = task.status === "draft" ? `/tasks/${task.id}/edit/${resume.data?.find(item=>item.projectId===task.id)?.step??"project"}` : `/tasks/${task.id}`;
                 const projectTitle = presentValue(task.bookTitle) ?? presentValue(task.projectName) ?? t("tasks.untitledDraft");
                 const projectContext = presentValue(task.clientName) ?? presentValue(task.projectName) ?? t("tasks.pendingInput");
                 const authorName = presentValue(task.authorName) ?? t("tasks.pendingInput");
@@ -251,7 +266,7 @@ export function TaskListPage() {
                   <td data-label={t("tasks.columns.book")}>{authorName}</td>
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${returned ? "danger" : statusOption?.tone ?? "neutral"}`}>{returned ? t("clientUx.returnedStatus") : statusOption?.label ?? statusId}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.status === "draft" && <details className="task-more"><summary aria-label={t("clientUx.more")}>···</summary><button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle, returned }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t(returned ? "tasks.deleteReturned" : "tasks.deleteDraft")}</button></details>}</div></td>
+                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.status === "draft" && <details className="task-more"><summary aria-label={t("clientUx.more")} data-icon-motion="pop"><span aria-hidden="true" data-icon-glyph>···</span></summary><button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle, returned }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t(returned ? "tasks.deleteReturned" : "tasks.deleteDraft")}</button></details>}</div></td>
                 </tr>;
               })}</tbody>
             </table>
@@ -290,9 +305,9 @@ export function TaskListPage() {
           type="button"
           aria-label={t("common.createTask")}
           aria-busy={createDraft.isPending}
-          disabled={createDraft.isPending}
-          onClick={() => createDraft.mutate()}
-        >
+          disabled={createDraft.isPending || !canCreate} aria-describedby={organizationNotice}
+          onClick={() => { if (canCreate) createDraft.mutate(); }}
+         data-icon-motion="press">
           <span aria-hidden="true">＋</span>
         </button>
       ) : null}

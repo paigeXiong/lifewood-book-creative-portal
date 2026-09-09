@@ -133,7 +133,7 @@ export function SystemRuntimePage({ locale }: { locale: SupportedLocale }) {
       </section>
     </div>}
     {confirmAction && <ModalFrame labelledBy="runtime-confirm-title" busy={action.isPending} onClose={() => setConfirmAction(undefined)}>
-      <div className="modal-title"><h2 id="runtime-confirm-title">{t(`admin.runtime.${confirmAction}ConfirmTitle`)}</h2><button type="button" aria-label={t("common.close")} disabled={action.isPending} onClick={() => setConfirmAction(undefined)}>×</button></div>
+      <div className="modal-title"><h2 id="runtime-confirm-title">{t(`admin.runtime.${confirmAction}ConfirmTitle`)}</h2><button type="button" aria-label={t("common.close")} disabled={action.isPending} onClick={() => setConfirmAction(undefined)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
       <p>{t(`admin.runtime.${confirmAction}ConfirmBody`)}</p>
       <div className="modal-actions">
         <button type="button" disabled={action.isPending} onClick={() => setConfirmAction(undefined)}>{t("common.cancel")}</button>

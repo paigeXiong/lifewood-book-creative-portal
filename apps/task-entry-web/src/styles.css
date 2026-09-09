@@ -158,7 +158,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 
 .context-rail { display: grid; gap: 10px; position: sticky; top: 66px; }
 .folio-card, .check-card, .next-card { background: rgb(255 255 255 / 94%); border-radius: var(--lw-radius-panel); box-shadow: var(--lw-shadow-float); }
-.folio-card { padding: 12px; border-top: 3px solid var(--lw-saffron); }
+.folio-card { padding: 12px; border-top: 0; }
 .folio-label, .folio-kicker { color: var(--lw-castleton); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
 .folio-card h2 { font-family: var(--lw-font-editorial); font-size: 18px; margin: 11px 0 2px; }
 .summary-cover { width: 100%; max-height: 170px; margin: 10px 0; border-radius: 8px; object-fit: contain; background: var(--lw-sea-salt); }
@@ -201,7 +201,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .detail-cover dt, .data-grid dt { color: var(--lw-text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .detail-cover dd, .data-grid dd { margin: 3px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 .detail-sections { display: grid; gap: 10px; }
-.customer-delivery { border-left: 4px solid var(--lw-castleton); background: #f3f8f5; }
+.customer-delivery { border-left: 0; background: #f3f8f5; }
 .customer-delivery > strong { display: block; margin-bottom: 3px; color: var(--lw-dark-serpent); font-size: 14px; }
 .customer-delivery > p, .customer-delivery-heading p { margin: 0; color: var(--lw-text-secondary); font-size: 12px; }
 .customer-delivery-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -226,7 +226,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .receipt-links a:hover { text-decoration-thickness: 2px; }
 
 .login-page { min-height: 100vh; display: grid; place-items: center; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: var(--lw-canvas); }
-.login-panel { width: min(440px, 100%); background: var(--lw-white); padding: 22px; border-radius: var(--lw-radius-media); box-shadow: var(--lw-shadow-float); border-top: 4px solid var(--lw-saffron); }
+.login-panel { width: min(440px, 100%); background: var(--lw-white); padding: 22px; border-radius: var(--lw-radius-media); box-shadow: var(--lw-shadow-float); border-top: 0; }
 .login-topline { display: flex; justify-content: space-between; align-items: center; gap: 16px; color: var(--lw-text-muted); font-size: 11px; font-weight: 700; letter-spacing: .025em; }
 .login-topline a { color: var(--lw-castleton); text-underline-offset: 3px; }
 .login-heading { margin: 26px 0 18px; }
@@ -358,7 +358,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .submitted-meta dt { font-size: 12px; color: var(--lw-text-muted); }
 .submitted-meta dd { margin: 3px 0 0; font-weight: 750; overflow-wrap: anywhere; }
 .submitted-actions { display: flex; gap: 8px; }
-.submitted-next { align-self: start; padding: 13px; border-top: 3px solid var(--lw-saffron); }
+.submitted-next { align-self: start; padding: 13px; border-top: 0; }
 .submitted-next p { margin: 5px 0 0; color: var(--lw-text-muted); font-size: 13px; line-height: 1.5; }
 .button.disabled { pointer-events: none; opacity: .58; }
 .uploaded-files { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
@@ -376,7 +376,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .inline-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; max-width: 760px; }
 .voice-summary { position: sticky; top: 66px; display: grid; gap: 10px; }
 .studio-card, .handoff-card { padding: 12px; border-radius: var(--lw-radius-panel); background: var(--lw-white); box-shadow: var(--lw-shadow-float); }
-.studio-card { border-top: 3px solid var(--lw-saffron); }
+.studio-card { border-top: 0; }
 .studio-wave { height: 54px; margin: 5px 0; justify-content: center; background: linear-gradient(90deg, transparent, #eef5f0, transparent); }
 .studio-wave i { width: 3px; opacity: .5; }
 .studio-card strong, .handoff-card strong { display: block; overflow-wrap: anywhere; }

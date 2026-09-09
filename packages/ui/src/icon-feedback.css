@@ -1,0 +1,4 @@
+[data-icon-glyph] { display: inline-block; }
+@media (prefers-reduced-motion: no-preference) {
+  :is(button, summary)[data-icon-motion]:not(:disabled):not([aria-disabled="true"]):active > :is(svg, [data-icon-glyph], span[aria-hidden="true"]) { scale: .9; }
+}

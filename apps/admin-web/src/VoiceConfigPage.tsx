@@ -153,7 +153,7 @@ function VoiceDialog({ voice, tagOptions, busy, error, onClose, onSave }: {
     onSave(value);
   };
   return <ModalFrame labelledBy="voice-dialog-title" busy={busy} onClose={requestClose}>
-    <div className="modal-title"><h2 id="voice-dialog-title">{t(existing ? "admin.voices.editTitle" : "admin.voices.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button></div>
+    <div className="modal-title"><h2 id="voice-dialog-title">{t(existing ? "admin.voices.editTitle" : "admin.voices.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
     <form onSubmit={submit} onChange={markDirty}>
       <div className="voice-form-grid">
         <label><span>{t("admin.voices.id")}</span><input name="id" defaultValue={voice.id} pattern="[A-Za-z0-9-]{2,64}" maxLength={64} readOnly={existing} required autoComplete="off" spellCheck={false} /></label>

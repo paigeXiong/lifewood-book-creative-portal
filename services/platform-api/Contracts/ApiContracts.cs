@@ -17,14 +17,15 @@ public sealed record CurrentUserDto(
     string? TimeZone,
     bool HasCustomAvatar = false,
     string? Phone = null,
-    string? ClientName = null);
+    string? ClientName = null,
+    bool TaskBackgroundMotion = true);
 
 public sealed record AuthStatusDto(bool RequiresBootstrap);
 public sealed record CsrfTokenDto(string Token);
 public sealed record BootstrapAccountRequest(string DisplayName, string Email, string Password, string? Phone = null, string? OrganizationName = null, string? Locale = null);
 public sealed record LoginRequest(string Email, string Password, bool RememberMe);
-public sealed record UpdateProfileRequest(string DisplayName, string? Phone = null, string? ClientName = null);
-public sealed record UpdatePreferencesRequest(string Locale);
+public sealed record UpdateProfileRequest(string DisplayName, string? Phone = null);
+public sealed record UpdatePreferencesRequest(string Locale, bool? TaskBackgroundMotion = null);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ResetPasswordRequest(string NewPassword);
 public sealed record RuntimeSettingsDocument(string ListenAddress, int Port, string Scheme = "http");
@@ -41,8 +42,8 @@ public sealed record RuntimeSettingsDto(
 public sealed record UpdateRuntimeSettingsRequest(string ListenAddress, int Port, string? Scheme = null);
 public sealed record RuntimeActionDto(string Action, DateTimeOffset RequestedAt);
 
-public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? Phone = null);
-public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int PageSize, int Total);
+public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? Phone = null, UserPresenceDto? Presence = null);
+public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int PageSize, int Total, UserPresenceStatsDto? Statistics = null);
 public sealed record CreateUserRequest(string DisplayName, string Email, string Password, string Role, string? OrganizationId, string? Phone = null);
 public sealed record UpdateUserRequest(string DisplayName, string Role, bool Active, string? OrganizationId, string? Phone = null);
 

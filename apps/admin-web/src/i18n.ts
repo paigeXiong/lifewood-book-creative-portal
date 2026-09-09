@@ -4,6 +4,7 @@ i18n.addResourceBundle(
   "zh-CN",
   "translation",
   {
+    workflowPicker: {title:"选择负责人",choose:"选择负责人",change:"更换",clear:"取消分配",select:"选择",current:"当前负责人"},
     common: { search: "搜索", save: "保存", close: "关闭", cancel: "取消", unsavedConfirm: "尚有未保存的修改，确定关闭吗？" },
     errors: {
       network: { upload: "上传未能完成，请检查网络后重试。", invalidResponse: "服务器返回了无效响应，请重试。" },
@@ -399,6 +400,7 @@ i18n.addResourceBundle(
         edit: "编辑组织",
         name: "组织名称",
         members: "成员数",
+        viewMembers: "查看 {{name}} 的成员（{{count}}）",
         status: "状态",
         updated: "最近更新",
         action: "操作",
@@ -418,6 +420,7 @@ i18n.addResourceBundle(
   "en-US",
   "translation",
   {
+    workflowPicker: {title:"Choose assignee",choose:"Choose assignee",change:"Change",clear:"Unassign",select:"Select",current:"Current assignee"},
     common: {
       search: "Search",
       save: "Save",
@@ -842,6 +845,7 @@ i18n.addResourceBundle(
         edit: "Edit organization",
         name: "Organization name",
         members: "Members",
+        viewMembers: "View members of {{name}} ({{count}})",
         status: "Status",
         updated: "Updated",
         action: "Action",

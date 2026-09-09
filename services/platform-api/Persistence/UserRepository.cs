@@ -67,7 +67,9 @@ internal sealed class UserRepository
         if (!HasColumn(connection, "users", "avatar_file_name")) Execute(connection, "ALTER TABLE users ADD COLUMN avatar_file_name TEXT NULL;");
         if (!HasColumn(connection, "users", "phone")) Execute(connection, "ALTER TABLE users ADD COLUMN phone TEXT NULL;");
         if (!HasColumn(connection, "users", "client_name")) Execute(connection, "ALTER TABLE users ADD COLUMN client_name TEXT NULL;");
+        if (!HasColumn(connection, "users", "task_background_motion")) Execute(connection, "ALTER TABLE users ADD COLUMN task_background_motion INTEGER NOT NULL DEFAULT 1;");
         if (!HasColumn(connection, "users", "locale")) Execute(connection, "ALTER TABLE users ADD COLUMN locale TEXT NULL;");
+        if (!HasColumn(connection, "users", "closed_at")) Execute(connection, "ALTER TABLE users ADD COLUMN closed_at TEXT NULL;");
         OrganizationSchema.Ensure(connection);
         CleanupAvatarDirectory(connection);
     }
@@ -211,7 +213,8 @@ internal sealed class UserRepository
             : null;
         UpdateLoginState(connection, transaction, account.Id, 0, null, replacementHash);
         transaction.Commit();
-        return new(AccountLoginOutcome.Success, ToCurrentUser(account.Id, account.Email, account.DisplayName, account.Role, account.AvatarFileName, account.OrganizationId, account.OrganizationName, account.Phone, account.Locale, account.ClientName));
+        var authenticated=Get(account.Id);
+        return authenticated is null?new(AccountLoginOutcome.InvalidCredentials,null):new(AccountLoginOutcome.Success,authenticated);
     }
 
     public CurrentUserDto? Get(string id, int? sessionVersion = null)
@@ -219,7 +222,7 @@ internal sealed class UserRepository
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT u.id, u.email, u.display_name, u.role, u.avatar_file_name, o.id, o.name, u.phone, u.locale, u.client_name
+            SELECT u.id, u.email, u.display_name, u.role, u.avatar_file_name, o.id, o.name, u.phone, u.locale, u.client_name, u.task_background_motion
             FROM users u
             LEFT JOIN organizations o ON o.id = u.organization_id
             WHERE u.id = $id AND u.is_active = 1 AND ($sessionVersion IS NULL OR u.session_version = $sessionVersion);
@@ -227,24 +230,21 @@ internal sealed class UserRepository
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$sessionVersion", sessionVersion is null ? DBNull.Value : sessionVersion.Value);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetString(9)) : null;
+        return reader.Read() ? ToCurrentUser(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetInt32(10) != 0) : null;
     }
 
-    public ProfileUpdateResult UpdateProfile(string id, string displayName, string? phone, string? clientName = null)
+    public ProfileUpdateResult UpdateProfile(string id, string displayName, string? phone)
     {
         if (string.IsNullOrWhiteSpace(displayName)) return new(ProfileUpdateOutcome.Invalid, Field: "displayName");
         var normalizedDisplayName = displayName.Trim();
         var normalizedPhone = NormalizePhone(phone);
-        var normalizedClientName = string.IsNullOrWhiteSpace(clientName) ? null : clientName.Trim();
         if (normalizedDisplayName.Length is < 2 or > 100) return new(ProfileUpdateOutcome.Invalid, Field: "displayName");
         if (normalizedPhone is { Length: > 50 }) return new(ProfileUpdateOutcome.Invalid, Field: "phone");
-        if (normalizedClientName is { Length: > 200 }) return new(ProfileUpdateOutcome.Invalid, Field: "clientName");
 
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE users SET display_name = $displayName, client_name = $clientName, phone = $phone, updated_at = $now WHERE id = $id AND is_active = 1;";
+        command.CommandText = "UPDATE users SET display_name = $displayName, phone = $phone, updated_at = $now WHERE id = $id AND is_active = 1;";
         command.Parameters.AddWithValue("$displayName", normalizedDisplayName);
-        command.Parameters.AddWithValue("$clientName", normalizedClientName is null ? DBNull.Value : normalizedClientName);
         command.Parameters.AddWithValue("$phone", normalizedPhone is null ? DBNull.Value : normalizedPhone);
         command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$id", id);
@@ -253,14 +253,15 @@ internal sealed class UserRepository
         return updated is null ? new(ProfileUpdateOutcome.NotFound) : new(ProfileUpdateOutcome.Updated, updated);
     }
 
-    public ProfileUpdateResult UpdatePreferences(string id, string locale)
+    public ProfileUpdateResult UpdatePreferences(string id, string locale, bool? taskBackgroundMotion = null)
     {
         var normalizedLocale = NormalizeLocale(locale);
         if (normalizedLocale is null) return new(ProfileUpdateOutcome.Invalid, Field: "locale");
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE users SET locale = $locale, updated_at = $now WHERE id = $id AND is_active = 1;";
+        command.CommandText = "UPDATE users SET locale = $locale, task_background_motion = COALESCE($motion, task_background_motion), updated_at = $now WHERE id = $id AND is_active = 1;";
         command.Parameters.AddWithValue("$locale", normalizedLocale);
+        command.Parameters.AddWithValue("$motion", taskBackgroundMotion is null ? DBNull.Value : taskBackgroundMotion.Value ? 1 : 0);
         command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$id", id);
         if (command.ExecuteNonQuery() == 0) return new(ProfileUpdateOutcome.NotFound);
@@ -370,6 +371,8 @@ internal sealed class UserRepository
         catch (UnauthorizedAccessException) { }
     }
 
+    public void CleanupClosedAvatar(string? fileName) { if(fileName is not null) TryDeleteAvatarFile(fileName); }
+
     private void CleanupAvatarDirectory(SqliteConnection connection)
     {
         if (!Directory.Exists(avatarDirectory)) return;
@@ -431,7 +434,7 @@ internal sealed class UserRepository
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.failed_attempts, u.locked_until, u.is_active, u.avatar_file_name, o.id, o.name, u.phone, u.locale, u.client_name
+            SELECT u.id, u.email, u.display_name, u.password_hash, u.role, u.failed_attempts, u.locked_until, u.is_active, u.avatar_file_name, o.id, o.name, u.phone, u.locale, u.client_name, u.task_background_motion
             FROM users u
             LEFT JOIN organizations o ON o.id = u.organization_id
             WHERE u.normalized_email = $email;
@@ -481,19 +484,19 @@ internal sealed class UserRepository
         return normalized is "zh-CN" or "en-US" ? normalized : null;
     }
     private static bool IsValidEmail(string value) => MailAddress.TryCreate(value.Trim(), out var address) && address.Address.Equals(value.Trim(), StringComparison.OrdinalIgnoreCase);
-    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role, string? avatarFileName, string? organizationId, string? organizationName, string? phone = null, string? locale = null, string? clientName = null)
+    private static CurrentUserDto ToCurrentUser(string id, string email, string displayName, string role, string? avatarFileName, string? organizationId, string? organizationName, string? phone = null, string? locale = null, string? clientName = null, bool taskBackgroundMotion = true)
     {
         var permissions = role switch
         {
-            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.config.manage", "admin.runtime.manage" },
-            "admin" => new[] { "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.config.manage" },
-            "operator" => new[] { "admin.access", "admin.projects.read", "admin.projects.workflow", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver" },
+            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.config.manage", "admin.runtime.manage" },
+            "admin" => new[] { "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.config.manage" },
+            "operator" => new[] { "admin.access", "admin.projects.read", "admin.projects.workflow", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export" },
             "customer" => new[] { "tasks.read", "tasks.write", "tasks.submit" },
             _ => Array.Empty<string>()
         };
         var avatarVersion = avatarFileName ?? id;
         var organization = organizationId is not null && organizationName is not null ? new OrganizationDto(organizationId, organizationName) : null;
-        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(avatarVersion)}", email, organization, [role], permissions, locale, null, avatarFileName is not null, phone, clientName);
+        return new(id, email, displayName, $"/api/me/avatar?v={Uri.EscapeDataString(avatarVersion)}", email, organization, [role], permissions, locale, null, avatarFileName is not null, phone, clientName, taskBackgroundMotion);
     }
 
     private static bool ValidNewPassword(string password) => !string.IsNullOrEmpty(password) && password.Length is >= 8 and <= 128;
@@ -542,7 +545,7 @@ internal sealed class UserRepository
         using var transaction = connection.BeginTransaction(deferred: false);
         using var exists = connection.CreateCommand();
         exists.Transaction = transaction;
-        exists.CommandText = "SELECT COUNT(*) FROM users WHERE id = $id;";
+        exists.CommandText = "SELECT COUNT(*) FROM users WHERE id = $id AND closed_at IS NULL;";
         exists.Parameters.AddWithValue("$id", id);
         if (Convert.ToInt32(exists.ExecuteScalar()) != 1) return new(PasswordUpdateOutcome.NotFound);
         UpdatePassword(connection, transaction, id, newPassword);

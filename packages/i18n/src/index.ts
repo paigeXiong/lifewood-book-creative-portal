@@ -107,7 +107,7 @@ const resources = {
         avatarDescription: "点击头像可预览、裁剪或更换图片。",
         changeAvatar: "查看或更换头像",
         contactTitle: "联系信息",
-        contactDescription: "默认客户名称、联系人和电话会自动填入之后新建的项目草稿。",
+        contactDescription: "所属组织名称、联系人和电话会自动填入之后新建的项目草稿。",
         accountTitle: "账户与归属",
         accountDescription: "查看登录身份、组织归属与安全设置。",
         displayName: "姓名",
@@ -125,11 +125,11 @@ const resources = {
         preferencesDescription: "调整仅作用于当前账户的界面设置。",
         language: "界面语言",
         languageDescription: "切换后立即保存，并在下次登录时继续使用。",
-        preferenceSaving: "正在保存语言偏好…",
-        preferenceSaved: "语言偏好已保存。",
+        preferenceSaving: "正在保存偏好…",
+        preferenceSaved: "偏好已保存。",
         roles: { owner: "平台负责人", admin: "管理员", operator: "运营人员", customer: "客户成员", member: "平台成员" },
         save: "保存个人资料",
-        saved: "个人资料已更新，之后新建的草稿将自动使用最新客户与联系信息。",
+        saved: "个人资料已更新，之后新建的草稿将自动使用最新联系信息。",
       },
       common: {
         createTask: "新建项目",
@@ -717,7 +717,7 @@ const resources = {
         avatarDescription: "Select the avatar to preview, crop, or replace the image.",
         changeAvatar: "View or change avatar",
         contactTitle: "Contact information",
-        contactDescription: "Your default client name, contact name, and phone number will be added to new project drafts.",
+        contactDescription: "Your organization name, contact name, and phone number will be added to new project drafts.",
         accountTitle: "Account & organization",
         accountDescription: "Review your sign-in identity, organization, and security settings.",
         displayName: "Name",
@@ -735,11 +735,11 @@ const resources = {
         preferencesDescription: "Adjust interface settings that apply only to your account.",
         language: "Interface language",
         languageDescription: "Changes are saved immediately and reused at your next sign-in.",
-        preferenceSaving: "Saving language preference…",
-        preferenceSaved: "Language preference saved.",
+        preferenceSaving: "Saving preferences…",
+        preferenceSaved: "Preferences saved.",
         roles: { owner: "Platform owner", admin: "Administrator", operator: "Operations staff", customer: "Customer member", member: "Platform member" },
         save: "Save profile",
-        saved: "Profile updated. New drafts will use the latest client and contact details.",
+        saved: "Profile updated. New drafts will use the latest contact details.",
       },
       common: {
         createTask: "New project",
@@ -1275,13 +1275,22 @@ const resources = {
   },
 } as const;
 
-void i18n.use(initReactI18next).init({
-  resources,
-  lng: "zh-CN",
-  fallbackLng: "zh-CN",
-  interpolation: { escapeValue: false },
-  returnNull: false,
-});
+// Re-evaluating this module (for example during HMR) must not replace the
+// resource store: the admin app registers additional translations after import.
+if (!i18n.isInitialized) {
+  void i18n.use(initReactI18next).init({
+    resources,
+    lng: "zh-CN",
+    fallbackLng: "zh-CN",
+    initAsync: false,
+    interpolation: { escapeValue: false },
+    returnNull: false,
+  });
+} else {
+  for (const locale of supportedLocales) {
+    i18n.addResourceBundle(locale, "translation", resources[locale].translation, true, true);
+  }
+}
 
 i18n.addResource(
   "zh-CN",
@@ -1354,3 +1363,42 @@ i18n.addResourceBundle("en-US","translation",{"accountSwitch": {"title": "Switch
 
 i18n.addResourceBundle("zh-CN","translation",{notifications:{readStatus:"已读",unreadStatus:"未读"}},true,true);
 i18n.addResourceBundle("en-US","translation",{notifications:{readStatus:"Read",unreadStatus:"Unread"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{"operations": {"workbench": "运营工作台", "mine": "只看我负责", "refresh": "刷新", "total": "共 {{count}} 项", "queues": "跟进队列", "project": "项目 / 客户", "deadline": "内部跟进期限", "updated": "更新时间", "empty": "当前队列暂无项目", "previous": "上一页", "next": "下一页", "page": "第 {{page}} / {{pages}} 页", "notSet": "未设置", "editDeadline": "设置跟进", "export": "导出资料包", "exporting": "正在打包…", "deadlineHint": "按本地时间设置；到期前 24 小时及逾期时各提醒一次。完成本次跟进可清除期限。此设置独立于客户要求的截止日期。", "localTime": "跟进时间（本地时区）", "terminal": "项目已完成或关闭，仅可清除原有期限。", "complete": "完成本次跟进", "conflict": "跟进期限已被修改，请关闭后重新打开再操作。", "invalidDeadline": "请选择有效的跟进时间；已完成或关闭的项目不能设置新期限。", "exportChanged": "打包期间项目发生变更，请重新导出。", "exportTooLarge": "项目附件超过 1 GB，请分别下载附件。", "exportFiles": "部分附件缺失或已变更，未生成资料包。请刷新项目后重试。"}, "notifications": {"kinds": {"followup_due": "跟进即将到期", "followup_overdue": "跟进已逾期"}}},true,true);
+
+i18n.addResourceBundle("en-US","translation",{"operations": {"workbench": "Operations workbench", "mine": "Assigned to me", "refresh": "Refresh", "total": "{{count}} projects", "queues": "Follow-up queues", "project": "Project / customer", "deadline": "Internal follow-up deadline", "updated": "Updated", "empty": "No projects in this queue", "previous": "Previous", "next": "Next", "page": "Page {{page}} of {{pages}}", "notSet": "Not set", "editDeadline": "Set follow-up", "export": "Export project ZIP", "exporting": "Preparing ZIP…", "deadlineHint": "Use your local time. A reminder is sent within 24 hours before the deadline and once overdue. Complete the follow-up to clear its deadline. This is separate from the customer’s requested deadline.", "localTime": "Follow-up time (local time zone)", "terminal": "This project is completed or closed. You can only clear its existing deadline.", "complete": "Complete follow-up", "conflict": "The follow-up deadline changed. Close and reopen this dialog to try again.", "invalidDeadline": "Choose a valid follow-up time. Completed or closed projects cannot receive a new deadline.", "exportChanged": "The project changed while preparing the ZIP. Export again.", "exportTooLarge": "Project attachments exceed 1 GB. Download the attachments individually.", "exportFiles": "Some attachments are missing or changed; no ZIP was generated. Refresh the project and try again."}, "notifications": {"kinds": {"followup_due": "Follow-up due soon", "followup_overdue": "Follow-up overdue"}}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{"uiDensity": {"expand": "展开全文", "collapse": "收起", "unavailableOption": "选项信息不可用", "noDetails": "未填写", "deadlineHint": "到期前及逾期各提醒一次，与客户截止日期独立。", "referenceLink": "参考链接 {{number}}"}},true,true);
+
+i18n.addResourceBundle("en-US","translation",{"uiDensity": {"expand": "Read more", "collapse": "Show less", "unavailableOption": "Option unavailable", "noDetails": "Not provided", "deadlineHint": "One reminder before the deadline and one when overdue. Separate from the customer deadline.", "referenceLink": "Reference {{number}}"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{projectActions:{title:"项目操作",editWorkflow:"更新进度"}},true,true);
+i18n.addResourceBundle("en-US","translation",{projectActions:{title:"Project actions",editWorkflow:"Update workflow"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{profile:{taskBackgroundMotion:"项目列表动态背景"}},true,true);
+i18n.addResourceBundle("en-US","translation",{profile:{taskBackgroundMotion:"Animated project background"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{notifications:{enterSelection:"批量选择",exitSelection:"退出选择",selectionActions:"批量操作",selectedCount:"已选 {{count}} 条",selectionLimit:"每次最多选择 500 条通知"}},true,true);
+i18n.addResourceBundle("en-US","translation",{notifications:{enterSelection:"Select notifications",exitSelection:"Exit selection",selectionActions:"Bulk actions",selectedCount:"{{count}} selected",selectionLimit:"Select up to 500 notifications at a time"}},true,true);
+
+i18n.addResource("zh-CN", "translation", "errors.project.organizationRequired", "请联系管理员分配所属组织后再创建项目。");
+i18n.addResource("en-US", "translation", "errors.project.organizationRequired", "Ask an administrator to assign an organization before creating a project.");
+
+i18n.addResourceBundle("zh-CN","translation",{userActivity:{online:"在线",away:"离开",offline:"离线",noData:"暂无记录",summary:"当前筛选用户统计",onlineCount:"当前在线",todayActive:"今日活跃",enabled:"启用账号",unassigned:"未分配组织",lastActive:"最近活跃",lastLogin:"最近登录",details:"用户详情",submittedProjects:"已提交项目",pendingProjects:"待处理项目",statusFilter:"在线状态",allPresence:"全部在线状态",organizationFilter:"所属组织",allOrganizations:"全部组织",enabledFilter:"账号状态",allEnabled:"全部账号状态"}},true,true);
+i18n.addResourceBundle("en-US","translation",{userActivity:{online:"Online",away:"Away",offline:"Offline",noData:"No record",summary:"Filtered user statistics",onlineCount:"Online now",todayActive:"Active today",enabled:"Enabled accounts",unassigned:"No organization",lastActive:"Last active",lastLogin:"Last sign-in",details:"User details",submittedProjects:"Submitted projects",pendingProjects:"Pending projects",statusFilter:"Presence",allPresence:"All presence states",organizationFilter:"Organization",allOrganizations:"All organizations",enabledFilter:"Account status",allEnabled:"All account states"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{accountClosure:{title:"注销账号",closeNamed:"注销 {{name}} 的账号",target:"永久注销 {{name}} 的账号？",effect:"清除姓名、邮箱、电话、头像与个人偏好，使所有登录失效。此操作无法恢复。",owned:"保留 {{count}} 个所属项目",assigned:"释放 {{count}} 个负责项目的分配",retained:"项目资料及历史记录保留，其中已有的联系人信息、消息和审计记录不会被删除。",confirmEmail:"输入此账号的邮箱确认",confirm:"永久注销",review:"重新核对",success:"账号已永久注销。",deleted:"已注销账号",protected:"无法注销当前账号或平台负责人账号。",conflict:"账号信息已变化，请重新核对后确认。",invalid:"请输入该账号的邮箱确认。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{accountClosure:{title:"Close account",closeNamed:"Close {{name}}’s account",target:"Permanently close {{name}}’s account?",effect:"Remove the name, email, phone, avatar and personal preferences, and revoke all sign-ins. This cannot be undone.",owned:"Keep {{count}} owned projects",assigned:"Unassign {{count}} assigned projects",retained:"Project materials and history remain, including existing contact information, messages and audit records.",confirmEmail:"Enter this account’s email to confirm",confirm:"Permanently close",review:"Review again",success:"Account permanently closed.",deleted:"Closed account",protected:"The current account and platform owner cannot be closed.",conflict:"The account changed. Review its details before confirming.",invalid:"Enter this account’s email to confirm."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{revisionDiff:{title:"修改对比",count:"本次变更 {{count}} 项",field:"修改内容",before:"退回前",after:"重新提交后",added:"新增",removed:"移除",changed:"修改",empty:"无",noChanges:"资料内容未变更，可查看本轮回复。",unavailable:"历史资料不完整，暂无法生成对比。",customDuration:"自定义时长",file:"附件",unavailableLink:"链接不可用",character:"故事角色",unnamedCharacter:"未命名角色",presetImage:"预设角色图",characterOrder:"角色顺序"}},true,true);
+i18n.addResourceBundle("en-US","translation",{revisionDiff:{title:"Compare changes",count:"Changes: {{count}}",field:"Changed content",before:"Before return",after:"After resubmission",added:"Added",removed:"Removed",changed:"Changed",empty:"None",noChanges:"Project content is unchanged. Check the replies in this round.",unavailable:"Historical data is incomplete. A comparison is unavailable.",customDuration:"Custom duration",file:"Attachment",unavailableLink:"Link unavailable",character:"Story character",unnamedCharacter:"Unnamed character",presetImage:"Preset portrait",characterOrder:"Character order"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{productivity:{savedViews:"常用筛选",saveCurrent:"保存当前筛选",rename:"重命名",renameNamed:"重命名 {{name}}",removeNamed:"移除 {{name}}",viewConflict:"保存未完成：请检查名称是否重复、是否已达 20 个上限，或刷新后重试。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{productivity:{savedViews:"Saved filters",saveCurrent:"Save current filters",rename:"Rename",renameNamed:"Rename {{name}}",removeNamed:"Remove {{name}}",viewConflict:"Could not save: check for duplicate names or the 20-view limit, or refresh and try again."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{"productivity": {"batch": "批量处理", "selected": "已选择 {{count}} 个项目", "unavailableProject": "项目不可访问", "action": "修改项目", "clearDeadline": "留空将清除跟进期限。", "batchCheck": "将处理 {{count}} 个可访问项目；发生冲突的项目会保留原值。", "preview": "查看所选项目", "unnamedProject": "未命名项目", "reports": "趋势报表", "exitSelection": "退出选择", "select": "批量选择", "selectPage": "选择本页", "selectNamed": "选择 {{name}}", "outcomes": {"Saved": "已保存", "NotFound": "不可访问", "Conflict": "已被修改，请刷新", "Protected": "无操作权限", "Invalid": "设置无效"}, "devices": "登录设备", "browsers": {"edge": "Edge", "firefox": "Firefox", "chrome": "Chrome", "safari": "Safari", "unknown": "其他浏览器"}, "platforms": {"android": "Android", "ios": "iOS", "windows": "Windows", "macos": "macOS", "linux": "Linux", "unknown": "其他系统"}, "currentDevice": "当前设备", "connectedAt": "最近连接", "expiresAt": "登录有效期至", "revoke": "退出登录", "revokeOthersConfirm": "退出其他设备后，需要重新登录才能访问或切换到此账号。当前设备不受影响。", "revokeConfirm": "退出此设备后，需要重新登录才能访问或切换到此账号。", "revokeOthers": "退出其他设备", "date": "日期", "metrics": {"submitted": "首次提交", "delivered": "有效交付", "overdue": "当前逾期"}, "exportCsv": "导出 CSV", "from": "开始日期", "to": "结束日期", "organizationSearch": "搜索组织名称", "assigneeSearch": "搜索姓名或邮箱", "reportScope": "按当前组织和负责人筛选，按本地当前时区偏移汇总（最多 366 天）。交付不含已撤回记录；逾期按仍未完成项目的期限日期统计。", "trend": "每日首次提交、有效交付和当前逾期项目数量", "invalidRange": "请选择不超过 366 天的有效日期范围。"}},true,true);
+
+i18n.addResourceBundle("en-US","translation",{"productivity": {"batch": "Batch update", "selected": "{{count}} projects selected", "unavailableProject": "Project unavailable", "action": "Change field", "clearDeadline": "Leave empty to clear the follow-up deadline.", "batchCheck": "Update {{count}} accessible projects. Conflicting projects will keep their current values.", "preview": "View selected projects", "unnamedProject": "Untitled project", "reports": "Trend reports", "exitSelection": "Exit selection", "select": "Select projects", "selectPage": "Select this page", "selectNamed": "Select {{name}}", "outcomes": {"Saved": "Saved", "NotFound": "Unavailable", "Conflict": "Changed; refresh to retry", "Protected": "Not permitted", "Invalid": "Invalid settings"}, "devices": "Login devices", "browsers": {"edge": "Edge", "firefox": "Firefox", "chrome": "Chrome", "safari": "Safari", "unknown": "Other browser"}, "platforms": {"android": "Android", "ios": "iOS", "windows": "Windows", "macos": "macOS", "linux": "Linux", "unknown": "Other system"}, "currentDevice": "This device", "connectedAt": "Last connection", "expiresAt": "Signed in until", "revoke": "Sign out", "revokeOthersConfirm": "Other devices will need to sign in again to access or switch to this account. This device stays signed in.", "revokeConfirm": "This device will need to sign in again to access or switch to this account.", "revokeOthers": "Sign out other devices", "date": "Date", "metrics": {"submitted": "First submissions", "delivered": "Valid deliveries", "overdue": "Currently overdue"}, "exportCsv": "Export CSV", "from": "Start date", "to": "End date", "organizationSearch": "Search organization name", "assigneeSearch": "Search name or email", "reportScope": "Filtered by current organization and assignee, using your current time-zone offset (up to 366 days). Deliveries exclude revoked records; overdue projects are grouped by deadline date and exclude completed projects.", "trend": "Daily first submissions, valid deliveries and currently overdue projects", "invalidRange": "Choose a valid date range of up to 366 days."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{productivity:{metricScope:"统计口径",noActivity:"此时间段暂无统计记录"}},true,true);
+i18n.addResourceBundle("en-US","translation",{productivity:{metricScope:"How metrics are counted",noActivity:"No activity in this date range"}},true,true);

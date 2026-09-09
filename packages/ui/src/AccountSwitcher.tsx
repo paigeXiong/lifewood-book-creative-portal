@@ -44,7 +44,7 @@ export function AccountSwitcher({user,destination}:{user:CurrentUser;destination
         <button className="saved-account-select" type="button" disabled={busy} aria-label={t('accountSwitch.switchNamed',{name:account.displayName})} onClick={()=>void run(account.id)}>
           <span className="saved-account-initial" aria-hidden="true">{account.displayName.slice(0,1)}</span><span><strong>{account.displayName}</strong><small>{account.email}</small></span>
         </button>
-        <button className="saved-account-remove" type="button" disabled={busy} aria-label={t('accountSwitch.removeNamed',{name:account.displayName})} title={t('accountSwitch.removeNamed',{name:account.displayName})} onClick={()=>remove.mutate(account.id)}>×</button>
+        <button className="saved-account-remove" type="button" disabled={busy} aria-label={t('accountSwitch.removeNamed',{name:account.displayName})} title={t('accountSwitch.removeNamed',{name:account.displayName})} onClick={()=>remove.mutate(account.id)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
       </li>)}</ul>
       {(switcher.error||remove.error)&&!adding&&<p role="alert">{localizedApiError(switcher.error??remove.error,t)}</p>}
       {switcher.isPending&&!adding&&<p role="status">{t('accountSwitch.switching')}</p>}

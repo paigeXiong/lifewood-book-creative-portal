@@ -66,7 +66,7 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
 
   return <div className="password-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !change.isPending) onClose(); }}>
     <div ref={frameRef} className="password-dialog" role="dialog" aria-modal="true" aria-labelledby="change-password-title">
-      <div className="password-dialog-title"><h2 id="change-password-title">{t("nav.changePassword")}</h2><button type="button" aria-label={t("common.close")} disabled={change.isPending} onClick={onClose}>×</button></div>
+      <div className="password-dialog-title"><h2 id="change-password-title">{t("nav.changePassword")}</h2><button type="button" aria-label={t("common.close")} disabled={change.isPending} onClick={onClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
       <form onSubmit={submit} aria-busy={change.isPending}>
         <label><span>{t("nav.currentPassword")}</span><input ref={currentPasswordRef} name="currentPassword" type="password" autoComplete="current-password" maxLength={128} required aria-invalid={change.isError || undefined} aria-describedby={change.isError ? "change-password-error" : undefined} /></label>
         <label><span>{t("nav.newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required /></label>

@@ -1,0 +1,9 @@
+.account-closure-form{display:grid;gap:12px}
+.account-closure-form p{margin:0;line-height:1.55}
+.account-closure-form label{display:grid;gap:6px}
+.account-closure-form label strong{overflow-wrap:anywhere}
+.account-closure-impact{display:flex;gap:10px;flex-wrap:wrap;background:#f3f6f4;border-radius:8px;padding:10px 12px}
+button.account-close-confirm{background:#a13931;color:#fff}
+button.account-close-button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;padding:6px;background:transparent;border:0;box-shadow:none;color:#9b4c44}
+button.account-close-button:hover{background:#fff0ed;color:#902b25}
+.account-close-button svg{width:18px;height:18px}

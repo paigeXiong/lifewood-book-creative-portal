@@ -35,6 +35,10 @@ npm run stop:local
 7. [正式部署与数据备份](./deployment-and-backup.md)：同域路由、Native AOT 发布、数据目录、备份和恢复要求。
 8. [验证并发布平台](./release-readiness.md)：Windows 与 Linux 验证、Native AOT 发布包和上线前人工检查。
 
+## 项目处理效率
+
+- [批量处理、趋势报表、常用筛选、草稿续填与登录设备](./productivity-tools.md)
+
 ## 设计研究与参考
 
 - [生产协作与客户审阅：需求批注](./production-workflow-annotations.md)：原图歧义、当前讨论方向及开发前待确认事项（2026-09-04，暂不开发）。
@@ -68,3 +72,11 @@ npm run stop:local
 - [站内通知](./notifications.md)：业务事件、双端中心、偏好、规则、发送记录与可靠性。
 
 - [2026-09-08 验收记录](./release-readiness-2026-09-08.md)：v0.3.10 通知、公告及升级兼容验收。
+
+- [运营工作台、跟进期限与资料导出](operations-workbench.md)
+
+- [用户在线状态与活跃数据](./user-presence.md)：在线判定、用户筛选统计、登录与活跃记录及权限边界。
+
+- [账号永久注销](./account-closure.md)：注销确认、数据清理与保留范围、会话失效和不可恢复规则。
+
+- [退回修改前后对比](./revision-comparison.md)：管理员按单元查看字段变化及附件增删，兼容历史快照和中英文。

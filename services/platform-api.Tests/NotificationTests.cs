@@ -6,14 +6,14 @@ namespace Lifewood.PlatformApi.Tests;
 public sealed class NotificationTests:IDisposable {
  readonly string root=Path.Combine(Path.GetTempPath(),"lw-notifications-"+Guid.NewGuid().ToString("N"));readonly string connection;readonly NotificationRepository repo;
  public NotificationTests(){Directory.CreateDirectory(root);connection="Data Source="+Path.Combine(root,"test.db")+";Pooling=False";Sql("""
- CREATE TABLE users(id TEXT PRIMARY KEY,role TEXT,is_active INTEGER,display_name TEXT);
- INSERT INTO users VALUES('customer','customer',1,'Customer'),('other','customer',1,'Other'),('admin','admin',1,'Admin'),('owner','owner',1,'Owner'),('disabled','admin',0,'Disabled');
+ CREATE TABLE users(id TEXT PRIMARY KEY,role TEXT,is_active INTEGER,display_name TEXT,closed_at TEXT);
+ INSERT INTO users(id,role,is_active,display_name) VALUES('customer','customer',1,'Customer'),('other','customer',1,'Other'),('admin','admin',1,'Admin'),('owner','owner',1,'Owner'),('disabled','admin',0,'Disabled');
  CREATE TABLE projects(id TEXT PRIMARY KEY,owner_id TEXT,project_json TEXT,task_number TEXT,status TEXT,workflow_status TEXT,version INTEGER,assignee_user_id TEXT);
  INSERT INTO projects VALUES('p','customer','{"projectName":"Original 项目"}',NULL,'draft','new',1,NULL);
  CREATE TABLE revision_rounds(id TEXT PRIMARY KEY,project_id TEXT,created_at TEXT,submitted_at TEXT);
  CREATE TABLE revision_messages(id TEXT PRIMARY KEY,round_id TEXT,unit TEXT,body TEXT,author_id TEXT,is_admin INTEGER,created_at TEXT);
  CREATE TABLE project_deliveries(id TEXT PRIMARY KEY,project_id TEXT,uploader_user_id TEXT,revoked_at TEXT);
- """);repo=new(connection);repo.Initialize();}
+ """);Sql("ALTER TABLE projects ADD COLUMN followup_due_at TEXT;ALTER TABLE projects ADD COLUMN followup_version INTEGER NOT NULL DEFAULT 0");repo=new(connection);repo.Initialize();}
  void Sql(string sql){using var c=new SqliteConnection(connection);c.Open();using var q=c.CreateCommand();q.CommandText=sql;q.ExecuteNonQuery();}
  NotificationPage Feed(string user="admin",long? before=null,string? state=null)=>repo.List(user,"zh-CN",before,null,null,state,null,null,null);
  void Capture(string key,string kind="workflow",string actor="admin",string target=""){using var c=new SqliteConnection(connection);c.Open();using var tx=c.BeginTransaction();NotificationRepository.Capture(c,tx,key,kind,"p",actor,target);tx.Commit();}
@@ -23,7 +23,7 @@ public sealed class NotificationTests:IDisposable {
   Assert.Empty(Feed("customer").Items);Assert.Null(repo.Target("customer",item.Id,"en-US",true));
  }
  [Fact] public void OperatorNotificationsFollowAssignmentAndRevokeHistoricalAccess(){
-  Sql("INSERT INTO users VALUES('op1','operator',1,'One'),('op2','operator',1,'Two');UPDATE projects SET assignee_user_id='op1'");
+  Sql("INSERT INTO users(id,role,is_active,display_name) VALUES('op1','operator',1,'One'),('op2','operator',1,'Two');UPDATE projects SET assignee_user_id='op1'");
   repo.Initialize(); // The upgraded trigger must also replace an existing definition.
   Capture("assigned","customer_reply","customer");repo.Dispatch();
   var item=Assert.Single(Feed("op1").Items);Assert.Empty(Feed("op2").Items);Assert.Empty(Feed("admin").Items);
@@ -35,7 +35,7 @@ public sealed class NotificationTests:IDisposable {
   Assert.Single(Feed("admin").Items);Assert.Empty(Feed("op1").Items);Assert.Empty(Feed("op2").Items);
  }
  [Fact] public void SuccessfulBatchesDoNotConsumeFailureRetries(){
-  Sql("WITH RECURSIVE ids(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM ids WHERE n<2501) INSERT INTO users SELECT 'bulk-'||n,'admin',1,'Bulk' FROM ids");
+  Sql("WITH RECURSIVE ids(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM ids WHERE n<2501) INSERT INTO users(id,role,is_active,display_name) SELECT 'bulk-'||n,'admin',1,'Bulk' FROM ids");
   Capture("bulk","customer_reply","customer");
   for(var i=0;i<5;i++)repo.Dispatch();
   Assert.Equal(0,repo.Logs(null).Items[0].Attempts);
@@ -54,7 +54,7 @@ public sealed class NotificationTests:IDisposable {
   Sql("UPDATE projects SET status='draft';INSERT INTO revision_rounds VALUES('new','p','2026-01-04',NULL)");
   Assert.Equal("expired",Assert.Single(Feed("customer").Items).State);Assert.Null(repo.Target("customer",item.Id,"zh-CN",false));
  }
- [Fact] public void SubmissionIsDurableDeduplicatedAndSnapshotScoped(){Sql("UPDATE projects SET status='submitted',task_number='P1',version=2 WHERE id='p'");Assert.Equal(1,repo.Logs(null).Pending);Sql("INSERT INTO users VALUES('late','admin',1,'Late')");repo.Dispatch();repo.Dispatch();Assert.Single(Feed().Items);Assert.Single(Feed("owner").Items);Assert.Empty(Feed("late").Items);Assert.Empty(Feed("customer").Items);Assert.Empty(Feed("other").Items);Assert.Empty(Feed("disabled").Items);Assert.Equal("项目已提交：Original 项目",Feed().Items[0].Title);Assert.Contains("Project submitted",repo.List("admin","en-US",null,null,null,null,null,null,null).Items[0].Title);}
+ [Fact] public void SubmissionIsDurableDeduplicatedAndSnapshotScoped(){Sql("UPDATE projects SET status='submitted',task_number='P1',version=2 WHERE id='p'");Assert.Equal(1,repo.Logs(null).Pending);Sql("INSERT INTO users(id,role,is_active,display_name) VALUES('late','admin',1,'Late')");repo.Dispatch();repo.Dispatch();Assert.Single(Feed().Items);Assert.Single(Feed("owner").Items);Assert.Empty(Feed("late").Items);Assert.Empty(Feed("customer").Items);Assert.Empty(Feed("other").Items);Assert.Empty(Feed("disabled").Items);Assert.Equal("项目已提交：Original 项目",Feed().Items[0].Title);Assert.Contains("Project submitted",repo.List("admin","en-US",null,null,null,null,null,null,null).Items[0].Title);}
  [Fact] public void RollbackDoesNotProduceNotifications(){using(var c=new SqliteConnection(connection)){c.Open();using var tx=c.BeginTransaction();using var q=c.CreateCommand();q.Transaction=tx;q.CommandText="UPDATE projects SET status='submitted',version=2";q.ExecuteNonQuery();tx.Rollback();}repo.Dispatch();Assert.Empty(Feed().Items);Assert.Empty(repo.Logs(null).Items);}
  [Fact] public void AssigneeAndActorExclusionAreEnforced(){Sql("UPDATE projects SET assignee_user_id='admin'");Capture("r","customer_reply","customer");repo.Dispatch();Assert.Single(Feed().Items);Assert.Empty(Feed("owner").Items);Capture("self","workflow","customer");repo.Dispatch();Assert.Empty(Feed("customer").Items);}
  [Fact] public void ReadAllHasWatermarkAndCannotAffectAnotherAccount(){Capture("1");repo.Dispatch();var page=Feed("customer");Capture("2");repo.Dispatch();Assert.True(repo.Update("other",new([page.Items[0].Id],null,"read")));Assert.Equal(2,repo.Counts("customer").Unread);Assert.True(repo.Update("customer",new(null,page.Watermark,"read")));Assert.Equal(1,repo.Counts("customer").Unread);Assert.True(repo.Update("customer",new([page.Items[0].Id],null,"archive")));Assert.Single(Feed("customer").Items);Assert.True(repo.Update("customer",new([page.Items[0].Id],null,"restore")));Assert.Equal(2,Feed("customer").Items.Length);}

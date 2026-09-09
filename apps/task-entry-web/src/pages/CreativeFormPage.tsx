@@ -138,7 +138,7 @@ function ReferenceImageField({
                   <a href={asset.url} target="_blank" rel="noreferrer">
                     <img src={asset.url} alt={asset.fileName} width="112" height="84" loading="lazy" />
                   </a>
-                  <button type="button" disabled={busy} aria-label={t("creative.removeReferenceImage", { name: asset.fileName })} onClick={() => void onRemove(asset)}>×</button>
+                  <button type="button" disabled={busy} aria-label={t("creative.removeReferenceImage", { name: asset.fileName })} onClick={() => void onRemove(asset)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
                   <span title={asset.fileName}>{asset.fileName}</span>
                 </li>
               ))}

@@ -1,0 +1,53 @@
+.settings-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c9bf transparent;
+  border: 0;
+  border-radius: 10px;
+  background: #e9efeb;
+}
+.settings-tabs a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 7px;
+  color: #536b60;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 20px;
+  white-space: nowrap;
+  text-decoration: none;
+  box-shadow: none;
+}
+.settings-tabs a:hover {
+  background: #dce7e0;
+  color: #173d2f;
+}
+.settings-tabs a[aria-current="page"] {
+  background: #225341;
+  color: #fff;
+  font-weight: 650;
+  box-shadow: none;
+}
+.settings-tabs a:focus-visible {
+  outline: 2px solid #477c63;
+  outline-offset: 1px;
+  box-shadow: none;
+}
+@media (max-width: 720px) {
+  .settings-tabs { width: 100%; }
+  .settings-tabs a { min-height: 40px; padding-inline: 12px; }
+}

@@ -74,8 +74,8 @@ export function LoginStory() {
       </div>)}
     </div>
     <nav className="login-story-pagination" aria-label={t("auth.storyPages")}>
-      {slides.map(([title, end], index) => <button type="button" key={title} aria-label={t("auth.storyPage", { number: index + 1, title: `${t(title)} ${t(end)}` })} aria-current={index === active ? "step" : undefined} onClick={() => { setActive(index); setInteraction(value => value + 1); }}><span aria-hidden="true" /></button>)}
-      <button type="button" aria-label={t(paused ? "auth.resumeStory" : "auth.pauseStory")} onClick={() => setPaused(value => !value)}>
+      {slides.map(([title, end], index) => <button type="button" key={title} aria-label={t("auth.storyPage", { number: index + 1, title: `${t(title)} ${t(end)}` })} aria-current={index === active ? "step" : undefined} onClick={() => { setActive(index); setInteraction(value => value + 1); }} data-icon-motion="press"><span aria-hidden="true" /></button>)}
+      <button type="button" aria-label={t(paused ? "auth.resumeStory" : "auth.pauseStory")} onClick={() => setPaused(value => !value)} data-icon-motion="press">
         <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="#deb66b">{paused ? <path d="m3 1 8 5-8 5Z" /> : <path d="M2 1h3v10H2zM7 1h3v10H7z" />}</svg>
       </button>
     </nav>

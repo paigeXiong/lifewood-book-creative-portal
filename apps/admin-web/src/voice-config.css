@@ -94,45 +94,10 @@
   }
 }
 
-.settings-tabs {
-  display: inline-flex;
-  gap: 3px;
-  width: fit-content;
-  margin-bottom: 8px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--surface-muted, #eef1ee);
-}
-
-.settings-tabs a {
-  min-height: 34px;
-  padding: 7px 12px;
-  border-radius: 7px;
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.settings-tabs a:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--surface) 65%, transparent);
-}
-
-.settings-tabs a.active {
-  color: var(--accent);
-  background: var(--surface);
-  box-shadow: 0 1px 3px rgb(20 52 39 / 10%);
-}
-
 .config-group-picker select {
   width: clamp(180px, 22vw, 260px);
 }
 
-@media (max-width: 720px) {
-  .settings-tabs { width: 100%; }
-  .settings-tabs a { flex: 1; text-align: center; }
-}
 
 
 .mime-fieldset { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; }

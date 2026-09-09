@@ -4,7 +4,6 @@ test("owner can initialize the platform and navigate the localized admin shell",
   page, browser,
 }) => {
   test.setTimeout(300_000);
-  const startedAt = Date.now();
   await page.goto("/zh-CN/overview");
   await expect(
     page.getByRole("heading", { name: "初始化平台管理员" }),
@@ -178,9 +177,16 @@ test("owner can initialize the platform and navigate the localized admin shell",
     });
   } finally { await customerContext.close().catch(() => {}); }
   await test.step("notification center, preferences and management work in both languages", async () => {
-    // Previous bulk announcement setup consumes the existing write quota; respect its window.
-    await new Promise(resolve => setTimeout(resolve, Math.max(0, 61000 - (Date.now() - startedAt))));
+    // The authenticated write window starts after bootstrap, not at test startup.
+    // Wait a full window after bulk announcement writes before creating more fixtures.
+    await new Promise(resolve => setTimeout(resolve, 61000));
     const token = (await (await page.request.get("/api/auth/csrf")).json()).token;
+    const account = await (await page.request.get("/api/me")).json();
+    const organizationResponse = await page.request.post("/api/admin/organizations", { headers: { "X-CSRF-TOKEN": token }, data: { name: "E2E Project Organization" } });
+    expect(organizationResponse.ok()).toBeTruthy();
+    const organization = await organizationResponse.json();
+    const assigned = await page.request.put(`/api/admin/users/${account.id}`, { headers: { "X-CSRF-TOKEN": token }, data: { displayName: account.displayName, role: "owner", active: true, organizationId: organization.id } });
+    expect(assigned.ok()).toBeTruthy();
     const created = await page.request.post("/api/projects", { headers: { "X-CSRF-TOKEN": token }, data: {} });
     expect(created.ok()).toBeTruthy();
     const project = await created.json();
@@ -224,10 +230,14 @@ test("owner can initialize the platform and navigate the localized admin shell",
     await page.getByRole("dialog", { name: "通知详情", exact: true }).getByRole("button", { name: "关闭", exact: true }).click();
     await expect(page.getByRole("button", { name: "通知，0 条未读", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "标为未读", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "批量选择", exact: true }).click();
     await page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true }).check();
     await page.getByRole("button", { name: "归档选中", exact: true }).click();
     await expect(page.getByText("暂无通知", { exact: true })).toBeVisible();
     await page.getByRole("checkbox", { name: "已归档", exact: true }).check();
+    await expect(page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "批量选择", exact: true }).click();
     await page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true }).check();
     await page.getByRole("button", { name: "取消归档", exact: true }).click();
     await page.goto("/en-US/notifications");

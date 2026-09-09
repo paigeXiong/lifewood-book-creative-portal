@@ -92,3 +92,26 @@ tbody tr:hover {
   border: 0;
   box-shadow: none;
 }
+
+/* Secondary content stays available without crowding the project overview. */
+.detail-section>summary{cursor:pointer;font-size:14px;font-weight:650;color:var(--text-primary,#174f3d);padding:3px 0;list-style-position:inside}
+.detail-section[open]>summary{margin-bottom:10px}
+.detail-count{display:inline-block;margin-left:8px;font-size:12px;font-weight:500;color:#687d73}
+.detail-copy{white-space:pre-wrap;overflow-wrap:anywhere}
+.detail-copy.is-clamped{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.expandable-copy .text-disclosure{padding:2px 0;border:0;background:transparent;box-shadow:none;color:#21654a;font:inherit;font-size:12px;min-height:28px}
+.delivery-note{margin-top:5px}.delivery-note summary{cursor:pointer;color:#64796e;font-size:12px}.delivery-note p{white-space:pre-wrap;overflow-wrap:anywhere}
+.detail-section.notes>form{margin-top:10px}
+
+.project-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 0;margin-top:8px}
+.project-actions button{margin:0;min-height:36px;padding:7px 11px;font-size:13px;white-space:nowrap}
+.project-workflow-summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;font-size:12px;color:#63766c;padding:6px 0}
+.project-workflow-summary strong{font-weight:500;color:#264e3d}
+.detail-pane .project-operations{padding:4px 0 8px;margin:0;font-size:12px}
+.detail-pane .project-operations .operations-summary strong{font-weight:500;font-size:12px;color:#63766c}
+.detail-pane .revision-admin:empty{display:none}
+.workflow-dialog-form{display:grid!important;grid-template-columns:1fr!important;padding:0!important;background:transparent!important;gap:12px!important}
+.workflow-dialog-form .modal-actions{justify-content:flex-end}
+@media(max-width:600px){.project-actions{gap:6px}.project-actions button{padding:7px 9px}.project-workflow-summary{gap:6px 16px}}
+
+.project-actions > [data-project-action] { display: contents; }

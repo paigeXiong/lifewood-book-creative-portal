@@ -1,0 +1,30 @@
+.user-activity-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:10px; flex-shrink:0; }
+.user-activity-stats > div { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px; border-radius:10px; background:#fff; }
+.user-activity-stats span { font-size:12px; color:#61766b; }
+.user-activity-stats strong { font-size:22px; color:#194633; }
+.user-presence { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; color:#718078; font-size:11px; font-weight:400; }
+.user-presence i { width:6px; height:6px; border-radius:50%; background:currentColor; }
+.user-presence.online { color:#247449; }
+.user-presence.away { color:#9b751e; }
+.user-cell .user-name-line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.user-name-line .user-detail-link { padding:0; min-height:0; border:0; box-shadow:none; background:transparent; color:#164632; font-weight:700; text-align:start; overflow-wrap:anywhere; }
+.user-name-line .user-detail-link:hover { background:transparent; text-decoration:underline; }
+.users-content > .page-toolbar { flex-wrap:wrap; gap:8px; }
+.users-content > .page-toolbar > select { width:auto; max-width:180px; min-width:100px; }
+.user-detail-identity { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+.user-activity-details dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:0; }
+.user-activity-details dl > div { padding:10px 12px; background:#f3f6f4; border-radius:8px; }
+.user-activity-details dt { font-size:12px; color:#63796c; }
+.user-activity-details dd { margin:5px 0 0; overflow-wrap:anywhere; }
+@media(max-width:640px){
+ .user-activity-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+ .user-activity-stats > div { padding:8px 10px; }
+ .user-activity-stats strong { font-size:20px; }
+ .user-activity-details dl { grid-template-columns:1fr; }
+ .users-content > .page-toolbar > select { flex:1 1 40%; max-width:100%; }
+}
+
+.users-content > .page-toolbar form { flex:0 1 340px; max-width:340px; }
+.users-content > .page-toolbar form input { flex:1 1 0; width:0; min-width:0; max-width:280px; }
+.users-content > .page-toolbar form button { flex-shrink:0; white-space:nowrap; }
+@media(max-width:640px){.users-content > .page-toolbar form {flex-basis:100%;max-width:100%;}.users-content > .page-toolbar form input {max-width:100%;}}

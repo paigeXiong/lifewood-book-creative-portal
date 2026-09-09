@@ -14,6 +14,7 @@ export interface CurrentUser {
   locale?: SupportedLocale;
   timeZone?: string;
   hasCustomAvatar?: boolean;
+  taskBackgroundMotion?: boolean;
 }
 
 export interface ConfigOption {
@@ -271,6 +272,11 @@ export type AdminRole = "owner" | "admin" | "operator" | "customer";
 export type WorkflowStatus = "new" | "contacting" | "confirmed" | "in_production" | "awaiting_customer" | "completed" | "closed";
 export type ProjectPriority = "low" | "normal" | "high" | "urgent";
 
+export interface UserPresence { status: "online" | "away" | "offline"; lastActiveAt?: string; lastLoginAt?: string }
+export interface UserPresenceStats { online: number; todayActive: number; enabled: number; unassigned: number }
+export interface AdminUserDirectory extends PagedResult<AdminUser> { statistics?: UserPresenceStats }
+export interface AdminUserDetails { user: AdminUser; submittedProjects: number; pendingProjects: number }
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -281,6 +287,7 @@ export interface AdminUser {
   organization?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
+  presence?: UserPresence;
 }
 
 export interface AdminOrganization {

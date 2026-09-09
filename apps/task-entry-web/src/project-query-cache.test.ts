@@ -11,7 +11,10 @@ describe("user project query cache", () => {
     client.setQueryData(["project-deliveries", "private", "zh-CN"], [{ id: "delivery" }]);
     client.setQueryData(["form-options", "zh-CN"], { taskStatuses: [] });
 
+    const privateKeys = [["saved-views", "account-a", "tasks"], ["login-devices", "account-a", 1], ["project-resume", ["private"]], ["saved-views", "tasks"], ["login-devices", 1]];
+    privateKeys.forEach(key => client.setQueryData(key, { private: true }));
     clearUserProjectQueries(client);
+    privateKeys.forEach(key => expect(client.getQueryData(key)).toBeUndefined());
 
     expect(client.getQueryData(["projects", "zh-CN", "", "", 1])).toBeUndefined();
     expect(client.getQueryData(["project", "private"])).toBeUndefined();

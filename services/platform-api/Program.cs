@@ -95,6 +95,7 @@ var platformLockPath = Path.Combine(dataDirectory, "platform.lock");
 using var platformLock = new FileStream(platformLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 restoreStartupLock.Release();
 CleanupInterruptedUploads(dataDirectory);
+ProjectExport.Cleanup(dataDirectory);
 Directory.CreateDirectory(voiceSampleDirectory);
 CleanupOrphanedVoiceUploads(voiceSampleDirectory);
 var bundledSampleDirectory = Path.Combine(AppContext.BaseDirectory, "assets", "voice-samples");
@@ -126,6 +127,23 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
+        options.Events.OnValidatePrincipal = context => {
+            var principal=context.Principal;var id=principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if(id is null||!int.TryParse(principal?.FindFirstValue("lw_session_version"),out var version)){context.RejectPrincipal();return Task.CompletedTask;}
+            var user=context.HttpContext.RequestServices.GetRequiredService<UserRepository>().Get(id,version);
+            if(user is null){context.RejectPrincipal();return Task.CompletedTask;}
+            var accounts=context.HttpContext.RequestServices.GetRequiredService<AccountSwitchStore>();
+            var session=principal?.FindFirstValue("lw_login_session");
+            if(session is null){
+                session=user is null?null:accounts.Remember(context.HttpContext,user,version,context.Properties.ExpiresUtc??DateTimeOffset.UtcNow,context.Properties.IsPersistent,true,principal?.FindFirstValue("lw_presence_session"));
+                if(session is not null){((ClaimsIdentity)principal!.Identity!).AddClaim(new Claim("lw_login_session",session));context.ShouldRenew=true;}
+            }
+            if(session is null||!accounts.IsSessionActive(id,session,version))context.RejectPrincipal();
+            else if(context.Properties.AllowRefresh!=false && context.Properties.IssuedUtc is {} issued && context.Properties.ExpiresUtc is {} expiry && DateTimeOffset.UtcNow-issued>expiry-DateTimeOffset.UtcNow){
+                if(accounts.RenewSession(context.HttpContext,id,session,version,DateTimeOffset.UtcNow+(expiry-issued)))context.ShouldRenew=true;else context.RejectPrincipal();
+            }
+            return Task.CompletedTask;
+        };
         options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
         options.Events.OnRedirectToAccessDenied = context => { context.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
     });
@@ -150,6 +168,7 @@ builder.Services.AddRateLimiter(options =>
             new ApiErrorDto("rate_limit.exceeded", "errors.rateLimit.exceeded", "Too many requests. Wait briefly and try again.", null, true, rejected.HttpContext.TraceIdentifier),
             AppJsonContext.Default.ApiErrorDto);
     };
+    options.AddPolicy("presence", context => RateLimitPartition.GetFixedWindowLimiter(context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("book-recognition", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 6, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
@@ -164,6 +183,7 @@ builder.Services.AddRateLimiter(options =>
         }));
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
+        if (context.Request.Path == "/api/me/presence") return RateLimitPartition.GetNoLimiter("presence");
         if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method))
             return RateLimitPartition.GetNoLimiter("read");
         var key = context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -186,10 +206,19 @@ builder.Services.AddSingleton(revisions);
 var users = new UserRepository(databaseConnection, dataDirectory);
 users.Initialize();
 builder.Services.AddSingleton(users);
+var personalWorkspace=new PersonalWorkspaceRepository(databaseConnection);
+personalWorkspace.Initialize();builder.Services.AddSingleton(personalWorkspace);
+
+var presence = new UserPresenceRepository(databaseConnection);
+presence.Initialize();
+builder.Services.AddSingleton(presence);
 
 var administration = new AdminRepository(databaseConnection);
 administration.Initialize();
 builder.Services.AddSingleton(administration);
+builder.Services.AddSingleton(new AccountClosureRepository(databaseConnection));
+builder.Services.AddSingleton(new OperationsRepository(databaseConnection));
+builder.Services.AddSingleton(new TrendRepository(databaseConnection));
 var auditEvents = new AuditRepository(databaseConnection, dataDirectory);
 auditEvents.Initialize();
 builder.Services.AddSingleton(auditEvents);
@@ -355,7 +384,7 @@ app.Use(async (context, next) =>
 {
     var actor = context.Request.Path.StartsWithSegments("/api/admin") ? CurrentUser(context) : null;
     var action = AuditActionCatalog.Resolve(context.Request.Method, context.Request.Path);
-    if (actor is null || action is null)
+    if (actor is null || action is null || action.ActionId == "project.export")
     {
         await next();
         return;
@@ -423,7 +452,8 @@ api.MapPost("/auth/bootstrap", async (BootstrapAccountRequest? request, HttpCont
     if (result.Outcome == AccountCreateOutcome.Invalid)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The account details are invalid.", false,
             [new FieldErrorDto(result.Field ?? "request", "invalid", $"errors.auth.fields.{result.Field ?? "request"}")]);
-    await SignIn(context, result.User!, false);
+    if(!await SignIn(context, result.User!, false))return Results.Unauthorized();
+    context.RequestServices.GetRequiredService<UserPresenceRepository>().Login(result.User!.Id);
     return Results.Ok(result.User);
 }).RequireRateLimiting("authentication");
 api.MapPost("/auth/login", async (LoginRequest? request, HttpContext context, UserRepository accounts) =>
@@ -433,15 +463,22 @@ api.MapPost("/auth/login", async (LoginRequest? request, HttpContext context, Us
     var result = accounts.Authenticate(request.Email, request.Password);
     if (result.Outcome != AccountLoginOutcome.Success)
         return Error(context, 401, "auth.invalid_credentials", "errors.auth.invalidCredentials", "The email or password is incorrect.", false);
-    await SignIn(context, result.User!, request.RememberMe);
+    if(!await SignIn(context, result.User!, request.RememberMe))return Results.Unauthorized();
+    context.RequestServices.GetRequiredService<UserPresenceRepository>().Login(result.User!.Id);
     return Results.Ok(result.User);
 }).RequireRateLimiting("authentication");
 api.MapPost("/auth/logout", async (HttpContext context) =>
 {
+    if(CurrentUser(context) is {} departing) context.RequestServices.GetRequiredService<UserPresenceRepository>().EndSession(departing.Id, PresenceSession(context));
     context.RequestServices.GetRequiredService<AccountSwitchStore>().Remove(context);
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.NoContent();
 });
+api.MapGet("/me/sessions",(HttpContext c,AccountSwitchStore store,int page=1)=>CurrentUser(c) is {} u?Results.Ok(store.Devices(u.Id,c.User.FindFirstValue("lw_login_session")!,Math.Clamp(page,1,100000))):Results.Unauthorized());
+api.MapDelete("/me/sessions/{id}",(string id,HttpContext c,AccountSwitchStore store,UserPresenceRepository presence)=>CurrentUser(c) is {} u?(store.Revoke(u.Id,c.User.FindFirstValue("lw_login_session")!,id,presence)?Results.NoContent():Results.Conflict()):Results.Unauthorized());
+api.MapPost("/me/sessions/revoke-others",(HttpContext c,AccountSwitchStore store,UserPresenceRepository presence)=>CurrentUser(c) is {} u?(store.Revoke(u.Id,c.User.FindFirstValue("lw_login_session")!,null,presence)?Results.NoContent():Results.Conflict()):Results.Unauthorized());
+api.MapPersonalWorkspace(CurrentUser);
+api.MapProductivity(CurrentUser);
 api.MapGet("/auth/active", (HttpContext c) => CurrentUser(c) is {} u ? Results.Text(u.Id) : Results.Unauthorized());
 api.MapGet("/auth/accounts", (HttpContext c, AccountSwitchStore store) => CurrentUser(c) is {} u ? Results.Ok(store.List(c,u)) : Results.Unauthorized());
 api.MapPost("/auth/accounts/add", async (LoginRequest? request,HttpContext c,UserRepository users,AccountSwitchStore store) => {
@@ -452,14 +489,15 @@ api.MapPost("/auth/accounts/add", async (LoginRequest? request,HttpContext c,Use
     if(!store.HasRoom(c,result.User!.Id,current.Id))return Error(c,409,"auth.account_limit","accountSwitch.limit","Remove an account before adding another.",false);
     var auth=await c.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     store.Remember(c,current,int.Parse(c.User.FindFirstValue("lw_session_version")!,CultureInfo.InvariantCulture),auth.Properties?.ExpiresUtc??DateTimeOffset.UtcNow.AddHours(8),auth.Properties?.IsPersistent==true);
-    await SignIn(c,result.User,request.RememberMe);
+    if(!await SignIn(c,result.User,request.RememberMe))return Results.Unauthorized();
+    c.RequestServices.GetRequiredService<UserPresenceRepository>().Login(result.User!.Id);
     return Results.Ok(result.User);
 }).RequireRateLimiting("authentication");
 api.MapPost("/auth/accounts/switch", async (SwitchAccountRequest request,HttpContext c,UserRepository users,AccountSwitchStore store) => {
     if(CurrentUser(c) is null)return Results.Unauthorized();
     var saved=store.Find(c,request.Id);
     if(saved is null || users.Get(saved.UserId,saved.Version) is not {} user)return Error(c,401,"auth.account_expired","accountSwitch.expired","Sign in to this account again.",false);
-    await SignIn(c,user,saved.Persistent,saved.ExpiresAt,saved.Version);
+    if(!await SignIn(c,user,saved.Persistent,saved.ExpiresAt,saved.Version))return Results.Unauthorized();
     return Results.Ok(user);
 }).RequireRateLimiting("authentication");
 api.MapDelete("/auth/accounts/{id}",(string id,HttpContext c,AccountSwitchStore store)=>{
@@ -478,7 +516,7 @@ api.MapPut("/me/profile", async (UpdateProfileRequest? request, HttpContext cont
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
-    var result = accounts.UpdateProfile(user.Id, request.DisplayName, request.Phone, request.ClientName);
+    var result = accounts.UpdateProfile(user.Id, request.DisplayName, request.Phone);
     if (result.Outcome == ProfileUpdateOutcome.NotFound)
         return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (result.Outcome == ProfileUpdateOutcome.Invalid)
@@ -486,7 +524,7 @@ api.MapPut("/me/profile", async (UpdateProfileRequest? request, HttpContext cont
             [new FieldErrorDto(result.Field ?? "request", "invalid", $"errors.auth.fields.{result.Field ?? "request"}")]);
     if (result.User is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     var authentication = await context.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    await SignIn(context, result.User, authentication.Properties?.IsPersistent == true);
+    if(!await SignIn(context, result.User, authentication.Properties?.IsPersistent == true, refreshExisting:true))return Results.Unauthorized();
     return Results.Ok(result.User);
 });
 api.MapPut("/me/preferences", (UpdatePreferencesRequest? request, HttpContext context, UserRepository accounts) =>
@@ -494,7 +532,7 @@ api.MapPut("/me/preferences", (UpdatePreferencesRequest? request, HttpContext co
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
-    var result = accounts.UpdatePreferences(user.Id, request.Locale);
+    var result = accounts.UpdatePreferences(user.Id, request.Locale, request.TaskBackgroundMotion);
     if (result.Outcome == ProfileUpdateOutcome.NotFound)
         return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (result.Outcome == ProfileUpdateOutcome.Invalid)
@@ -717,6 +755,66 @@ api.MapPost("/admin/runtime-actions/shutdown", (HttpContext context, RuntimeLife
     return Results.Accepted(value: new RuntimeActionDto("shutdown", DateTimeOffset.UtcNow));
 });
 
+// Export records its audit before streaming; other admin responses use the buffered audit middleware.
+api.MapPost("/admin/projects/{id}/export", async (string id, HttpContext context, AdminRepository admin, ProjectRepository projects, StorageQuota quota) =>
+{
+    var user=CurrentUser(context);
+    if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in required.",false);
+    if(!Can(user,"admin.projects.export"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Export permission required.",false);
+    var detail=admin.GetProject(id,user.Id);
+    if(detail is null)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    FileStream? archive=null;
+    try
+    {
+        var files=ProjectExport.Attachments(dataDirectory,detail);
+        await using var reservation=await quota.TryReserveAsync(files.Sum(x=>x.Size)+10_000_000,context.RequestAborted);
+        if(reservation is null)return Error(context,507,"storage.quota","errors.storage.quota","Storage full.",true);
+        archive=await ProjectExport.Build(dataDirectory,detail.Project,projects.GetSubmissionSnapshotForAdmin(id),files,Locale(context),context.RequestAborted);
+        var current=CurrentUser(context);
+        if(current is null || !Can(current,"admin.projects.export")) {await archive.DisposeAsync();return Error(context,403,"auth.forbidden","errors.auth.forbidden","Permission changed.",false);}
+        var fresh=admin.GetProject(id,current.Id);
+        if(fresh is null){await archive.DisposeAsync();return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);}
+        if(fresh.Project.Version!=detail.Project.Version || fresh.WorkflowUpdatedAt!=detail.WorkflowUpdatedAt)
+        {await archive.DisposeAsync();return Error(context,409,"export.changed","operations.exportChanged","Project changed. Export again.",true);}
+        context.RequestAborted.ThrowIfCancellationRequested();
+        auditEvents.Record(current,new AuditActionMatch("project.export","project",id),context.TraceIdentifier);
+        context.Response.Headers.CacheControl="private, no-store";
+        return Results.File(archive,"application/zip",ProjectExport.SafeName(detail.Project.TaskNumber??id)+".zip");
+    }
+    catch(ProjectExport.ExportTooLargeException){if(archive is not null)await archive.DisposeAsync();return Error(context,413,"export.size","operations.exportTooLarge","Project attachments exceed 1 GB.",false);}
+    catch(Exception exception) when(exception is IOException or InvalidDataException){if(archive is not null)await archive.DisposeAsync();return Error(context,409,"export.files","operations.exportFiles","Files are unavailable or changed. Export again.",true);}
+    catch {if(archive is not null)await archive.DisposeAsync();throw;}
+});
+
+api.MapGet("/admin/workbench", (HttpContext context, OperationsRepository operations, string? queue, string? search, bool mine=false, int page=1, int pageSize=20) =>
+{
+    var user=CurrentUser(context);
+    if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in required.",false);
+    if(!Can(user,"admin.projects.read"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Read permission required.",false);
+    return Results.Ok(operations.Workbench(user.Id,Locale(context),queue,search,mine,Math.Max(1,page),Math.Clamp(pageSize,1,100)));
+});
+api.MapGet("/admin/projects/{id}/followup", (string id,HttpContext context,OperationsRepository operations) =>
+{
+    var user=CurrentUser(context);
+    if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in required.",false);
+    if(!Can(user,"admin.projects.read"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Read permission required.",false);
+    var result=operations.GetFollowup(id,user.Id);
+    return result is null?Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false):Results.Ok(result);
+});
+api.MapPut("/admin/projects/{id}/followup", (string id,UpdateFollowupRequest request,HttpContext context,OperationsRepository operations) =>
+{
+    var user=CurrentUser(context);
+    if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in required.",false);
+    if(!Can(user,"admin.projects.workflow"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Workflow permission required.",false);
+    var result=operations.SetFollowup(id,user.Id,request);
+    return result.Outcome switch {
+        AdminWriteOutcome.Saved=>Results.Ok(operations.GetFollowup(id,user.Id)),
+        AdminWriteOutcome.NotFound=>Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false),
+        AdminWriteOutcome.Conflict=>Error(context,409,"followup.conflict","operations.conflict","Follow-up changed. Refresh and retry.",true),
+        _=>Error(context,400,"followup.invalid","operations.invalidDeadline","Choose a valid follow-up time for an active project.",false)
+    };
+});
+
 api.MapGet("/admin/overview", (HttpContext context, AdminRepository admin) =>
 {
     var user = CurrentUser(context);
@@ -765,13 +863,34 @@ api.MapGet("/admin/roles", (HttpContext context) =>
     });
 });
 
-api.MapGet("/admin/users", (HttpContext context, AdminRepository admin, string? search, string? role, int page = 1, int pageSize = 20) =>
+api.MapGet("/admin/users", (HttpContext context, UserPresenceRepository presence, string? search, string? role, string? status, string? organization, string? enabled, DateTimeOffset? todayStart, int page = 1, int pageSize = 20, bool assignableOnly = false) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    return Results.Ok(admin.ListUsers(search, role, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+    if(status is not (null or "" or "online" or "away" or "offline") || enabled is not (null or "" or "enabled" or "disabled") || search?.Length>200 || organization?.Length>64 || (todayStart is {} start && (start<DateTimeOffset.UtcNow.AddHours(-26) || start>DateTimeOffset.UtcNow.AddMinutes(1)))) return Results.BadRequest();
+    context.Response.Headers.CacheControl="no-store";
+    return Results.Ok(presence.List(search, role, status, organization, enabled, Math.Max(1, page), Math.Clamp(pageSize, 1, 100),todayStart??new DateTimeOffset(DateTime.UtcNow.Date,TimeSpan.Zero),assignableOnly));
 });
+
+api.MapGet("/admin/users/{id}/details", (string id,HttpContext context,UserPresenceRepository presence) => {
+    var user=CurrentUser(context);
+    if(user is null)return Results.Unauthorized();
+    if(!Can(user,"admin.users.manage"))return Results.Forbid();
+    context.Response.Headers.CacheControl="no-store";
+    return presence.Details(id) is {} details?Results.Ok(details):Results.NotFound();
+});
+api.MapPost("/me/presence", (PresenceHeartbeatRequest? request,HttpContext context,UserPresenceRepository presence) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();
+    if(request is null || !Guid.TryParseExact(request.TabId,"D",out _))return Results.BadRequest();
+    var version=int.Parse(context.User.FindFirstValue("lw_session_version")!,CultureInfo.InvariantCulture);
+    return presence.Heartbeat(user.Id,PresenceSession(context),version,request)?Results.NoContent():Results.StatusCode(429);
+}).RequireRateLimiting("presence");
+api.MapDelete("/me/presence", (string tabId,HttpContext context,UserPresenceRepository presence) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();
+    if(!Guid.TryParseExact(tabId,"D",out _))return Results.BadRequest();
+    presence.LeaveTab(user.Id,PresenceSession(context),tabId);return Results.NoContent();
+}).RequireRateLimiting("presence");
 
 api.MapGet("/admin/users/{id}/avatar", (string id, HttpContext context, AdminRepository admin, UserRepository accounts) =>
 {
@@ -807,6 +926,25 @@ api.MapPost("/admin/users", (CreateUserRequest? request, HttpContext context, Ad
         AdminWriteOutcome.Saved => Results.Ok(created),
         AdminWriteOutcome.Conflict => Error(context, 409, "user.email_exists", "errors.admin.emailExists", "An account already uses this email.", false, [new FieldErrorDto("email", "duplicate", "errors.admin.emailExists")]),
         _ => Error(context, 400, "validation.failed", "errors.validation.failed", "The account details are invalid.", false, [new FieldErrorDto(result.Field ?? "request", "invalid", "errors.validation.invalid")])
+    };
+});
+
+api.MapGet("/admin/users/{id}/closure", (string id,HttpContext context,AccountClosureRepository closure) => {
+    var actor=CurrentUser(context);if(actor is null)return Results.Unauthorized();
+    if(!Can(actor,"admin.users.manage"))return Results.Forbid();
+    context.Response.Headers.CacheControl="no-store";
+    return closure.Preview(id) is {} preview?Results.Ok(preview):Results.NotFound();
+});
+api.MapDelete("/admin/users/{id}", (string id,[Microsoft.AspNetCore.Mvc.FromBody] CloseAccountRequest? request,HttpContext context,AccountClosureRepository closure,UserRepository accounts) => {
+    var actor=CurrentUser(context);if(actor is null)return Results.Unauthorized();
+    if(!Can(actor,"admin.users.manage"))return Results.Forbid();
+    var result=closure.Close(id,actor.Id,request,out var avatar);
+    if(result.Outcome==AdminWriteOutcome.Saved){accounts.CleanupClosedAvatar(avatar);return Results.NoContent();}
+    return result.Outcome switch {
+        AdminWriteOutcome.NotFound=>Error(context,404,"user.not_found","errors.admin.userNotFound","The user was not found.",false),
+        AdminWriteOutcome.Protected=>Error(context,409,"user.close_protected","accountClosure.protected","The owner and current account cannot be closed.",false),
+        AdminWriteOutcome.Conflict=>Error(context,409,"user.close_conflict","accountClosure.conflict","The account changed. Review it again.",true),
+        _=>Error(context,400,"user.close_invalid","accountClosure.invalid","Enter the account email to confirm.",false)
     };
 });
 
@@ -1305,13 +1443,15 @@ api.MapPost("/projects", async (HttpContext context, ProjectRepository projects,
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.write")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Write permission is required.", false);
+    if (user.Organization is null || string.IsNullOrWhiteSpace(user.Organization.Name))
+        return Error(context, 403, "project.organization_required", "errors.project.organizationRequired", "An organization must be assigned before creating a project.", false);
     await using (await projectWriteLocks.AcquireAsync($"{user.Id}:create", context.RequestAborted))
     {
         if (projects.CountDrafts(user.Id) >= limits.MaxDraftsPerUser)
             return Error(context, 409, "project.draft_limit", "errors.project.draftLimit", "Finish or delete an existing draft before creating another one.", false);
         return Results.Ok(projects.Create(
             user.Id,
-            user.ClientName ?? user.Organization?.Name ?? user.DisplayName,
+            user.Organization.Name,
             user.DisplayName,
             user.Email ?? "",
             user.Phone, Locale(context)));
@@ -1850,29 +1990,38 @@ static CurrentUserDto? CurrentUser(HttpContext context)
     var sessionClaim = context.User.FindFirstValue("lw_session_version");
     return string.IsNullOrWhiteSpace(userId) || !int.TryParse(sessionClaim, NumberStyles.None, CultureInfo.InvariantCulture, out var sessionVersion)
         ? null
-        : context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
+        : context.User.FindFirstValue("lw_login_session") is not {} login||!context.RequestServices.GetRequiredService<AccountSwitchStore>().IsSessionActive(userId,login,sessionVersion)?null:context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
 }
 
-static Task SignIn(HttpContext context, CurrentUserDto user, bool persistent, DateTimeOffset? expires = null, int? savedVersion = null)
+static async Task<bool> SignIn(HttpContext context, CurrentUserDto user, bool persistent, DateTimeOffset? expires = null, int? savedVersion = null, bool refreshExisting = false)
 {
     var sessionVersion = savedVersion ?? context.RequestServices.GetRequiredService<UserRepository>().GetSessionVersion(user.Id)
         ?? throw new InvalidOperationException("Cannot create a session for an inactive or missing user.");
+    var previousId=context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if(previousId is not null && previousId!=user.Id)context.RequestServices.GetRequiredService<UserPresenceRepository>().EndSession(previousId,PresenceSession(context));
+    var presenceSession=previousId==user.Id?PresenceSession(context):Guid.NewGuid().ToString("N");
+    var expiresAt=expires??DateTimeOffset.UtcNow.Add(persistent?TimeSpan.FromDays(30):TimeSpan.FromHours(8));
+    var loginSession=context.RequestServices.GetRequiredService<AccountSwitchStore>().Remember(context,user,sessionVersion,expiresAt,persistent,savedVersion is not null||refreshExisting,presenceSession);
+    if(loginSession is null)return false;
     var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Name, user.DisplayName),
-            new Claim("lw_session_version", sessionVersion.ToString(CultureInfo.InvariantCulture))
+            new Claim("lw_session_version", sessionVersion.ToString(CultureInfo.InvariantCulture)),
+            new Claim("lw_presence_session", presenceSession),
+            new Claim("lw_login_session",loginSession)
         ],
         CookieAuthenticationDefaults.AuthenticationScheme);
     var properties = new AuthenticationProperties
     {
         IsPersistent = persistent,
         AllowRefresh = true,
-        ExpiresUtc = expires ?? DateTimeOffset.UtcNow.Add(persistent ? TimeSpan.FromDays(30) : TimeSpan.FromHours(8))
+        ExpiresUtc = expiresAt
     };
-    context.RequestServices.GetRequiredService<AccountSwitchStore>().Remember(context,user,sessionVersion,properties.ExpiresUtc!.Value,persistent);
-    return context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+    await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity), properties);
+    return true;
 }
+static string PresenceSession(HttpContext context) => context.User.FindFirstValue("lw_presence_session") ?? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(context.Request.Cookies["lw_session"]??"")));
 static bool Can(CurrentUserDto user, string permission) => user.Permissions.Contains(permission, StringComparer.Ordinal);
 
 static bool IsLoopbackRequest(HttpContext context)

@@ -1,3 +1,15 @@
+import {SavedViews} from "@lifewood/ui/saved-views";
+import {LoginSessions} from "@lifewood/ui/login-sessions";
+import {readBatchDraft} from "./BatchEditor";
+import {customerPortalUrl} from "./portal-url";
+export {customerPortalUrl} from "./portal-url";
+import {AccountClosureDialog} from "./AccountClosureDialog";
+import {WorkflowEditor,workflowRouteDraft,workflowReturnPath} from "./WorkflowEditor";
+import {usePresenceDirectorySync,PresenceBadge,ActivityTime,UserActivityStats,UserActivityDetails} from "./UserActivity";
+import {UserPresence} from "@lifewood/ui/user-presence";
+import {ProjectActionTarget} from "./ProjectAction";
+import {ExpandableText} from "./ExpandableText";
+import {ProjectOperations} from "./ProjectOperations";
 import {AccountSwitcher,AccountSessionGuard} from "@lifewood/ui/account-switcher";
 import {NotificationBell,NotificationCenter} from "@lifewood/ui/notifications";
 import {NotificationSettingsPage} from "./NotificationSettingsPage";
@@ -67,6 +79,8 @@ import { loadAllOrganizations } from "./organization-loader";
 
 const AnnouncementsPage = lazy(() => import("./AnnouncementsPage").then(module => ({ default: module.AnnouncementsPage })));
 const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((module) => ({ default: module.AvatarEditor })));
+const ReportsPage = lazy(()=>import("./ReportsPage").then(module=>({default:module.ReportsPage})));
+const WorkbenchPage = lazy(() => import("./WorkbenchPage").then(module=>({default:module.WorkbenchPage})));
 const OverviewPage = lazy(() => import("./OverviewPage").then((module) => ({ default: module.OverviewPage })));
 const OrganizationsPage = lazy(() => import("./OrganizationsPage").then((module) => ({ default: module.OrganizationsPage })));
 const AuditPage = lazy(() => import("./AuditPage").then((module) => ({ default: module.AuditPage })));
@@ -131,23 +145,12 @@ export function localizedAdminLocation(
   return `${pathname.replace(`/${currentLocale}`, `/${nextLocale}`)}${search}${hash}`;
 }
 
-export function customerPortalUrl(
-  locale: SupportedLocale,
-  configuredBase = import.meta.env.VITE_CUSTOMER_APP_URL,
-): string {
-  const base =
-    configuredBase?.trim() ||
-    (import.meta.env.DEV
-      ? `${window.location.protocol}//${window.location.hostname}:5173`
-      : "");
-  return `${base.replace(/\/$/, "")}/${locale}/tasks`;
-}
 
-function AccountRoleOptions({ includeOwner = false }: { includeOwner?: boolean }) {
+function AccountRoleOptions({ includeOwner = false, staffOnly = false }: { includeOwner?: boolean; staffOnly?: boolean }) {
   const { i18n } = useTranslation();
   const locale = i18n.language === "en-US" ? "en-US" : "zh-CN";
   const roles = useQuery({ queryKey: ["admin-roles", locale], queryFn: () => adminService.listRoles(locale) });
-  return <>{roles.data?.filter(role => includeOwner || role.id !== "owner").map(role => <option key={role.id} value={role.id}>{role.label}</option>)}</>;
+  return <>{roles.data?.filter(role => (includeOwner || role.id !== "owner") && (!staffOnly || role.id !== "customer")).map(role => <option key={role.id} value={role.id}>{role.label}</option>)}</>;
 }
 
 function AccountRoleSelect({ initialRole }: { initialRole: string }) {
@@ -305,6 +308,8 @@ function AdminShell({
   const location = useLocation();
   const currentArea = location.pathname.split("/")[2];
   const areaTitles: Record<string, string> = {
+    workbench: "operations.workbench",
+    reports: "productivity.reports",
     notifications: "notifications.title",
     overview: "admin.nav.overview", projects: "admin.nav.projects",
     users: "admin.nav.users", organizations: "admin.nav.organizations",
@@ -375,6 +380,7 @@ function AdminShell({
           locale,
           next,
         ),
+        {replace: true, state:location.state},
       );
   };
   return (
@@ -404,6 +410,7 @@ function AdminShell({
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="overview" /></span>
                 <span className="nav-label">{t("admin.nav.overview")}</span>
               </NavLink>}
+              <NavLink to={localizedPath(locale, "/workbench")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="overview" /></span><span className="nav-label">{t("operations.workbench")}</span></NavLink>
               <NavLink to={localizedPath(locale, "/projects")}>
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="projects" /></span>
                 <span className="nav-label">{t("admin.nav.projects")}</span>
@@ -492,7 +499,7 @@ function AdminShell({
                   >
                     {t("admin.account.changePassword")}
                   </button>
-                  <AccountSwitcher user={user} destination={next=>next.permissions.includes("admin.access")?`${import.meta.env.BASE_URL.replace(/\/$/, "")}/${locale}/projects`:customerPortalUrl(locale)}/>
+                  <LoginSessions key={user.id} userId={user.id}/><AccountSwitcher user={user} destination={next=>next.permissions.includes("admin.access")?`${import.meta.env.BASE_URL.replace(/\/$/, "")}/${locale}/projects`:customerPortalUrl(locale)}/>
                   <button
                     type="button"
                     disabled={logoutPending}
@@ -514,7 +521,7 @@ function AdminShell({
           {children}
         </div>
       </div>
-      <AccountSessionGuard key={user.id} userId={user.id}/>
+      <UserPresence key={`presence-${user.id}`} userId={user.id}/><AccountSessionGuard key={user.id} userId={user.id}/>
       {avatarFeedback && <p className="avatar-update-toast" role="status" aria-live="polite">{avatarFeedback}</p>}
       <ToastHost />
       {changePasswordOpen && (
@@ -540,22 +547,17 @@ function AdminShell({
   );
 }
 
-function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: CurrentUser }) {
+export function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: CurrentUser }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialSearch = searchParams.get("q") ?? "";
-  const [searchInput, setSearchInput] = useState(initialSearch);
-  const [search, setSearch] = useState(initialSearch);
-  const [workflow, setWorkflow] = useState<WorkflowStatus | "">(
-    () => (searchParams.get("workflow") ?? "") as WorkflowStatus | "",
-  );
-  const [priority, setPriority] = useState<ProjectPriority | "">(
-    () => (searchParams.get("priority") ?? "") as ProjectPriority | "",
-  );
-  const [page, setPage] = useState(() =>
-    Math.max(1, Number(searchParams.get("page")) || 1),
-  );
+  const search = searchParams.get("q") ?? "";
+  const workflow = (searchParams.get("workflow") ?? "") as WorkflowStatus | "";
+  const priority = (searchParams.get("priority") ?? "") as ProjectPriority | "";
+  const rawPage = Number(searchParams.get("page"));
+  const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const [searchInput, setSearchInput] = useState(search);
+  useEffect(() => setSearchInput(search), [search]);
   const requestedProjectId = searchParams.get("project") ?? undefined;
   const projects = useQuery({
     queryKey: ["admin-projects", workflow, priority, search, page],
@@ -580,11 +582,6 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
-  const staff = useQuery({
-    queryKey: ["admin-assignees"],
-    queryFn: adminService.listAssignees,
-    enabled: user.permissions.includes("admin.projects.assign"),
-  });
   const options = useQuery({
     queryKey: ["form-options", locale],
     queryFn: () => optionService.getFormOptions(locale),
@@ -607,13 +604,10 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
     );
     setSearchParams(next, { replace: true });
   };
-  const assignees = useMemo(() => staff.data ?? [], [staff.data]);
   const pages = Math.max(1, Math.ceil((projects.data?.total ?? 0) / 20));
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     const value = searchInput.trim();
-    setPage(1);
-    setSearch(value);
     updateUrl({ q: value, page: undefined });
   };
   const updateWorkflow = useMutation({
@@ -621,18 +615,20 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
       workflowStatus: WorkflowStatus;
       priority: ProjectPriority;
       assigneeUserId?: string;
+      expectedUpdatedAt?: string;
     }) =>
       adminService.updateWorkflow(
         selectedId!,
         value.workflowStatus,
         value.priority,
-        detail.data!.workflowUpdatedAt,
+        value.expectedUpdatedAt ?? detail.data!.workflowUpdatedAt,
         value.assigneeUserId,
       ),
     onSuccess: async () => {
       showAdminToast(t("admin.feedback.workflowSaved"));
       await queryClient.invalidateQueries({ queryKey: ["admin-project"] });
       await queryClient.invalidateQueries({ queryKey: ["admin-projects"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin-workbench"] });
     },
   });
   const addNote = useMutation({
@@ -645,6 +641,7 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
   return (
     <main className="content projects-content">
       <section className="page-toolbar">
+        <SavedViews key={user.id} userId={user.id} area="projects" filters={{q:search,workflow,priority}} onApply={values=>{setSearchInput(values.q??"");setSearchParams(new URLSearchParams(values));}}/>
         <form onSubmit={submitSearch} role="search">
           <input
             name="q"
@@ -661,8 +658,6 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
           aria-label={t("admin.projects.statusFilter")}
           value={workflow}
           onChange={(event) => {
-            setPage(1);
-            setWorkflow(event.target.value as WorkflowStatus | "");
             updateUrl({ workflow: event.target.value, page: undefined });
           }}
         >
@@ -677,8 +672,6 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
           aria-label={t("admin.projects.priorityFilter")}
           value={priority}
           onChange={(event) => {
-            setPage(1);
-            setPriority(event.target.value as ProjectPriority | "");
             updateUrl({ priority: event.target.value, page: undefined });
           }}
         >
@@ -725,7 +718,7 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
               disabled={page <= 1}
               onClick={() => {
                 const next = page - 1;
-                setPage(next);
+
                 updateUrl({ page: next > 1 ? String(next) : undefined });
               }}
             >
@@ -737,7 +730,7 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
               disabled={page >= pages}
               onClick={() => {
                 const next = page + 1;
-                setPage(next);
+
                 updateUrl({ page: String(next) });
               }}
             >
@@ -745,7 +738,7 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
             </button>
           </nav>
         </section>
-        <ProjectDetail
+        <ProjectDetail key={detail.data?.project.id ?? "empty"}
           permissions={user.permissions}
           detail={detail.data}
           switching={detail.isPlaceholderData && detail.isFetching}
@@ -753,7 +746,6 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
             (detail.isPending && Boolean(selectedId)) || options.isPending || (voices.isPending && Boolean(selectedId))
           }
           locale={locale}
-          assignees={assignees}
           workflowOptions={workflowOptions}
           priorityOptions={priorityOptions}
           formOptions={options.data}
@@ -775,7 +767,7 @@ function ProjectsPage({ locale, user }: { locale: SupportedLocale; user: Current
             options.error ??
             voices.error
           }
-          onWorkflow={(value) => updateWorkflow.mutate(value)}
+          onWorkflow={async (value) => { await updateWorkflow.mutateAsync(value); }}
           onNote={async (body) => {
             await addNote.mutateAsync(body);
           }}
@@ -798,6 +790,7 @@ function ProjectRow({
   statusLabel: string;
   onSelect: () => void;
 }) {
+  const {t}=useTranslation();
   return (
     <button
       type="button"
@@ -819,11 +812,10 @@ function ProjectRow({
       <span className="row-main">
         <strong>{item.projectName || item.bookTitle || "—"}</strong>
         <small>
-          {item.ownerName} · {item.bookTitle || "—"}
+          {[item.ownerName || t("accountClosure.deleted"), item.bookTitle && item.bookTitle !== item.projectName ? item.bookTitle : undefined].filter(Boolean).join(" · ")}
         </small>
         <small>
-          {item.taskNumber ?? item.id.slice(0, 8)} ·{" "}
-          {formatDate(item.updatedAt, locale)}
+          {[item.taskNumber, formatDate(item.updatedAt, locale)].filter(Boolean).join(" · ")}
         </small>
       </span>
       <span className={`status status-${item.workflowStatus}`}>
@@ -839,7 +831,6 @@ function ProjectDetail({
   switching,
   loading,
   locale,
-  assignees,
   workflowOptions,
   priorityOptions,
   formOptions,
@@ -854,7 +845,6 @@ function ProjectDetail({
   switching: boolean;
   loading: boolean;
   locale: SupportedLocale;
-  assignees: AdminUser[];
   workflowOptions: ConfigOption[];
   priorityOptions: ConfigOption[];
   formOptions?: FormOptions;
@@ -865,10 +855,16 @@ function ProjectDetail({
     workflowStatus: WorkflowStatus;
     priority: ProjectPriority;
     assigneeUserId?: string;
-  }) => void;
+    expectedUpdatedAt?: string;
+  }) => Promise<void>;
   onNote: (body: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const [actionTarget,setActionTarget]=useState<HTMLDivElement|null>(null);
+  const location=useLocation(),navigate=useNavigate();
+  const routeDraft=workflowRouteDraft(location.state,detail?.project.id);
+  const [editingWorkflow,setEditingWorkflow]=useState(Boolean(routeDraft));
+  const closeWorkflow=()=>{setEditingWorkflow(false);if(routeDraft)navigate(location.pathname+location.search,{replace:true,state:null});};
   if (loading)
     return <aside className="detail-pane empty">{t("common.loading")}</aside>;
   if (!detail)
@@ -884,17 +880,7 @@ function ProjectDetail({
   ];
   const assetCategoryLabel = (categoryId: string) =>
     [...(formOptions?.sourceCategories ?? []), ...(formOptions?.referenceCategories ?? [])]
-      .find((category) => category.id === categoryId)?.label ?? categoryId;
-  const saveWorkflow = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (busy) return;
-    const data = new FormData(event.currentTarget);
-    onWorkflow({
-      workflowStatus: String(data.get("workflowStatus")) as WorkflowStatus,
-      priority: String(data.get("priority")) as ProjectPriority,
-      assigneeUserId: permissions.includes("admin.projects.assign") ? String(data.get("assigneeUserId") || "") || undefined : detail.assigneeUserId,
-    });
-  };
+      .find((category) => category.id === categoryId)?.label ?? t("uiDensity.unavailableOption");
   const saveNote = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
@@ -903,18 +889,16 @@ function ProjectDetail({
     if (body) void onNote(body).then(() => form.reset());
   };
   return (
-    <aside
+    <ProjectActionTarget.Provider value={actionTarget}><aside
       className={switching ? "detail-pane switching" : "detail-pane"}
       aria-busy={switching}
     >
       <div className="detail-title">
         <div>
-          <span className="eyebrow">
-            {task.taskNumber ?? task.id.slice(0, 8)}
-          </span>
+          {task.taskNumber && <span className="eyebrow">{task.taskNumber}</span>}
           <h2>{task.project.projectName || task.book.title || "—"}</h2>
           <p>
-            {detail.ownerName} · {detail.ownerEmail}
+            {[detail.ownerName || t("accountClosure.deleted"),detail.ownerEmail].filter(Boolean).join(" · ")}
           </p>
         </div>
         <span className={`status status-${detail.workflowStatus}`}>
@@ -922,56 +906,23 @@ function ProjectDetail({
             ?.label ?? detail.workflowStatus}
         </span>
       </div>
-      <ProjectReturns canReturn={permissions.includes("admin.projects.return")} canReply={permissions.includes("admin.projects.reply")} key={task.id} id={task.id} version={task.version} status={task.status} workflowUpdatedAt={detail.workflowUpdatedAt} locale={locale} renderSnapshot={snapshot=><RevisionSnapshotDetails snapshot={snapshot} task={task} locale={locale} />} />
-      {task.status === "submitted" && permissions.includes("admin.projects.workflow") && <form
-        className="workflow-form"
-        onSubmit={saveWorkflow}
-        key={`${task.id}-${detail.workflowStatus}-${detail.priority}-${detail.assigneeUserId}`}
-      >
-        <label>
-          <span>{t("admin.projects.workflow")}</span>
-          <select name="workflowStatus" defaultValue={detail.workflowStatus}>
-            {workflowOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{t("admin.projects.priority")}</span>
-          <select name="priority" defaultValue={detail.priority}>
-            {priorityOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{t("admin.projects.assignee")}</span>
-          <select
-            name="assigneeUserId"
-            disabled={!permissions.includes("admin.projects.assign")}
-            defaultValue={detail.assigneeUserId ?? ""}
-          >
-            <option value="">{t("admin.projects.unassigned")}</option>
-            {!permissions.includes("admin.projects.assign") && detail.assigneeUserId && <option value={detail.assigneeUserId}>{detail.assigneeName}</option>}
-            {assignees.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="primary" disabled={busy}>
-          {t("common.save")}
-        </button>
-      </form>}
+      <div className="project-actions" role="group" aria-label={t("projectActions.title")} ref={setActionTarget}>
+        {task.status === "submitted" && permissions.includes("admin.projects.workflow") && <button disabled={busy} onClick={()=>setEditingWorkflow(true)}>{t("projectActions.editWorkflow")}</button>}
+        <div data-project-action="operations" />
+        <div data-project-action="returns" />
+        <div data-project-action="delivery" />
+      </div>
+      <div className="project-workflow-summary">
+        <span>{t("admin.projects.assignee")} · <strong>{detail.assigneeName ?? t("admin.projects.unassigned")}</strong></span>
+        <span>{t("admin.projects.priority")} · <strong>{priorityOptions.find(item=>item.id===detail.priority)?.label ?? t("uiDensity.unavailableOption")}</strong></span>
+      </div>
+      <ProjectOperations key={`operations-${task.id}`} id={task.id} locale={locale} permissions={permissions} workflow={detail.workflowStatus}/>
+      <ProjectReturns canReturn={permissions.includes("admin.projects.return")} canReply={permissions.includes("admin.projects.reply")} key={`returns-${task.id}`} id={task.id} version={task.version} status={task.status} workflowUpdatedAt={detail.workflowUpdatedAt} locale={locale} renderSnapshot={snapshot=><RevisionSnapshotDetails snapshot={snapshot} task={task} locale={locale} />} />
+      {editingWorkflow && task.status === "submitted" && permissions.includes("admin.projects.workflow") && <WorkflowEditor detail={detail} initialDraft={routeDraft} locale={locale} permissions={permissions} workflowOptions={workflowOptions} priorityOptions={priorityOptions} busy={busy} error={error} onSave={onWorkflow} onClose={closeWorkflow}/>}
       {Boolean(error) && (
         <div className="message error">{localizedApiError(error, t)}</div>
       )}
-      <FinalDeliveryPanel
+      <FinalDeliveryPanel key={`deliveries-${task.id}`}
         canDeliver={permissions.includes("admin.projects.deliver")}
         projectId={task.id}
         projectStatus={task.status}
@@ -983,8 +934,8 @@ function ProjectDetail({
         options={formOptions}
         voiceReferences={voiceReferences}
       />
-      <section className="detail-section">
-        <h3>{t("admin.projects.files", { count: assets.length })}</h3>
+      {assets.length > 0 && <details className="detail-section attachment-index" key={`attachments-${task.id}`}>
+        <summary>{t("admin.projects.files", { count: assets.length })}</summary>
         {assets.length ? (
           <ul className="file-list">
             {assets.map((asset) => (
@@ -1001,11 +952,11 @@ function ProjectDetail({
             ))}
           </ul>
         ) : (
-          <p className="muted">{t("admin.projects.noFiles")}</p>
+          null
         )}
-      </section>
-      <section className="detail-section notes">
-        <h3>{t("admin.projects.notes")}</h3>
+      </details>}
+      <details className="detail-section notes" key={`notes-${task.id}`}>
+        <summary>{t("admin.projects.notes")}{detail.notes.length > 0 && <span className="detail-count">{detail.notes.length}</span>}</summary>
         {task.status === "submitted" && permissions.includes("admin.projects.note") && <form onSubmit={saveNote}>
           <textarea
             name="body"
@@ -1020,30 +971,31 @@ function ProjectDetail({
           <ol>
             {detail.notes.map((note) => (
               <li key={note.id}>
-                <p>{note.body}</p>
+                <ExpandableText text={note.body}/>
                 <small>
-                  {note.authorName} · {formatDate(note.createdAt, locale)}
+                  {note.authorName || t("accountClosure.deleted")} · {formatDate(note.createdAt, locale)}
                 </small>
               </li>
             ))}
           </ol>
-        ) : (
-          <p className="muted">{t("admin.projects.noNotes")}</p>
-        )}
-      </section>
-    </aside>
+        ) : null}
+      </details>
+    </aside></ProjectActionTarget.Provider>
   );
 }
 
 type SubmissionFact = { label: string; value?: ReactNode; wide?: boolean };
 
 function FactGrid({ facts }: { facts: SubmissionFact[] }) {
+  const {t}=useTranslation();
+  const populated=facts.filter(fact=>fact.value !== undefined && fact.value !== null && fact.value !== "" && fact.value !== false);
+  if(!populated.length)return <p className="muted">{t("uiDensity.noDetails")}</p>;
   return (
     <dl className="fact-grid">
-      {facts.map((fact) => (
+      {populated.map((fact) => (
         <div className={fact.wide ? "wide" : undefined} key={fact.label}>
           <dt>{fact.label}</dt>
-          <dd>{fact.value || "—"}</dd>
+          <dd>{typeof fact.value === "string" ? <ExpandableText key={fact.value} text={fact.value}/> : fact.value}</dd>
         </div>
       ))}
     </dl>
@@ -1051,6 +1003,7 @@ function FactGrid({ facts }: { facts: SubmissionFact[] }) {
 }
 
 function ReferenceLinks({ urls }: { urls: string[] }) {
+  const {t}=useTranslation();
   const safeUrls = urls.filter((url) => {
     try {
       const parsed = new URL(url);
@@ -1062,13 +1015,14 @@ function ReferenceLinks({ urls }: { urls: string[] }) {
   return safeUrls.length ? (
     <ul className="reference-links">
       {safeUrls.map((url, index) => (
-        <li key={`${url}-${index}`}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>
+        <li key={`${url}-${index}`}><a href={url} target="_blank" rel="noreferrer">{t("uiDensity.referenceLink", {number:index+1})} · {new URL(url).hostname}</a></li>
       ))}
     </ul>
   ) : <span>—</span>;
 }
 
 function ReferenceFiles({ projectId, assets, legacyUrls }: { projectId: string; assets: ReferenceAsset[]; legacyUrls: string[] }) {
+  const {t}=useTranslation();
   const safeLegacyUrls = legacyUrls.filter((url) => {
     try { return ["http:", "https:"].includes(new URL(url).protocol); }
     catch { return false; }
@@ -1076,7 +1030,7 @@ function ReferenceFiles({ projectId, assets, legacyUrls }: { projectId: string; 
   if (!assets.length && !safeLegacyUrls.length) return <span>—</span>;
   return <ul className="reference-links">
     {assets.map((asset) => <li key={asset.id}><a href={adminAssetUrl(projectId, asset.url)} target="_blank" rel="noreferrer">{asset.fileName}</a></li>)}
-    {safeLegacyUrls.map((url, index) => <li key={`${url}-${index}`}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}
+    {safeLegacyUrls.map((url, index) => <li key={`${url}-${index}`}><a href={url} target="_blank" rel="noreferrer">{t("uiDensity.referenceLink", {number:index+1})} · {new URL(url).hostname}</a></li>)}
   </ul>;
 }
 
@@ -1127,7 +1081,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
     [locale, voiceReferences],
   );
   const listFormat = useMemo(() => new Intl.ListFormat(locale, { style: "short", type: "conjunction" }), [locale]);
-  const label = (group: string, id?: string) => id ? (snapshotLabels?.optionMaps ?? optionMaps).get(group)?.get(id) ?? id : undefined;
+  const label = (group: string, id?: string) => id ? (snapshotLabels?.optionMaps ?? optionMaps).get(group)?.get(id) ?? t("uiDensity.unavailableOption") : undefined;
   const labels = (group: string, ids: string[]) => ids.length ? listFormat.format(ids.map((id) => label(group, id) ?? id)) : undefined;
   const project = task.project;
   const book = task.book;
@@ -1135,7 +1089,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
   const voice = task.voiceAndReferences.voiceover;
   const narrationEnabled = getNarrationEnabled(voice);
   const direction = task.voiceAndReferences.creativeDirection;
-  const selectedVoices = voice.selectedVoiceIds.map((id) => (snapshotLabels?.voiceNames ?? voiceNames).get(id) ?? id);
+  const selectedVoices = voice.selectedVoiceIds.map((id) => (snapshotLabels?.voiceNames ?? voiceNames).get(id) ?? t("uiDensity.unavailableOption"));
   const characterPanelId = useId();
   const [characterSelection, setCharacterSelection] = useState<{
     projectId: string;
@@ -1157,8 +1111,8 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
 
   return (
     <div className="submission-sections">
-      <section className="detail-section">
-        <h3>{t("admin.projects.projectInfo")}</h3>
+      <details className="detail-section submission-section" open>
+        <summary>{t("admin.projects.projectInfo")}</summary>
         <FactGrid facts={[
           { label: t("wizard.fields.clientName"), value: project.clientName },
           { label: t("wizard.fields.contactName"), value: project.contactName },
@@ -1170,9 +1124,9 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
           { label: t("wizard.fields.deadline"), value: project.deadline },
           { label: t("wizard.fields.audiences"), value: labels("audiences", project.audienceIds), wide: true },
         ]} />
-      </section>
-      <section className="detail-section">
-        <h3>{t("admin.projects.bookInfo")}</h3>
+      </details>
+      <details className="detail-section submission-section" open>
+        <summary>{t("admin.projects.bookInfo")}</summary>
         <FactGrid facts={[
           { label: t("wizard.fields.bookTitle"), value: book.title },
           { label: t("wizard.fields.subtitle"), value: book.subtitle },
@@ -1184,9 +1138,9 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
           { label: t("wizard.fields.sellingPoint"), value: book.sellingPoint, wide: true },
           { label: t("wizard.fields.synopsis"), value: book.synopsis, wide: true },
         ]} />
-      </section>
-      <section className="detail-section">
-        <h3>{t("admin.projects.characters", { count: creative.characters.length })}</h3>
+      </details>
+      <details className="detail-section submission-section">
+        <summary>{t("admin.projects.characters", { count: creative.characters.length })}</summary>
         {selectedCharacter ? (
           <>
             <div
@@ -1263,7 +1217,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
                       number: selectedCharacterIndex + 1,
                     })}
                 </h4>
-                {(selectedCharacter.presetImageUrl ?? selectedCharacter.presetId) && <figure><img src={selectedCharacter.presetImageUrl?.startsWith("/api/") ? selectedCharacter.presetImageUrl : new URL(selectedCharacter.presetImageUrl ?? `/character-presets/${selectedCharacter.presetId}.png`, new URL(customerPortalUrl(locale), window.location.origin)).href} alt={t("bookIntake.presetImage", { name: selectedCharacter.name })} width="120" height="120" loading="lazy" /><figcaption>{t("bookIntake.presetHint")}</figcaption></figure>}
+                {(selectedCharacter.presetImageUrl ?? selectedCharacter.presetId) && <figure><img src={selectedCharacter.presetImageUrl?.startsWith("/api/") ? selectedCharacter.presetImageUrl : new URL(selectedCharacter.presetImageUrl ?? `/character-presets/${selectedCharacter.presetId}.png`, new URL(customerPortalUrl(locale), window.location.origin)).href} alt={t("bookIntake.presetImage", { name: selectedCharacter.name })} width="120" height="120" loading="lazy" /></figure>}
                 <FactGrid facts={[
                   { label: t("creative.fields.roleType"), value: label("roleTypes", selectedCharacter.roleTypeId) },
                   { label: t("creative.fields.storyRole"), value: selectedCharacter.storyRole },
@@ -1274,7 +1228,7 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
                   { label: t("creative.fields.clothing"), value: selectedCharacter.clothing },
                   { label: t("creative.fields.emotion"), value: selectedCharacter.emotion },
                   { label: t("creative.fields.voiceHint"), value: selectedCharacter.voiceHint, wide: true },
-                  { label: t("admin.projects.referenceImages"), value: <ReferenceFiles projectId={task.id} assets={selectedCharacter.referenceImages ?? []} legacyUrls={selectedCharacter.referenceImageUrls} />, wide: true },
+                  { label: t("admin.projects.referenceImages"), value: ((selectedCharacter.referenceImages?.length ?? 0) + selectedCharacter.referenceImageUrls.length) > 0 ? <ReferenceFiles projectId={task.id} assets={selectedCharacter.referenceImages ?? []} legacyUrls={selectedCharacter.referenceImageUrls} /> : undefined, wide: true },
                 ]} />
               </article>
             </div>
@@ -1282,19 +1236,19 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
         ) : (
           <p className="muted">{t("admin.projects.noCharacters")}</p>
         )}
-      </section>
-      <section className="detail-section">
-        <h3>{t("admin.projects.visualInfo")}</h3>
+      </details>
+      <details className="detail-section submission-section">
+        <summary>{t("admin.projects.visualInfo")}</summary>
         <FactGrid facts={[
           { label: t("creative.fields.visualStyle"), value: label("visualStyles", creative.visualStyleId) },
           { label: t("creative.fields.moodTags"), value: labels("moodTags", creative.moodTagIds) },
           { label: t("creative.fields.imageTags"), value: labels("imageStyleTags", creative.imageStyleTagIds) },
           { label: t("creative.fields.paceTags"), value: labels("paceTags", creative.paceTagIds) },
-          { label: t("admin.projects.styleReferences"), value: <ReferenceFiles projectId={task.id} assets={creative.styleReferenceImages ?? []} legacyUrls={creative.styleReferenceImageUrls} />, wide: true },
+          { label: t("admin.projects.styleReferences"), value: ((creative.styleReferenceImages?.length ?? 0) + creative.styleReferenceImageUrls.length) > 0 ? <ReferenceFiles projectId={task.id} assets={creative.styleReferenceImages ?? []} legacyUrls={creative.styleReferenceImageUrls} /> : undefined, wide: true },
         ]} />
-      </section>
-      <section className="detail-section">
-        <h3>{t("admin.projects.voiceInfo")}</h3>
+      </details>
+      <details className="detail-section submission-section">
+        <summary>{t("admin.projects.voiceInfo")}</summary>
         <FactGrid facts={[
           { label: t("voice.narration.question"), value: t(narrationEnabled === true ? "voice.narration.required" : narrationEnabled === false ? "voice.narration.notRequired" : "voice.narration.unselected"), wide: true },
           ...(narrationEnabled === true ? [
@@ -1305,15 +1259,15 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
           { label: t("voice.fields.voiceAge"), value: label("voiceAges", voice.voiceAgeId) },
           { label: t("voice.fields.accent"), value: label("accents", voice.accentId) },
           { label: t("voice.fields.emotionStyle"), value: label("voiceEmotions", voice.emotionStyleId) },
-          { label: t("admin.projects.preferredVoice"), value: voice.preferredVoiceId ? (snapshotLabels?.voiceNames ?? voiceNames).get(voice.preferredVoiceId) ?? voice.preferredVoiceId : undefined },
+          { label: t("admin.projects.preferredVoice"), value: voice.preferredVoiceId ? (snapshotLabels?.voiceNames ?? voiceNames).get(voice.preferredVoiceId) ?? t("uiDensity.unavailableOption") : undefined },
           { label: t("admin.projects.selectedVoices"), value: selectedVoices.length ? listFormat.format(selectedVoices) : undefined, wide: true },
           { label: t("voice.fields.customVoice"), value: voice.customVoiceDescription, wide: true },
           { label: t("voice.fields.pronunciationNotes"), value: voice.pronunciationNotes, wide: true },
           ] : []),
         ]} />
-      </section>
-      <section className="detail-section">
-        <h3>{t("admin.projects.creativeDirection")}</h3>
+      </details>
+      <details className="detail-section submission-section">
+        <summary>{t("admin.projects.creativeDirection")}</summary>
         <FactGrid facts={[
           { label: t("voice.fields.coreMessage"), value: direction.coreMessage, wide: true },
           { label: t("voice.fields.requiredScenes"), value: direction.requiredScenes, wide: true },
@@ -1321,18 +1275,25 @@ function ProjectSubmissionDetails({ task, locale, options, voiceReferences, snap
           { label: t("voice.fields.closingMessage"), value: direction.closingMessage, wide: true },
           { label: t("voice.fields.musicMood"), value: direction.musicMood },
           { label: t("voice.fields.avoidContent"), value: direction.avoidContent },
-          { label: t("voice.fields.competitorLinks"), value: <ReferenceLinks urls={task.voiceAndReferences.competitorUrls} />, wide: true },
+          { label: t("voice.fields.competitorLinks"), value: task.voiceAndReferences.competitorUrls.length ? <ReferenceLinks urls={task.voiceAndReferences.competitorUrls} /> : undefined, wide: true },
         ]} />
-      </section>
+      </details>
     </div>
   );
 }
 
-function UsersPage({ locale }: { locale: SupportedLocale }) {
+function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; currentUserId: string }) {
+  usePresenceDirectorySync();
   const { t } = useTranslation();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location=useLocation(),navigate=useNavigate();
+  const workflowDraft=workflowRouteDraft(location.state);
+  const batchDraft=readBatchDraft(location.state);
+  const batchPicking=searchParams.get("pick")==="batch-assignee"&&!!batchDraft;
+  const picking=searchParams.get("pick")==="assignee"&&!!workflowDraft||batchPicking;
+  const finishPicking=(user?:AdminUser)=>{if(batchPicking&&batchDraft){if(user&&(!user.active||user.role==="customer"))return;navigate(`/${locale}/workbench${batchDraft.returnSearch}`,{replace:true,state:{batchEditor:user?{...batchDraft,assigneeId:user.id,assigneeName:user.displayName}:batchDraft}});return;}if(!workflowDraft||user&&(!user.active||user.role==="customer"))return;navigate(workflowReturnPath(locale,workflowDraft),{replace:true,state:{workflowEditor:user?{...workflowDraft,assigneeUserId:user.id,assigneeName:user.displayName}:workflowDraft}});};
   const initialSearch = searchParams.get("q") ?? "";
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [search, setSearch] = useState(initialSearch);
@@ -1341,14 +1302,24 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
     Math.max(1, Number(searchParams.get("page")) || 1),
   );
   const [showCreate, setShowCreate] = useState(false);
+  const [detailUserId,setDetailUserId] = useState<string>();
+  const presenceStatus=searchParams.get("status")??"";
+  const organizationFilter=searchParams.get("organization")??"";
+  const enabledFilter=searchParams.get("enabled")??"";
+  const today=new Date();today.setHours(0,0,0,0);
+  const todayStart=today.toISOString();
+  const [closingUser,setClosingUser]=useState<AdminUser>();
   const [editUser, setEditUser] = useState<AdminUser>();
   const [resetUser, setResetUser] = useState<AdminUser>();
   const users = useQuery({
-    queryKey: ["admin-users", search, role, page],
+    queryKey: ["admin-users", search, role, page, presenceStatus, organizationFilter, enabledFilter, todayStart, picking],
+    refetchInterval: 15000,
     queryFn: () =>
       adminService.listUsers({
+        assignableOnly:picking,
         search: search || undefined,
         role: role || undefined,
+        status:presenceStatus||undefined,organization:organizationFilter||undefined,enabled:enabledFilter||undefined,todayStart,
         page,
         pageSize: 20,
       }),
@@ -1400,17 +1371,19 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
     const next = new URLSearchParams(searchParams);
     value ? next.set("q", value) : next.delete("q");
     next.delete("page");
-    setSearchParams(next, { replace: true });
+    setSearchParams(next, { replace: true, state:location.state });
   };
   const setListState = (changes: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams);
     Object.entries(changes).forEach(([key, value]) =>
       value ? next.set(key, value) : next.delete(key),
     );
-    setSearchParams(next, { replace: true });
+    setSearchParams(next, { replace: true, state:location.state });
   };
+  useEffect(()=>{if(users.isSuccess&&page>pages){setPage(pages);setListState({page:pages>1?String(pages):undefined});}},[users.isSuccess,pages,page]);
   return (
     <main className="content users-content">
+      {picking?<section className="page-toolbar assignee-picker-toolbar"><strong>{t("workflowPicker.title")}</strong><button type="button" onClick={()=>finishPicking()}>{t("common.cancel")}</button></section>:<UserActivityStats statistics={users.data?.statistics}/>}
       <section className="page-toolbar">
         <form onSubmit={submitSearch} role="search">
           <input
@@ -1434,18 +1407,29 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
           }}
         >
           <option value="">{t("admin.users.allRoles")}</option>
-          <AccountRoleOptions includeOwner />
+          <AccountRoleOptions includeOwner staffOnly={picking} />
         </select>
+        <select aria-label={t("userActivity.statusFilter")} value={presenceStatus} onChange={e=>{setPage(1);setListState({status:e.target.value||undefined,page:undefined});}}>
+          <option value="">{t("userActivity.allPresence")}</option>
+          {(["online","away","offline"] as const).map(value=><option key={value} value={value}>{t(`userActivity.${value}`)}</option>)}
+        </select>
+        <select aria-label={t("userActivity.organizationFilter")} value={organizationFilter} onChange={e=>{setPage(1);setListState({organization:e.target.value||undefined,page:undefined});}}>
+          <option value="">{t("userActivity.allOrganizations")}</option><option value="unassigned">{t("admin.users.noOrganization")}</option>
+          {organizations.data?.map(org=><option value={org.id} key={org.id}>{org.name}</option>)}
+        </select>
+        {!picking&&<select aria-label={t("userActivity.enabledFilter")} value={enabledFilter} onChange={e=>{setPage(1);setListState({enabled:e.target.value||undefined,page:undefined});}}>
+          <option value="">{t("userActivity.allEnabled")}</option><option value="enabled">{t("admin.users.active")}</option><option value="disabled">{t("admin.users.inactive")}</option>
+        </select>}
         <span className="result-count">
           {t("admin.users.count", { count: users.data?.total ?? 0 })}
         </span>
-        <button
+        {!picking&&<button
           type="button"
           className="primary push-right"
           onClick={() => setShowCreate(true)}
         >
           {t("admin.users.create")}
-        </button>
+        </button>}
       </section>
       {Boolean(users.error || organizations.error) && (
         <div className="message error" role="alert">
@@ -1461,7 +1445,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
               <th>{t("admin.users.role")}</th>
               <th>{t("admin.users.organization")}</th>
               <th>{t("admin.users.status")}</th>
-              <th>{t("admin.users.created")}</th>
+              <th>{t("userActivity.lastActive")}</th>
               <th>{t("admin.users.action")}</th>
             </tr>
           </thead>
@@ -1478,7 +1462,7 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                       loading="lazy"
                     />
                     <div>
-                      <strong>{user.displayName}</strong>
+                      <div className="user-name-line"><button type="button" className="user-detail-link" onClick={()=>picking?finishPicking(user):setDetailUserId(user.id)}>{user.displayName}</button><PresenceBadge presence={user.presence}/></div>
                       <small>{user.email}{user.phone ? ` · ${user.phone}` : ""}</small>
                     </div>
                   </div>
@@ -1498,9 +1482,9 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                     )}
                   </span>
                 </td>
-                <td data-label={t("admin.users.created")}>{formatDate(user.createdAt, locale)}</td>
+                <td data-label={t("userActivity.lastActive")}><ActivityTime value={user.presence?.lastActiveAt} locale={locale}/></td>
                 <td data-label={t("admin.users.action")}>
-                  <div className="row-actions">
+                  {picking?<button type="button" disabled={!user.active||user.role==="customer"} onClick={()=>finishPicking(user)}>{t(user.id===(batchPicking?batchDraft?.assigneeId:workflowDraft?.assigneeUserId)?"workflowPicker.current":"workflowPicker.select")}</button>:<div className="row-actions">
                     <button type="button" onClick={() => setEditUser(user)}>{t("admin.users.edit")}</button>
                     {user.role === "owner" ? (
                       <span className="muted">{t("admin.users.protected")}</span>
@@ -1538,9 +1522,10 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
                             : "admin.users.activate",
                         )}
                       </button>
+                      {user.id!==currentUserId&&<button type="button" className="account-close-button" aria-label={t("accountClosure.closeNamed",{name:user.displayName})} title={t("accountClosure.title")} onClick={()=>setClosingUser(user)} data-icon-motion="press"><svg data-icon-glyph viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg></button>}
                       </>
                     )}
-                  </div>
+                  </div>}
                 </td>
               </tr>
             ))}
@@ -1576,6 +1561,8 @@ function UsersPage({ locale }: { locale: SupportedLocale }) {
           </button>
         </nav>
       </section>
+      {detailUserId&&<UserActivityDetails id={detailUserId} locale={locale} onClose={()=>setDetailUserId(undefined)}/>}
+      {closingUser&&<AccountClosureDialog user={closingUser} onClose={()=>setClosingUser(undefined)}/>}
       {showCreate && (
         <CreateUserDialog
           busy={create.isPending}
@@ -1643,9 +1630,7 @@ function CreateUserDialog({
     <ModalFrame labelledBy="create-user-title" busy={busy} onClose={requestClose}>
       <div className="modal-title">
         <h2 id="create-user-title">{t("admin.users.create")}</h2>
-        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>
-          ×
-        </button>
+        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
       </div>
       <form onSubmit={submit} onChange={markDirty}>
         <label>
@@ -1742,7 +1727,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
     <ModalFrame labelledBy="edit-user-title" busy={busy} onClose={requestClose}>
       <div className="modal-title">
         <h2 id="edit-user-title">{t("admin.users.edit")}</h2>
-        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button>
+        <button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
       </div>
       <form onSubmit={submit} onChange={markDirty}>
         <label><span>{t("admin.users.name")}</span><input name="displayName" defaultValue={user.displayName} minLength={2} maxLength={100} required /></label>
@@ -1856,8 +1841,8 @@ function AdminRoot() {
       </main>
     );
   const area = location.pathname.split(`/${locale}/`)[1]?.split("/")[0] ?? "";
-  const required = ({ overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
-  const home = me.data.permissions.includes("admin.overview.read") ? "overview" : "projects";
+  const required = ({ reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
+  const home = me.data.permissions.includes("admin.overview.read") ? "overview" : "workbench";
   return (
     <AdminShell user={me.data} locale={locale}>
       {required && !me.data.permissions.includes(required) ? <Navigate replace to={localizedPath(locale, "/" + home)} /> :
@@ -1866,8 +1851,10 @@ function AdminRoot() {
         <Route index element={<Navigate replace to={home} />} />
         <Route path="notifications" element={<NotificationCenter key={me.data.id} admin/>}/><Route path="settings/notifications" element={<NotificationSettingsPage/>}/>
         <Route path="overview" element={<OverviewPage locale={locale} />} />
+        <Route path="reports" element={<ReportsPage locale={locale}/>}/>
+        <Route path="workbench" element={<WorkbenchPage locale={locale} permissions={me.data.permissions} userId={me.data.id}/>} />
         <Route path="projects" element={<ProjectsPage locale={locale} user={me.data} />} />
-        <Route path="users" element={<UsersPage locale={locale} />} />
+        <Route path="users" element={<UsersPage locale={locale} currentUserId={me.data.id} />} />
         <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
         <Route path="audit" element={<AuditPage locale={locale} />} />
         <Route path="settings/announcements" element={<AnnouncementsPage locale={locale} />} />

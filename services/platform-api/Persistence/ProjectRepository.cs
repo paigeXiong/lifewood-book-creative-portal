@@ -52,6 +52,25 @@ internal sealed class ProjectRepository(string connectionString)
         command.Parameters.AddWithValue("$appliedAt", DateTimeOffset.UtcNow.ToString("O"));
         command.ExecuteNonQuery();
 
+        foreach (var (column, definition) in new[] { ("followup_due_at", "TEXT NULL"), ("followup_version", "INTEGER NOT NULL DEFAULT 0") })
+        {
+            if (HasColumn(connection, transaction, "projects", column)) continue;
+            using var migration = connection.CreateCommand();
+            migration.Transaction = transaction;
+            migration.CommandText = $"ALTER TABLE projects ADD COLUMN {column} {definition}";
+            migration.ExecuteNonQuery();
+        }
+        using (var index = connection.CreateCommand())
+        {
+            index.Transaction = transaction;
+            index.CommandText = """
+                CREATE INDEX IF NOT EXISTS ix_projects_followup ON projects(followup_due_at) WHERE followup_due_at IS NOT NULL;
+                CREATE TABLE IF NOT EXISTS followup_reminders(project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, target TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(project_id,target,kind));
+                CREATE TRIGGER IF NOT EXISTS followup_reminder_delete AFTER DELETE ON projects BEGIN DELETE FROM followup_reminders WHERE project_id=OLD.id; END;
+                """;
+            index.ExecuteNonQuery();
+        }
+
         if (!HasColumn(connection, transaction, "projects", "creative_json"))
         {
             using var migration = connection.CreateCommand();

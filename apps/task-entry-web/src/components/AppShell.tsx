@@ -1,11 +1,13 @@
+import {UserPresence} from "@lifewood/ui/user-presence";
 import {AccountSwitcher,AccountSessionGuard} from "@lifewood/ui/account-switcher";
 import {NotificationBell} from "@lifewood/ui/notifications";
+import { LoginBookBackdrop } from "./LoginBookBackdrop";
 import { Announcements } from "./Announcements";
 import { useConfirm, useConfirmLink } from "../useConfirm";
 import { useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { authService } from "@lifewood/api-client";
 import { isSupportedLocale } from "@lifewood/i18n";
 import { clearUserProjectQueries } from "../projectQueryCache";
@@ -22,6 +24,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   const confirm = useConfirm();
   const guardLink = useConfirmLink();
   const { locale } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [accountOpen, setAccountOpen] = useState(false);
@@ -62,6 +65,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
 
   return (
     <div className="app-shell reference-shell">
+      {location.pathname.replace(/\/$/, "") === `/${locale}/tasks` && user.taskBackgroundMotion !== false && <LoginBookBackdrop subtle />}
       <a className="skip-link" href="#main-content">{t("nav.skipToContent")}</a>
       <header className="topbar reference-topbar">
         <Link className="brand" to={`/${locale}/tasks`} aria-label={t("app.name")} onClick={guardLink}>
@@ -117,7 +121,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </div>
         </div>
       </header>
-      <AccountSessionGuard key={user.id} userId={user.id}/>
+      <UserPresence key={`presence-${user.id}`} userId={user.id}/><AccountSessionGuard key={user.id} userId={user.id}/>
       <main id="main-content" tabIndex={-1}>{children}</main>
     </div>
   );

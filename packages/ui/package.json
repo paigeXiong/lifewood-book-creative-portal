@@ -1,6 +1,6 @@
 {
   "name": "@lifewood/ui",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,6 +11,10 @@
     "./error-boundary.css": "./src/error-boundary.css",
     "./confirmation": "./src/confirmation.ts",
     "./notifications": "./src/Notifications.tsx",
-    "./account-switcher": "./src/AccountSwitcher.tsx"
+    "./account-switcher": "./src/AccountSwitcher.tsx",
+    "./user-presence": "./src/UserPresence.tsx",
+    "./icon-feedback": "./src/IconFeedback.tsx",
+    "./saved-views": "./src/SavedViews.tsx",
+    "./login-sessions": "./src/LoginSessions.tsx"
   }
 }

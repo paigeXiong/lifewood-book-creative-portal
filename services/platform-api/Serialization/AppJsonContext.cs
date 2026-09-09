@@ -8,6 +8,19 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(TrendReport))]
+[JsonSerializable(typeof(BatchProjectPreview[]))]
+[JsonSerializable(typeof(BatchProjectRequest))]
+[JsonSerializable(typeof(BatchProjectResult[]))]
+[JsonSerializable(typeof(SavedViewDto[]))]
+[JsonSerializable(typeof(SaveViewRequest))]
+[JsonSerializable(typeof(ResumeStepDto[]))]
+[JsonSerializable(typeof(SaveResumeRequest))]
+[JsonSerializable(typeof(AccountClosurePreview))]
+[JsonSerializable(typeof(CloseAccountRequest))]
+[JsonSerializable(typeof(PresenceHeartbeatRequest))]
+[JsonSerializable(typeof(AdminUserDetailsDto))]
+[JsonSerializable(typeof(LoginDevicesDto))]
 [JsonSerializable(typeof(SavedAccountsDto))]
 [JsonSerializable(typeof(SwitchAccountRequest))]
 [JsonSerializable(typeof(NotificationTarget))]
@@ -132,4 +145,7 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSerializable(typeof(FieldErrorDto))]
 [JsonSerializable(typeof(FieldErrorDto[]))]
 [JsonSerializable(typeof(ApiErrorDto))]
+[JsonSerializable(typeof(FollowupDto))]
+[JsonSerializable(typeof(UpdateFollowupRequest))]
+[JsonSerializable(typeof(WorkbenchDto))]
 internal partial class AppJsonContext : JsonSerializerContext;

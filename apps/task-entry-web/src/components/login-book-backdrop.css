@@ -77,3 +77,22 @@
   .login-floating-book svg { transform: rotate(-12deg); }
   .login-book-row:nth-child(even) svg { transform: rotate(12deg); }
 }
+
+/* A quiet version of the login artwork, behind the opaque task surfaces. */
+.reference-shell:has(> .task-book-backdrop) { isolation: isolate; }
+.task-book-backdrop { position: fixed; z-index: -1; }
+.task-book-backdrop .login-book-grid { --book-cell: clamp(150px, 12vw, 240px); opacity: .065; grid-template-rows: repeat(8, var(--book-cell)); }
+.task-book-backdrop .login-book-row { --row-shift: 28px; animation: task-book-row-drift 24s ease-in-out -6s infinite; }
+.task-book-backdrop .login-book-row:nth-child(even) { --row-shift: -28px; }
+.task-book-backdrop .login-floating-book { --column-shift: 16px; animation: task-book-column-drift 28s ease-in-out -7s infinite; padding: 30px; }
+.task-book-backdrop .login-floating-book:nth-child(even) { --column-shift: -16px; }
+.task-book-backdrop .login-floating-book svg { animation: task-book-sway 24s ease-in-out infinite; animation-delay: var(--book-phase); }
+@keyframes task-book-row-drift { 0%,100% { transform: translate3d(calc(-1 * var(--row-shift)),0,0); } 50% { transform: translate3d(var(--row-shift),0,0); } }
+@keyframes task-book-column-drift { 0%,100% { transform: translate3d(0,calc(-1 * var(--column-shift)),0); } 50% { transform: translate3d(0,var(--column-shift),0); } }
+@keyframes task-book-sway { 0%,100% { transform: rotate(-9deg); } 50% { transform: rotate(3deg); } }
+.login-book-backdrop.is-paused .login-book-row,
+.login-book-backdrop.is-paused .login-floating-book,
+.login-book-backdrop.is-paused svg { animation-play-state: paused; }
+@media(prefers-reduced-motion: reduce) {
+  .task-book-backdrop .login-book-row, .task-book-backdrop .login-floating-book, .task-book-backdrop .login-floating-book svg { animation: none; }
+}

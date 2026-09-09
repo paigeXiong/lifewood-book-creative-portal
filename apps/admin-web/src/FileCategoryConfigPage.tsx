@@ -81,7 +81,7 @@ function FileCategoryDialog({ category, supportedTypes, busy, error, onClose, on
     onSave(value);
   };
   return <ModalFrame labelledBy="file-category-title" busy={busy} onClose={requestClose}>
-    <div className="modal-title"><h2 id="file-category-title">{t(existing ? "admin.fileCategories.editTitle" : "admin.fileCategories.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button></div>
+    <div className="modal-title"><h2 id="file-category-title">{t(existing ? "admin.fileCategories.editTitle" : "admin.fileCategories.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
     <form onSubmit={submit} onChange={markDirty}><div className="voice-form-grid">
       <label><span>{t("admin.formOptions.id")}</span><input name="id" defaultValue={category.id} pattern="[A-Za-z0-9-]{2,64}" maxLength={64} readOnly={existing} required autoComplete="off" spellCheck={false} /></label>
       <label><span>{t("admin.fileCategories.order")}</span><input name="sortOrder" type="number" defaultValue={category.sortOrder} min={0} max={10000} required /></label>

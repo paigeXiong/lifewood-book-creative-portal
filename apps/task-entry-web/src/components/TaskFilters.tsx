@@ -55,7 +55,7 @@ export function TaskFilters({ status, statuses, onApply }: {
     }}>
       <div className="task-filter-title">
         <h2 id={`${id}-title`}>{t("tasks.filters.open")}</h2>
-        <button className="button button-quiet" type="button" popoverTarget={id} popoverTargetAction="hide" aria-label={t("common.close")}>×</button>
+        <button className="button button-quiet" type="button" popoverTarget={id} popoverTargetAction="hide" aria-label={t("common.close")} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
       </div>
       <form onSubmit={(event) => { event.preventDefault(); apply(selectedStatus); }}>
         <label htmlFor={`${id}-status`}>{t("tasks.filterLabel")}</label>

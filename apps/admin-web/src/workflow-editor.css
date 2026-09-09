@@ -1,0 +1,17 @@
+.workflow-editor{display:grid;gap:16px}
+.workflow-choices{padding:0;margin:0;border:0;min-width:0}
+.workflow-choices legend{padding:0;margin-bottom:8px;font-weight:600}
+.workflow-choices>div{display:flex;flex-wrap:wrap;gap:8px}
+.workflow-choice{position:relative;display:inline-flex!important;margin:0;cursor:pointer}
+.workflow-choice input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.workflow-choice span{padding:8px 14px;border-radius:999px;background:#edf3ef;color:#204b3c;line-height:1.35}
+.workflow-choice input:checked+span{background:#154e3b;color:#fff}
+.workflow-choice:hover span{box-shadow:inset 0 0 0 1px #639884}
+.workflow-choice input:focus-visible+span{outline:2px solid #267754;outline-offset:3px}
+.workflow-choice input:disabled+span{opacity:.55;cursor:default}
+.workflow-assignee>span{display:block;margin-bottom:8px;font-weight:600}
+.workflow-assignee>div{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f3f6f4;border-radius:10px;padding:10px 12px;flex-wrap:wrap}
+.workflow-assignee strong{overflow-wrap:anywhere}
+.workflow-assignee-actions{display:flex;gap:6px;flex-wrap:wrap}
+.assignee-picker-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.assignee-picker-toolbar button{margin-left:auto}

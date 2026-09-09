@@ -1,3 +1,4 @@
+import {ProjectAction} from "./ProjectAction";
 import { useConfirm } from "./useConfirm";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -35,6 +36,7 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
         queryClient.invalidateQueries({ queryKey: ["admin-deliveries", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["admin-project", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["admin-projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-workbench"] }),
       ]);
     },
     onSettled: (_data, _error, variables) => {
@@ -49,6 +51,7 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
         queryClient.invalidateQueries({ queryKey: ["admin-deliveries", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["admin-project", projectId] }),
         queryClient.invalidateQueries({ queryKey: ["admin-projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-workbench"] }),
       ]);
     },
   });
@@ -68,10 +71,12 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
     }
   };
 
-  return <section className="detail-section delivery-admin">
-    <div className="section-title-row"><div><h3>{t("admin.delivery.title")}</h3><p>{t(canPublish ? "admin.delivery.shortcutHint" : "admin.delivery.draftHint")}</p></div><button type="button" className="primary" disabled={!canPublish || publish.isPending} onClick={() => { publish.reset(); setFileInvalid(false); setOpen(true); }}>{t("admin.delivery.upload")}</button></div>
+  return <>
+    <ProjectAction slot="delivery"><button type="button" className="primary" disabled={!canPublish || publish.isPending} title={!canPublish ? t("admin.delivery.draftHint") : undefined} onClick={() => { publish.reset(); setFileInvalid(false); setOpen(true); }}>{t("admin.delivery.upload")}</button></ProjectAction>
+    {(Boolean(deliveries.data?.length) || deliveries.isError || revoke.isError) && <section className="detail-section delivery-admin">
+    <h3>{t("admin.delivery.title")}</h3>
     {deliveries.isError && <div className="message error" role="alert">{localizedApiError(deliveries.error, t)}</div>}
-    {deliveries.data?.length ? <ol className="delivery-list">{deliveries.data.map((item) => <li className={item.revokedAt ? "revoked" : undefined} key={item.id}><div><strong>{item.fileName}</strong><small>{formatSize(item.sizeBytes, locale)} · {formatDate(item.publishedAt, locale)}</small>{item.note && <p>{item.note}</p>}</div><div className="delivery-actions">
+    {deliveries.data?.length ? <ol className="delivery-list">{deliveries.data.map((item) => <li className={item.revokedAt ? "revoked" : undefined} key={item.id}><div><strong>{item.fileName}</strong><small>{formatSize(item.sizeBytes, locale)} · {formatDate(item.publishedAt, locale)}</small>{item.note && <details className="delivery-note"><summary>{t("admin.delivery.note")}</summary><p>{item.note}</p></details>}</div><div className="delivery-actions">
       {item.revokedAt
         ? <span className="muted">{t("admin.delivery.revoked")}</span>
         : <>
@@ -83,9 +88,10 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
             onClick={async () => { if (await confirm(t("admin.delivery.revokeConfirm"))) revoke.mutate(item.id); }}
           >{t("admin.delivery.revoke")}</button>
         </>}
-    </div></li>)}</ol> : !deliveries.isPending && <p className="muted">{t("admin.delivery.empty")}</p>}
+    </div></li>)}</ol> : null}
     {revoke.isError && <div className="message error" role="alert">{localizedApiError(revoke.error, t)}</div>}
-    {open && canPublish && <ModalFrame labelledBy="delivery-dialog-title" busy={publish.isPending} onClose={() => setOpen(false)}><div className="modal-title"><h2 id="delivery-dialog-title">{t("admin.delivery.dialogTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={publish.isPending} onClick={() => setOpen(false)}>×</button></div><form onSubmit={submit} aria-busy={publish.isPending}>
+    </section>}
+    {open && canPublish && <ModalFrame labelledBy="delivery-dialog-title" busy={publish.isPending} onClose={() => setOpen(false)}><div className="modal-title"><h2 id="delivery-dialog-title">{t("admin.delivery.dialogTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={publish.isPending} onClick={() => setOpen(false)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div><form onSubmit={submit} aria-busy={publish.isPending}>
       <div className="delivery-warning"><strong>{t("admin.delivery.immediateTitle")}</strong><p>{t("admin.delivery.immediateBody")}</p></div>
       <label><span>{t("admin.delivery.file")}</span><input name="file" type="file" accept=".mp4,.mov,video/mp4,video/quicktime" required /><small>{t("admin.delivery.fileHint")}</small></label>
       <label><span>{t("admin.delivery.note")}</span><textarea name="note" rows={3} maxLength={2000} placeholder={t("admin.delivery.notePlaceholder")} /></label>
@@ -94,5 +100,5 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
       {publish.isError && publish.error instanceof DOMException && publish.error.name === "AbortError" ? null : publish.isError && <div className="message error" role="alert">{localizedApiError(publish.error, t)}</div>}
       <div className="modal-actions"><button type="button" disabled={publish.isPending} onClick={() => setOpen(false)}>{t("common.cancel")}</button><button className="primary" disabled={publish.isPending}>{t(publish.isPending ? "admin.delivery.publishing" : "admin.delivery.publish")}</button></div>
     </form></ModalFrame>}
-  </section>;
+  </>;
 }

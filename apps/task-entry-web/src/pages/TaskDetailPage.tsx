@@ -60,7 +60,7 @@ export function TaskDetailPage() {
   const optionLabel = (
     items: Array<{ id: string; label: string }>,
     id?: string,
-  ) => (id ? (items.find((item) => item.id === id)?.label ?? id) : "—");
+  ) => (id ? (items.find((item) => item.id === id)?.label ?? t("uiDensity.unavailableOption")) : "—");
   const optionLabels = (
     items: Array<{ id: string; label: string }>,
     ids: string[],
@@ -119,10 +119,10 @@ export function TaskDetailPage() {
             />
           )}
           <dl>
-            <div>
+            {task.data.taskNumber && <div>
               <dt>{t("taskDetail.taskNumber")}</dt>
-              <dd translate="no">{task.data.taskNumber ?? task.data.id}</dd>
-            </div>
+              <dd translate="no">{task.data.taskNumber}</dd>
+            </div>}
             <div>
               <dt>{t("taskDetail.created")}</dt>
               <dd>

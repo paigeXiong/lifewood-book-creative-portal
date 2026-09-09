@@ -5,13 +5,13 @@
 | 角色 | 项目范围 | 业务操作 | 管理能力 |
 | --- | --- | --- | --- |
 | 客户 customer | 自己创建的项目 | 填写、提交、回复、查看交付；删除符合条件的草稿或已退回项目 | 个人账号与通知偏好 |
-| 运营 operator | 仅分配给自己的项目，包括退回沟通历史 | 查看、更新进度与优先级、添加备注、退回、回复、发布与撤回交付 | 个人账号与通知偏好 |
+| 运营 operator | 仅分配给自己的项目，包括退回沟通历史 | 查看、更新进度与优先级、添加备注、退回、回复、发布与撤回交付、设置跟进期限、导出资料包 | 个人账号与通知偏好 |
 | 管理员 admin | 所有已提交或有退回历史的项目 | 上述操作及分配负责人 | 账号、组织、公告、业务配置、审计 |
 | 平台负责人 owner | 保留原有全部权限 | 管理员业务操作及客户入口 | 包括系统运行控制 |
 
 ## 权限键
 
-项目权限分别为 `admin.projects.read`、`admin.projects.workflow`、`admin.projects.assign`、`admin.projects.return`、`admin.projects.reply`、`admin.projects.note`、`admin.projects.deliver`。运营不获得 assign。进度权限包括项目优先级。
+项目权限分别为 `admin.projects.read`、`admin.projects.workflow`、`admin.projects.assign`、`admin.projects.return`、`admin.projects.reply`、`admin.projects.note`、`admin.projects.deliver`、`admin.projects.export`。运营不获得 assign。进度权限包括项目优先级和内部跟进期限。
 
 全局概览、审计分别使用 `admin.overview.read`、`admin.audit.read`；账号/组织、配置、运行控制继续使用原有管理权限。旧 `admin.projects.manage` 仅保留在管理员/负责人的权限响应中用于兼容，接口已改用细分权限。
 
@@ -24,3 +24,7 @@
 - 角色调整从后续请求起生效；停用账号使现有登录失效。已发送到浏览器的内容不会远程撤回。
 
 自定义角色、部门/团队数据范围和独立运营应用尚未引入。
+
+### 项目创建与组织归属
+
+新建项目必须同时具备创建权限和所属组织，平台负责人、管理员也遵循此限制。新项目的客户名称直接取当前组织名称；个人资料仅维护姓名和电话，不再配置默认客户名称。调整组织归属只影响后续新建项目，已有项目保留创建时记录的客户信息。未分配组织的账号仍可按原有权限查看、处理已有项目。

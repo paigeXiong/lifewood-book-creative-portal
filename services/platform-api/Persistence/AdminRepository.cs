@@ -22,6 +22,7 @@ internal sealed class AdminRepository(string connectionString)
     {
         using var connection = Open();
         OrganizationSchema.Ensure(connection);
+        if (!HasColumn(connection, "users", "closed_at")) Execute(connection, "ALTER TABLE users ADD COLUMN closed_at TEXT NULL;");
         if (!HasColumn(connection, "users", "is_active")) Execute(connection, "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;");
         if (!HasColumn(connection, "projects", "workflow_status")) Execute(connection, "ALTER TABLE projects ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'new';");
         if (!HasColumn(connection, "projects", "priority")) Execute(connection, "ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';");
@@ -72,7 +73,7 @@ internal sealed class AdminRepository(string connectionString)
         var overview = new AdminOverviewDto(
             Count(connection, transaction, "SELECT COUNT(*) FROM projects WHERE status = 'submitted';"),
             Count(connection, transaction, "SELECT COUNT(*) FROM projects WHERE status = 'submitted' AND assignee_user_id IS NULL AND workflow_status NOT IN ('completed', 'closed');"),
-            Count(connection, transaction, "SELECT COUNT(*) FROM users;"),
+            Count(connection, transaction, "SELECT COUNT(*) FROM users WHERE closed_at IS NULL;"),
             Count(connection, transaction, "SELECT COUNT(*) FROM users WHERE is_active = 1;"),
             GroupCounts(connection, transaction, "SELECT status, COUNT(*) FROM projects WHERE status = 'submitted' GROUP BY status ORDER BY status;"),
             GroupCounts(connection, transaction, "SELECT workflow_status, COUNT(*) FROM projects WHERE status = 'submitted' GROUP BY workflow_status ORDER BY workflow_status;"),
@@ -83,7 +84,7 @@ internal sealed class AdminRepository(string connectionString)
     public PagedAdminUsersDto ListUsers(string? search, string? role, int page, int pageSize)
     {
         using var connection = Open();
-        const string where = "WHERE ($search = '' OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR u.phone LIKE '%' || $search || '%' COLLATE NOCASE OR o.name LIKE '%' || $search || '%' COLLATE NOCASE) AND ($role = '' OR u.role = $role)";
+        const string where = "WHERE u.closed_at IS NULL AND ($search = '' OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR u.phone LIKE '%' || $search || '%' COLLATE NOCASE OR o.name LIKE '%' || $search || '%' COLLATE NOCASE) AND ($role = '' OR u.role = $role)";
         using var count = connection.CreateCommand();
         count.CommandText = $"SELECT COUNT(*) FROM users u LEFT JOIN organizations o ON o.id = u.organization_id {where};";
         AddUserFilters(count, search, role);
@@ -103,7 +104,7 @@ internal sealed class AdminRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT u.id, u.email, u.display_name, u.phone, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id WHERE u.id = $id;";
+        command.CommandText = "SELECT u.id, u.email, u.display_name, u.phone, u.role, u.is_active, o.id, o.name, u.created_at, u.updated_at FROM users u LEFT JOIN organizations o ON o.id = u.organization_id WHERE u.id = $id AND u.closed_at IS NULL;";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadUser(reader) : null;
@@ -167,7 +168,7 @@ internal sealed class AdminRepository(string connectionString)
         using var transaction = connection.BeginTransaction(deferred: false);
         using var existing = connection.CreateCommand();
         existing.Transaction = transaction;
-        existing.CommandText = "SELECT role, organization_id FROM users WHERE id = $id;";
+        existing.CommandText = "SELECT role, organization_id FROM users WHERE id = $id AND closed_at IS NULL;";
         existing.Parameters.AddWithValue("$id", id);
         using var existingReader = existing.ExecuteReader();
         if (!existingReader.Read()) return new(AdminWriteOutcome.NotFound);
@@ -254,7 +255,7 @@ internal sealed class AdminRepository(string connectionString)
         return new(project, ownerId, ownerName, ownerEmail, workflow, priority, assigneeId, assigneeName, workflowUpdatedAt, ListNotes(connection, id));
     }
 
-    public AdminWriteResult UpdateWorkflow(string id, UpdateProjectWorkflowRequest? request, string actorId="", string? accessActorId = null, bool canAssign = true)
+    public AdminWriteResult UpdateWorkflow(string id, UpdateProjectWorkflowRequest? request, string actorId="", string? accessActorId = null, bool canAssign = true, bool allowReturnedFields = false)
     {
         if (request is null || !WorkflowStatuses.Contains(request.WorkflowStatus)) return new(AdminWriteOutcome.Invalid, "workflowStatus");
         if (!Priorities.Contains(request.Priority)) return new(AdminWriteOutcome.Invalid, "priority");
@@ -279,9 +280,15 @@ internal sealed class AdminRepository(string connectionString)
             if (Convert.ToInt32(assignee.ExecuteScalar()) == 0) return new(AdminWriteOutcome.Invalid, "assigneeUserId");
         }
         using var previous=connection.CreateCommand();previous.Transaction=transaction;previous.CommandText="SELECT workflow_status FROM projects WHERE id=$id";previous.Parameters.AddWithValue("$id",id);var previousStatus=previous.ExecuteScalar() as string;
+        if(allowReturnedFields){
+            using var eligible=connection.CreateCommand();eligible.Transaction=transaction;eligible.CommandText="SELECT COUNT(*) FROM projects WHERE id=$id AND (status='submitted' OR (status='draft' AND EXISTS(SELECT 1 FROM revision_rounds r WHERE r.project_id=projects.id)))";eligible.Parameters.AddWithValue("$id",id);
+            if(Convert.ToInt32(eligible.ExecuteScalar())!=1)return new(AdminWriteOutcome.NotFound);
+            if(previousStatus!=request.WorkflowStatus)return new(AdminWriteOutcome.Conflict, "workflowUpdatedAt");
+        }
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "UPDATE projects SET workflow_status = $workflow, priority = $priority, assignee_user_id = $assignee, workflow_updated_at = $now WHERE id = $id AND status = 'submitted' AND COALESCE(workflow_updated_at, updated_at) = $expectedWorkflowUpdatedAt;";
+        command.CommandText = "UPDATE projects SET workflow_status = $workflow, priority = $priority, assignee_user_id = $assignee, workflow_updated_at = $now WHERE id = $id AND (status = 'submitted' OR ($returned=1 AND status='draft' AND EXISTS(SELECT 1 FROM revision_rounds r WHERE r.project_id=projects.id))) AND COALESCE(workflow_updated_at, updated_at) = $expectedWorkflowUpdatedAt;";
+        command.Parameters.AddWithValue("$returned",allowReturnedFields?1:0);
         command.Parameters.AddWithValue("$workflow", request.WorkflowStatus);
         command.Parameters.AddWithValue("$priority", request.Priority);
         command.Parameters.AddWithValue("$assignee", (object?)request.AssigneeUserId ?? DBNull.Value);
@@ -296,7 +303,8 @@ internal sealed class AdminRepository(string connectionString)
         }
         using var exists = connection.CreateCommand();
         exists.Transaction = transaction;
-        exists.CommandText = "SELECT COUNT(*) FROM projects WHERE id = $id AND status = 'submitted';";
+        exists.CommandText = "SELECT COUNT(*) FROM projects WHERE id = $id AND (status = 'submitted' OR ($returned=1 AND status='draft' AND EXISTS(SELECT 1 FROM revision_rounds r WHERE r.project_id=projects.id)));";
+        exists.Parameters.AddWithValue("$returned",allowReturnedFields?1:0);
         exists.Parameters.AddWithValue("$id", id);
         return Convert.ToInt32(exists.ExecuteScalar()) == 1
             ? new(AdminWriteOutcome.Conflict, "workflowUpdatedAt")

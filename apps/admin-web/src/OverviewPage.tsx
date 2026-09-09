@@ -189,8 +189,7 @@ export function OverviewPage({ locale }: { locale: SupportedLocale }) {
                         {project.projectName || project.bookTitle || "—"}
                       </strong>
                       <small>
-                        {project.ownerName} ·{" "}
-                        {project.taskNumber ?? project.id.slice(0, 8)}
+                        {[project.ownerName || t("accountClosure.deleted"), project.taskNumber].filter(Boolean).join(" · ")}
                       </small>
                     </span>
                     <span>

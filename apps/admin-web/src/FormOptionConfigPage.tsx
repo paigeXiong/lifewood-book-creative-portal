@@ -167,7 +167,7 @@ function FormOptionDialog({ option, groupLabel, locale, busy, error, onClose, on
     onSave(value);
   };
   return <ModalFrame className="form-option-modal" labelledBy="form-option-dialog-title" busy={busy} onClose={requestClose}>
-    <div className="modal-title"><h2 id="form-option-dialog-title">{t(existing ? "admin.formOptions.editTitle" : "admin.formOptions.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose}>×</button></div>
+    <div className="modal-title"><h2 id="form-option-dialog-title">{t(existing ? "admin.formOptions.editTitle" : "admin.formOptions.createTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={requestClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
     <div className="option-edit-context"><span>{groupLabel}</span>{existing && <strong>{locale === "zh-CN" ? option.labelZhCn : option.labelEnUs}</strong>}</div>
     <form onSubmit={submit} onChange={markDirty}>
       <div className="option-form-grid">

@@ -9,6 +9,8 @@ import type {
   AdminProjectDetail,
   AdminProjectSummary,
   AdminUser,
+  AdminUserDirectory,
+  AdminUserDetails,
   FinalDelivery,
   ProjectPriority,
   WorkflowStatus,
@@ -75,6 +77,7 @@ function normalizeErrorPayload(value: unknown, fallback: AppErrorShape): AppErro
 }
 
 interface RequestOptions extends RequestInit {
+  responseType?: "blob";
   locale?: SupportedLocale;
 }
 
@@ -139,9 +142,10 @@ async function getCsrfToken(): Promise<string> {
 
 async function request<T>(path: string, options: RequestOptions = {}, retryCsrf = true): Promise<T> {
   if (accountBlocked && !path.startsWith("/auth/")) throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
+  const requestAccount = boundAccount;
   const headers = new Headers(options.headers);
   if (boundAccount && !["/auth/login", "/auth/bootstrap", "/auth/status"].includes(path)) headers.set("X-LW-Account", boundAccount);
-  headers.set("Accept", "application/json");
+  headers.set("Accept", options.responseType === "blob" ? "application/zip" : "application/json");
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -178,6 +182,11 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
   if (response.status === 204) {
     return undefined as T;
   }
+  if (options.responseType === "blob") {
+    const blob = await response.blob();
+    if (accountBlocked || requestAccount !== boundAccount) throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
+    return blob as T;
+  }
   return readJson<T>(response);
 }
 
@@ -193,9 +202,9 @@ export const authService = {
   removeAccount: (id:string) => request<void>(`/auth/accounts/${encodeURIComponent(id)}`,{method:"DELETE"}),
   notifyAccountChanged: reportAccountChange,
   checkActiveAccount: async (id:string) => { const r=await fetchResponse(`${apiBaseUrl}/auth/active`,{credentials:"include",cache:"no-store"});if(r.status===401)return false;if(!r.ok)throw new Error("Account check unavailable");return await r.text()===id; },
-  updateProfile: (profile: { displayName: string; phone?: string; clientName?: string }) =>
+  updateProfile: (profile: { displayName: string; phone?: string }) =>
     request<CurrentUser>("/me/profile", { method: "PUT", body: JSON.stringify(profile) }),
-  updatePreferences: (preferences: { locale: SupportedLocale }) =>
+  updatePreferences: (preferences: { locale: SupportedLocale; taskBackgroundMotion?: boolean }) =>
     request<CurrentUser>("/me/preferences", { method: "PUT", body: JSON.stringify(preferences) }),
   login: async (credentials: LoginCredentials) => {
     const user = await request<CurrentUser>("/auth/login", { method: "POST", body: JSON.stringify(credentials) });
@@ -312,6 +321,11 @@ export interface AdminProjectListQuery {
 }
 
 export interface AdminUserListQuery {
+  assignableOnly?: boolean;
+  status?: string;
+  organization?: string;
+  enabled?: string;
+  todayStart?: string;
   search?: string;
   role?: string;
   page?: number;
@@ -470,12 +484,20 @@ export const adminService = {
   revokeFinalDelivery: (projectId: string, deliveryId: string) =>
     request<void>(`/admin/projects/${encodeURIComponent(projectId)}/deliveries/${encodeURIComponent(deliveryId)}`, { method: "DELETE" }),
   listAssignees: () => request<AdminUser[]>("/admin/assignees"),
-  listUsers: ({ search, role, page = 1, pageSize = 20 }: AdminUserListQuery = {}) => {
+  listUsers: ({ search, role, status, organization, enabled, todayStart, assignableOnly, page = 1, pageSize = 20 }: AdminUserListQuery = {}) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (search) query.set("search", search);
     if (role) query.set("role", role);
-    return request<PagedResult<AdminUser>>(`/admin/users?${query}`);
+    if (status) query.set("status", status);
+    if (organization) query.set("organization", organization);
+    if (enabled) query.set("enabled", enabled);
+    if (todayStart) query.set("todayStart", todayStart);
+    if (assignableOnly) query.set("assignableOnly", "true");
+    return request<AdminUserDirectory>(`/admin/users?${query}`);
   },
+  accountClosurePreview: (id:string) => request<{email:string;updatedAt:string;ownedProjects:number;assignedProjects:number}>(`/admin/users/${encodeURIComponent(id)}/closure`),
+  closeAccount: (id:string,confirmEmail:string,expectedUpdatedAt:string) => request<void>(`/admin/users/${encodeURIComponent(id)}`,{method:"DELETE",body:JSON.stringify({confirmEmail,expectedUpdatedAt})}),
+  userDetails: (id: string) => request<AdminUserDetails>(`/admin/users/${encodeURIComponent(id)}/details`),
   listRoles: (locale: SupportedLocale) => request<ConfigOption[]>("/admin/roles", { locale }),
   createUser: (account: { displayName: string; email: string; phone?: string; password: string; role: "customer" | "admin" | "operator"; organizationId?: string }) =>
     request<AdminUser>("/admin/users", { method: "POST", body: JSON.stringify(account) }),
@@ -571,3 +593,48 @@ export const notificationService={
  logs:(before?:number)=>request<{items:NotificationLog[];nextCursor:number|null;pending:number;failed:number}>(`/admin/notifications/logs${before?`?before=${before}`:""}`),
  retry:(id:number)=>request<void>(`/admin/notifications/retry/${id}`,{method:"POST"}),
 };
+
+export interface Followup { dueAt: string | null; version: number }
+export interface Workbench {
+  queues: { id: string; label: string; count: number }[];
+  items: { id: string; taskNumber?: string; projectName: string; bookTitle: string; ownerName: string; assigneeName?: string; workflowStatus: string; priority: string; status: string; dueAt?: string; updatedAt: string }[];
+  page: number; pageSize: number; total: number; serverTime: string;
+}
+export const operationsService = {
+  workbench: (query: {queue: string; search: string; mine: boolean; page: number}, locale: SupportedLocale, signal?: AbortSignal) =>
+    request<Workbench>("/admin/workbench?" + new URLSearchParams({...query, mine:String(query.mine), page:String(query.page)}), {locale, signal}),
+  followup: (id: string, signal?: AbortSignal) => request<Followup>(`/admin/projects/${encodeURIComponent(id)}/followup`, {signal}),
+  saveFollowup: (id: string, dueAt: string | null, expectedVersion: number) => request<Followup>(`/admin/projects/${encodeURIComponent(id)}/followup`, {method:"PUT", body:JSON.stringify({dueAt,expectedVersion})}),
+  export: (id: string, locale: SupportedLocale, signal: AbortSignal) => request<Blob>(`/admin/projects/${encodeURIComponent(id)}/export`, {method:"POST", locale, signal, responseType:"blob"}),
+};
+
+export const presenceService = {
+  heartbeat: (userId:string, data:{tabId:string;visible:boolean;interacted:boolean}, signal?:AbortSignal) => {
+    if(boundAccount && boundAccount!==userId)return Promise.resolve();
+    return request<void>("/me/presence", {method:"POST",headers:{"X-LW-Account":userId},body:JSON.stringify(data),signal});
+  },
+  leave: (userId:string,tabId:string) => {
+    if(boundAccount && boundAccount!==userId)return Promise.resolve();
+    return request<void>(`/me/presence?tabId=${encodeURIComponent(tabId)}`,{method:"DELETE",headers:{"X-LW-Account":userId},keepalive:true});
+  },
+};
+
+export interface SavedView {id:string;area:string;name:string;filters:Record<string,string>;version:number}
+export const personalWorkspaceService={
+ views:(area:string)=>request<SavedView[]>(`/me/views/${area}`),
+ saveView:(area:string,id:string,value:{name:string;filters:Record<string,string>;version:number})=>request<void>(`/me/views/${area}/${id}`,{method:"PUT",body:JSON.stringify(value)}),
+ deleteView:(id:string,version:number)=>request<void>(`/me/views/${id}?version=${version}`,{method:"DELETE"}),
+ resumeSteps:(ids:string[])=>request<{projectId:string;step:string}[]>(`/me/resume?ids=${encodeURIComponent(ids.join(','))}`),
+ saveResume:(id:string,step:string)=>request<void>(`/projects/${id}/resume`,{method:"PUT",body:JSON.stringify({step})}),
+};
+
+export interface BatchPreview {id:string;name:string;workflowVersion:string;followupVersion:number}
+export interface BatchRequest {action:"priority"|"assign"|"followup";items:Omit<BatchPreview,"name">[];priority?:string;assigneeId?:string|null;dueAt?:string|null}
+export const productivityService={
+ preview:(ids:string[])=>request<BatchPreview[]>(`/admin/projects/batch-preview?ids=${encodeURIComponent(ids.join(','))}`),
+ batch:(value:BatchRequest)=>request<{id:string;outcome:string}[]>("/admin/projects/batch",{method:"POST",body:JSON.stringify(value)}),
+ report:(value:{from:string;to:string;offset:number;organization:string;assignee:string})=>request<{days:{date:string;submitted:number;delivered:number;overdue:number}[];serverTime:string}>(`/admin/reports?${new URLSearchParams({...value,offset:String(value.offset)})}`),
+};
+
+export interface LoginDevice {id:string;browser:string;platform:string;current:boolean;createdAt?:string;lastSeen?:string;expiresAt:string}
+export const loginDeviceService={list:(page:number)=>request<{items:LoginDevice[];page:number;total:number}>(`/me/sessions?page=${page}`),revoke:(id:string)=>request<void>(`/me/sessions/${encodeURIComponent(id)}`,{method:"DELETE"}),revokeOthers:()=>request<void>("/me/sessions/revoke-others",{method:"POST"})};

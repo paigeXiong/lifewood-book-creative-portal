@@ -275,7 +275,7 @@ export function AvatarEditor({
       <div ref={dialogRef} className="avatar-editor" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <header className="avatar-editor-header">
           <h2 id={titleId}>{labels.title}</h2>
-          <button type="button" className="avatar-editor-close" aria-label={labels.close} disabled={busy || preparing} onClick={onClose}>×</button>
+          <button type="button" className="avatar-editor-close" aria-label={labels.close} disabled={busy || preparing} onClick={onClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
         </header>
         <div className="avatar-editor-body">
           {image ? (

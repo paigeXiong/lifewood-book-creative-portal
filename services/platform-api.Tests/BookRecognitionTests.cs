@@ -154,9 +154,12 @@ public sealed class BookRecognitionTests
         var user = new CurrentUserDto("owner", null, "Creator", null, "creator@example.test", new("org", "Organization"), [], [], "en-US", null, Phone:"123", ClientName:"Client");
         var missing = new ProjectInfoDto("", "", "", null, null, "Project", null, null, []);
         var repaired = CreatorInfo.FillMissing(missing, user);
-        Assert.Equal("Client", repaired.ClientName); Assert.Equal("Creator", repaired.ContactName); Assert.Equal(user.Email, repaired.Email); Assert.Equal("123",repaired.Phone);
+        Assert.Equal("Organization", repaired.ClientName); Assert.Equal("Creator", repaired.ContactName); Assert.Equal(user.Email, repaired.Email); Assert.Equal("123",repaired.Phone);
         var snapshot = missing with { ClientName="Captured company",ContactName="Captured name", Email="captured@example.test", Phone="456" };
         Assert.Equal(snapshot,CreatorInfo.FillMissing(snapshot,user));
+        // Existing legacy drafts remain completable after organization removal.
+        Assert.Equal("Client", CreatorInfo.FillMissing(missing, user with { Organization = null }).ClientName);
+        Assert.Equal("Creator", CreatorInfo.FillMissing(missing, user with { Organization = null, ClientName = null }).ClientName);
     }
 
     [Fact]
