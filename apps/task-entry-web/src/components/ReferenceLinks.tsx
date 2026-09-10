@@ -1,14 +1,8 @@
+import { safeLinkUrl } from "@lifewood/domain";
 import type { ReferenceAsset } from "@lifewood/domain";
 
 function safeLegacyUrls(urls: string[]) {
-  return urls.filter((value) => {
-    try {
-      const url = new URL(value);
-      return url.protocol === "http:" || url.protocol === "https:";
-    } catch {
-      return false;
-    }
-  });
+  return urls.flatMap(value => { const safe = safeLinkUrl(value); return safe ? [safe] : []; });
 }
 
 export function ReferenceLinks({
@@ -27,7 +21,7 @@ export function ReferenceLinks({
     <ul className="receipt-links">
       {assets.map((asset) => (
         <li key={asset.id}>
-          <a href={asset.url}>{asset.fileName}</a>
+          <a href={safeLinkUrl(asset.url, true)}>{asset.fileName}</a>
         </li>
       ))}
       {legacyUrls.map((url) => (

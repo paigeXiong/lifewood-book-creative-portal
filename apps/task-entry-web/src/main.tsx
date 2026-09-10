@@ -14,6 +14,8 @@ import "./styles.css";
 import "./reference-ui.css";
 import "./wizard-motion.css";
 import "./client-experience.css";
+import "./profile-page.css";
+import "@lifewood/ui/account-menu.css";
 import { wizardDirection } from "./wizard-motion";
 
 const queryClient = new QueryClient({

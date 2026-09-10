@@ -28,7 +28,8 @@ public sealed record UpdateProfileRequest(string DisplayName, string? Phone = nu
 public sealed record UpdatePreferencesRequest(string Locale, bool? TaskBackgroundMotion = null);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ResetPasswordRequest(string NewPassword);
-public sealed record RuntimeSettingsDocument(string ListenAddress, int Port, string Scheme = "http");
+public sealed record WebListenerSettings(string ListenAddress, int Port, string Scheme = "http", bool Shared = false);
+public sealed record RuntimeSettingsDocument(string ListenAddress, int Port, string Scheme = "http", WebListenerSettings? Customer = null, WebListenerSettings? Admin = null);
 public sealed record RuntimeSettingsDto(
     string Scheme,
     string ListenAddress,
@@ -38,8 +39,13 @@ public sealed record RuntimeSettingsDto(
     int ActivePort,
     bool RestartRequired,
     bool CanRestart,
-    bool CanShutdown);
-public sealed record UpdateRuntimeSettingsRequest(string ListenAddress, int Port, string? Scheme = null);
+    bool CanShutdown,
+    WebListenerSettings Customer,
+    WebListenerSettings Admin,
+    WebListenerSettings ActiveCustomer,
+    WebListenerSettings ActiveAdmin,
+    bool ExternalFrontends);
+public sealed record UpdateRuntimeSettingsRequest(string ListenAddress, int Port, string? Scheme = null, WebListenerSettings? Customer = null, WebListenerSettings? Admin = null);
 public sealed record RuntimeActionDto(string Action, DateTimeOffset RequestedAt);
 
 public sealed record AdminUserDto(string Id, string Email, string DisplayName, string Role, bool Active, OrganizationDto? Organization, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? Phone = null, UserPresenceDto? Presence = null);
@@ -47,7 +53,10 @@ public sealed record PagedAdminUsersDto(AdminUserDto[] Items, int Page, int Page
 public sealed record CreateUserRequest(string DisplayName, string Email, string Password, string Role, string? OrganizationId, string? Phone = null);
 public sealed record UpdateUserRequest(string DisplayName, string Role, bool Active, string? OrganizationId, string? Phone = null);
 
-public sealed record AdminOrganizationDto(string Id, string Name, bool Active, int MemberCount, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record AdminOrganizationDto(string Id, string Name, bool Active, int MemberCount, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+{
+    public string AvatarUrl => $"/api/admin/organizations/{Uri.EscapeDataString(Id)}/avatar?v={UpdatedAt.UtcTicks}";
+}
 public sealed record PagedAdminOrganizationsDto(AdminOrganizationDto[] Items, int Page, int PageSize, int Total);
 public sealed record CreateOrganizationRequest(string Name);
 public sealed record UpdateOrganizationRequest(string Name, bool Active);
@@ -359,7 +368,8 @@ public sealed record AuditEventDto(
     string TargetType,
     string? TargetId,
     DateTimeOffset OccurredAt,
-    string TraceId);
+    string TraceId,
+    AuditContextDto? Context = null);
 
 public sealed record PagedAuditEventsDto(AuditEventDto[] Items, int Page, int PageSize, int Total);
 
@@ -407,3 +417,8 @@ public sealed record BookRecognitionDto(string Title, string AuthorName, string 
 
 public sealed record AdminCharacterPresetDto(string Id, CharacterInfoDto ZhCn, CharacterInfoDto EnUs, string? ImageUrl, bool Enabled, int SortOrder, string? UpdatedAt);
 public sealed record UpsertCharacterPresetRequest(CharacterInfoDto ZhCn, CharacterInfoDto EnUs, bool Enabled, int SortOrder, string? ExpectedUpdatedAt);
+
+public sealed record AuditChangeDto(string Field, string? Before, string? After);
+public sealed record AuditContextDto(string? LabelZh, string? LabelEn, string Source, string? Path, AuditChangeDto[]? Changes = null);
+
+public sealed record RuntimeHealthDto(DateTimeOffset StartedAt, DateTimeOffset? MeasuredAt, bool? DatabaseAvailable, long? UsedBytes, long? UploadBytes, long? DeliveryBytes, long? FreeBytes, long QuotaBytes, long? FailedNotifications, bool? PendingAudit, bool StorageComplete);

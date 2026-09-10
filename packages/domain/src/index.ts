@@ -1,3 +1,4 @@
+export { safeLinkUrl } from "./safe-link";
 export type SupportedLocale = "zh-CN" | "en-US";
 
 export interface CurrentUser {
@@ -100,6 +101,12 @@ export interface AdminFormOption {
   updatedAt?: string;
 }
 
+export interface WebListenerSettings {
+  scheme: "http" | "https";
+  listenAddress: string;
+  port: number;
+  shared: boolean;
+}
 export interface RuntimeSettings {
   scheme: "http" | "https";
   listenAddress: string;
@@ -110,6 +117,11 @@ export interface RuntimeSettings {
   restartRequired: boolean;
   canRestart: boolean;
   canShutdown: boolean;
+  customer?: WebListenerSettings;
+  admin?: WebListenerSettings;
+  activeCustomer?: WebListenerSettings;
+  activeAdmin?: WebListenerSettings;
+  externalFrontends?: boolean;
 }
 
 export interface RuntimeAction {
@@ -291,6 +303,7 @@ export interface AdminUser {
 }
 
 export interface AdminOrganization {
+  avatarUrl?: string;
   id: string;
   name: string;
   active: boolean;
@@ -344,6 +357,7 @@ export interface AuditEvent {
   targetId?: string;
   occurredAt: string;
   traceId: string;
+  context?: { labelZh?: string; labelEn?: string; source: "recorded" | "current" | "unavailable"; path?: string; changes?: Array<{field:string;before?:string;after?:string}> };
 }
 
 export interface FinalDelivery {
@@ -449,3 +463,17 @@ export interface AnnouncementDocument { id: string; sequence: number; content: A
 export interface AnnouncementItem { id: string; sequence: number; title: string; body: string; publishedAt: string; dismissed: boolean; popup: boolean }
 export interface AnnouncementFeed { items: AnnouncementItem[]; nextCursor: number | null }
 export interface AnnouncementPage { items: AnnouncementDocument[]; nextCursor: number | null }
+
+export interface RuntimeHealth { startedAt:string; measuredAt?:string; databaseAvailable?:boolean; usedBytes?:number; uploadBytes?:number; deliveryBytes?:number; freeBytes?:number; quotaBytes:number; failedNotifications?:number; pendingAudit?:boolean; storageComplete:boolean; }
+
+export interface BackupPolicy { enabled: boolean; frequency: "daily" | "weekly"; hour: number; dayOfWeek: number; timeZoneId: "Asia/Shanghai" | "UTC"; retainDays: number; retainCount: number; }
+export interface BackupRecord { id: string; createdAt: string; source: "manual" | "scheduled" | "safety"; status: string; size?: number; fileCount?: number; errorCode?: string; verificationStatus?: string; verifiedAt?: string; }
+export interface BackupSchedule { policy: BackupPolicy; nextRunAt?: string; }
+export interface BackupPage { items: BackupRecord[]; page: number; pageSize: number; total: number; schedule: BackupSchedule; current?: BackupRecord; paused: boolean; verificationFilters?: { value: string; messageKey: string }[]; }
+
+export interface RestorePreview { token: string; backupId: string; createdAt: string; fileCount: number; expandedSize: number; expiresAt: string; }
+export interface RestoreState { id: string; backupId: string; status: string; updatedAt: string; safetyBackupId?: string; errorCode?: string; }
+export interface RestoreOverview { available: boolean; current?: RestoreState; unavailableReason?: string; }
+
+export interface RestoreHistoryItem { id: string; startedAt: string; updatedAt: string; backupCreatedAt?: string; actorName?: string; status: string; errorCode?: string; safetyBackup?: BackupRecord; }
+export interface RestoreHistoryPage { items: RestoreHistoryItem[]; page: number; pageSize: number; total: number; incomplete: boolean; statuses: {value: string; messageKey: string}[]; }

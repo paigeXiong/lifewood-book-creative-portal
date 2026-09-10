@@ -49,6 +49,8 @@ jobs:
       - run: dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-release
       - shell: powershell
         run: ./scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-release
+      - name: Verify managed restore and startup rollback
+        run: node scripts/test-managed-restore.mjs artifacts/aot-release/Lifewood.BookPortal.Server.exe
       - name: Build reproducible Windows package
         shell: powershell
         run: |

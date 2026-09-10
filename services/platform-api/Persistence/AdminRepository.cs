@@ -485,6 +485,12 @@ internal sealed class AdminRepository(string connectionString)
         }
     }
     private static AdminUserDto ReadUser(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(4), reader.GetInt32(5) == 1, reader.IsDBNull(6) ? null : new OrganizationDto(reader.GetString(6), reader.GetString(7)), DateTimeOffset.Parse(reader.GetString(8)), DateTimeOffset.Parse(reader.GetString(9)), reader.IsDBNull(3) ? null : reader.GetString(3));
+    public AdminOrganizationDto? GetOrganization(string id)
+    {
+        using var connection = Open();
+        return GetOrganization(connection, id);
+    }
+
     private static AdminOrganizationDto ReadOrganization(SqliteDataReader reader) => new(reader.GetString(0), reader.GetString(1), reader.GetInt32(2) == 1, reader.GetInt32(3), DateTimeOffset.Parse(reader.GetString(4)), DateTimeOffset.Parse(reader.GetString(5)));
     private static AdminOrganizationDto? GetOrganization(SqliteConnection connection, string id) { using var command = connection.CreateCommand(); command.CommandText = "SELECT o.id, o.name, o.is_active, COUNT(u.id), o.created_at, o.updated_at FROM organizations o LEFT JOIN users u ON u.organization_id = o.id WHERE o.id = $id GROUP BY o.id, o.name, o.is_active, o.created_at, o.updated_at;"; command.Parameters.AddWithValue("$id", id); using var reader = command.ExecuteReader(); return reader.Read() ? ReadOrganization(reader) : null; }
     private static bool CanAssignOrganization(SqliteConnection connection, SqliteTransaction transaction, string? requestedId, string? currentId) { if (string.IsNullOrWhiteSpace(requestedId)) return true; var id = requestedId.Trim(); using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "SELECT is_active FROM organizations WHERE id = $id;"; command.Parameters.AddWithValue("$id", id); var value = command.ExecuteScalar(); return value is not null && (Convert.ToInt32(value) == 1 || id == currentId); }

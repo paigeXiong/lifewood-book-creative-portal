@@ -1522,3 +1522,7 @@ td {
 .organization-members-link:hover { color: #008568; text-decoration-color: currentColor; }
 .organization-members-link:focus-visible { outline: 2px solid #267754; outline-offset: 3px; }
 .organization-member-count { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; }
+
+.organization-identity-link { display: inline-flex; max-width: 100%; vertical-align: middle; text-decoration: none; }
+.organization-wordmark { display: block; width: 216px; max-width: 100%; height: auto; aspect-ratio: 6 / 1; object-fit: contain; border-radius: 5px; }
+.organization-identity-link:hover .organization-wordmark { filter: brightness(.97); }

@@ -25,3 +25,7 @@ describe("runtimeAdminUrl", () => {
     )).toBe("http://[::1]:5077/admin/zh-CN/settings/runtime");
   });
 });
+
+it("uses the separate admin listener after restarting", () => {
+  expect(runtimeAdminUrl({scheme:"http",listenAddress:"127.0.0.1",port:5077,admin:{scheme:"https",listenAddress:"0.0.0.0",port:5444,shared:false}}, "en-US", "server.example")).toBe("https://server.example:5444/admin/en-US/settings/runtime");
+});

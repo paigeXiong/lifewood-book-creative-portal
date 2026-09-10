@@ -16,9 +16,12 @@
   background: #e9efeb;
 }
 .settings-tabs a {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   flex: 0 0 auto;
   min-height: 36px;
   padding: 7px 13px;
@@ -37,7 +40,7 @@
   color: #173d2f;
 }
 .settings-tabs a[aria-current="page"] {
-  background: #225341;
+  background: transparent;
   color: #fff;
   font-weight: 650;
   box-shadow: none;
@@ -49,5 +52,61 @@
 }
 @media (max-width: 720px) {
   .settings-tabs { width: 100%; }
-  .settings-tabs a { min-height: 40px; padding-inline: 12px; }
+  .settings-tabs a {
+  position: relative;
+  isolation: isolate; min-height: 40px; padding-inline: 12px; }
+}
+
+.settings-tab-icon { flex: 0 0 16px; width: 16px; height: 16px; }
+
+.settings-tab-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: #225341;
+  view-transition-name: settings-selection;
+  pointer-events: none;
+}
+.settings-tab-label { display: inline-flex; align-items: center; gap: 6px; }
+/* Keep the page live; only the selected background travels between tabs. */
+:root:has(.settings-tabs)::view-transition { pointer-events: none; }
+:root:has(.settings-tabs)::view-transition-old(root) { display: none; }
+:root:has(.settings-tabs)::view-transition-new(root) { animation: none; }
+::view-transition-group(settings-selection) {
+  z-index: 1;
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(.22, 1, .36, 1);
+}
+::view-transition-old(settings-selection) { display: none; }
+::view-transition-new(settings-selection) { animation: none; height: 100%; }
+::view-transition-group(settings-label-options) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-options) { display: none; }
+::view-transition-new(settings-label-options) { animation: none; }
+::view-transition-group(settings-label-files) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-files) { display: none; }
+::view-transition-new(settings-label-files) { animation: none; }
+::view-transition-group(settings-label-characters) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-characters) { display: none; }
+::view-transition-new(settings-label-characters) { animation: none; }
+::view-transition-group(settings-label-voices) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-voices) { display: none; }
+::view-transition-new(settings-label-voices) { animation: none; }
+::view-transition-group(settings-label-ai) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-ai) { display: none; }
+::view-transition-new(settings-label-ai) { animation: none; }
+::view-transition-group(settings-label-announcements) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-announcements) { display: none; }
+::view-transition-new(settings-label-announcements) { animation: none; }
+::view-transition-group(settings-label-notifications) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-notifications) { display: none; }
+::view-transition-new(settings-label-notifications) { animation: none; }
+::view-transition-group(settings-label-backups) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-backups) { display: none; }
+::view-transition-new(settings-label-backups) { animation: none; }
+::view-transition-group(settings-label-runtime) { animation: none; z-index: 2; }
+::view-transition-old(settings-label-runtime) { display: none; }
+::view-transition-new(settings-label-runtime) { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(settings-selection) { animation-duration: 0s; }
 }

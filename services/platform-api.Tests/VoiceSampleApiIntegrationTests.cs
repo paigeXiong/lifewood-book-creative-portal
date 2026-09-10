@@ -51,6 +51,33 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AuditToolsRespectPermissionsAndRecordNotificationChanges()
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var customer = await CreateCustomerClient(csrf);
+        foreach(var path in new[]{"/api/admin/audit-events", "/api/admin/audit-events/export", "/api/admin/runtime-health"})
+            Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync(path)).StatusCode);
+        var rules = await ownerClient.GetFromJsonAsync<NotificationRules>("/api/admin/notifications/rules");
+        var rule = rules!.Items.First();
+        using var save = await Send(ownerClient,HttpMethod.Put,"/api/admin/notifications/rules",csrf,JsonContent.Create(rule with {Enabled=!rule.Enabled}));
+        Assert.Equal(HttpStatusCode.OK,save.StatusCode);
+        var audit = await ownerClient.GetFromJsonAsync<PagedAuditEventsDto>("/api/admin/audit-events?actionId=notification.config");
+        var item = Assert.Single(audit!.Items);
+        Assert.Equal("rules/"+rule.Kind,item.TargetId);
+        Assert.NotNull(item.Context);
+        Assert.Contains(item.Context!.Changes!,x=>x.Field=="enabled" && x.Before!=x.After);
+        using var export = await ownerClient.GetAsync("/api/admin/audit-events/export?actionId=notification.config&locale=en-US");
+        Assert.Equal(HttpStatusCode.OK,export.StatusCode);
+        Assert.Equal("text/csv",export.Content.Headers.ContentType!.MediaType);
+        Assert.Contains("Changed notification configuration",await export.Content.ReadAsStringAsync());
+        Assert.DoesNotContain(item.TraceId,await export.Content.ReadAsStringAsync());
+        using var health = await ownerClient.GetAsync("/api/admin/runtime-health");
+        Assert.Equal(HttpStatusCode.OK,health.StatusCode);
+        Assert.DoesNotContain(root,await health.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task BootstrapRejectsNonLoopbackClients()
     {
         var remoteRoot = Path.Combine(Path.GetTempPath(), "lifewood-platform-remote-bootstrap-" + Guid.NewGuid().ToString("N"));
@@ -1065,6 +1092,80 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OrganizationWordmarksRequirePermissionAndRefreshAfterRename()
+    {
+        await BootstrapOwner();var csrf=await GetCsrf(ownerClient);
+        using var created=await Send(ownerClient,HttpMethod.Post,"/api/admin/organizations",csrf,JsonContent.Create(new CreateOrganizationRequest("lifewood wordmark")));
+        Assert.Equal(HttpStatusCode.OK,created.StatusCode);var org=(await created.Content.ReadFromJsonAsync<AdminOrganizationDto>())!;
+        using var image=await ownerClient.GetAsync(org.AvatarUrl);Assert.Equal(HttpStatusCode.OK,image.StatusCode);Assert.Equal("image/svg+xml",image.Content.Headers.ContentType!.MediaType);
+        Assert.True(image.Headers.CacheControl!.NoStore);Assert.Contains("LIFEWOOD WORDMARK",await image.Content.ReadAsStringAsync());
+        using var customer=await CreateCustomerClient(csrf);Assert.Equal(HttpStatusCode.Forbidden,(await customer.GetAsync(org.AvatarUrl)).StatusCode);
+        using var anonymous=factory.CreateClient(new WebApplicationFactoryClientOptions {HandleCookies=false});Assert.Equal(HttpStatusCode.Unauthorized,(await anonymous.GetAsync(org.AvatarUrl)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,(await ownerClient.GetAsync("/api/admin/organizations/missing/avatar")).StatusCode);
+        using var update=await Send(ownerClient,HttpMethod.Put,$"/api/admin/organizations/{org.Id}",csrf,JsonContent.Create(new UpdateOrganizationRequest("新组织名称",true)));
+        Assert.Equal(HttpStatusCode.OK,update.StatusCode);var renamed=(await update.Content.ReadFromJsonAsync<AdminOrganizationDto>())!;Assert.NotEqual(org.AvatarUrl,renamed.AvatarUrl);
+        Assert.Contains("新组织名称",await ownerClient.GetStringAsync(renamed.AvatarUrl));
+    }
+
+    [Fact]
+    public async Task OwnerCanCreateDownloadAndDeleteVerifiedBackup()
+    {
+        await BootstrapOwner(); var csrf = await GetCsrf(ownerClient);
+        using var customer = await CreateCustomerClient(csrf);
+        Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync("/api/admin/backups")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync("/api/admin/backups/restore")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync("/api/admin/backups/restore/history")).StatusCode);
+        var customerCsrf=await GetCsrf(customer);
+        using var blockedPreflight=await Send(customer,HttpMethod.Post,"/api/admin/backups/not-owned/preflight",customerCsrf,JsonContent.Create(new {}));
+        Assert.Equal(HttpStatusCode.Forbidden,blockedPreflight.StatusCode);
+        using var blockedRestore=await Send(customer,HttpMethod.Post,"/api/admin/backups/restore",customerCsrf,JsonContent.Create(new RestoreRequest("invalid","RESTORE")));
+        Assert.Equal(HttpStatusCode.Forbidden,blockedRestore.StatusCode);
+        using var blockedVerify=await Send(customer,HttpMethod.Post,"/api/admin/backups/not-owned/verify",customerCsrf,JsonContent.Create(new {}));
+        Assert.Equal(HttpStatusCode.Forbidden,blockedVerify.StatusCode);
+        var initial = await ownerClient.GetFromJsonAsync<BackupPage>("/api/admin/backups"); Assert.False(initial!.Schedule.Policy.Enabled);
+        using var request = await Send(ownerClient, HttpMethod.Post, "/api/admin/backups", csrf, JsonContent.Create(new {}));
+        Assert.Equal(HttpStatusCode.Accepted, request.StatusCode); var job = (await request.Content.ReadFromJsonAsync<BackupRecord>())!;
+        BackupRecord? result = null;
+        for (var i = 0; i < 200; i++) {
+            var list = (await ownerClient.GetFromJsonAsync<BackupPage>("/api/admin/backups/"))!; result = list.Items.Single(x => x.Id == job.Id);
+            if (result.Status is "completed" or "failed") break; await Task.Delay(100);
+        }
+        Assert.Equal("completed", result!.Status); Assert.True(result.Size > 0);
+        var previousCheck=result.VerifiedAt;
+        using var verification=await Send(ownerClient,HttpMethod.Post,$"/api/admin/backups/{job.Id}/verify",csrf,JsonContent.Create(new {}));Assert.Equal(HttpStatusCode.Accepted,verification.StatusCode);
+        for(var i=0;i<200;i++){var list=(await ownerClient.GetFromJsonAsync<BackupPage>("/api/admin/backups"))!;result=list.Items.Single(x=>x.Id==job.Id);if(list.Current is null && result.VerifiedAt>previousCheck)break;await Task.Delay(100);}
+        Assert.Equal("passed",result.VerificationStatus);Assert.True(result.VerifiedAt>previousCheck);
+        Assert.Equal(HttpStatusCode.OK,(await ownerClient.GetAsync("/api/me")).StatusCode);
+        var me=(await ownerClient.GetFromJsonAsync<CurrentUserDto>("/api/me"))!;
+        var historical=new RestoreJournal(new RestoreState(Guid.NewGuid().ToString("N"),job.Id,"completed",DateTimeOffset.UtcNow,job.Id),root,root+".backups",null,1,"hidden-executable",[],"hidden-directory",DateTimeOffset.UtcNow,job.CreatedAt,me.Id);
+        Lifewood.PlatformApi.Features.RestoreHistory.Save(historical);
+        var history=(await ownerClient.GetFromJsonAsync<RestoreHistoryPage>("/api/admin/backups/restore/history"))!;
+        Assert.Equal(me.DisplayName,Assert.Single(history.Items).ActorName);Assert.Equal(job.Id,history.Items[0].SafetyBackup!.Id);
+        var historyJson=await ownerClient.GetStringAsync("/api/admin/backups/restore/history");Assert.DoesNotContain("hidden-executable",historyJson);Assert.DoesNotContain("actorId",historyJson);
+
+        using var download = await ownerClient.GetAsync($"/api/admin/backups/{job.Id}/download");Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        using var zip = new System.IO.Compression.ZipArchive(new MemoryStream(await download.Content.ReadAsByteArrayAsync()));
+        Assert.NotNull(zip.GetEntry("platform.db"));Assert.NotNull(zip.GetEntry(Lifewood.PlatformApi.Features.BackupArchive.ManifestName));
+        using var deletion = await Send(ownerClient, HttpMethod.Delete, $"/api/admin/backups/{job.Id}", csrf, null);Assert.Equal(HttpStatusCode.NoContent, deletion.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,(await ownerClient.GetAsync($"/api/admin/backups/{job.Id}/download")).StatusCode);
+        var afterDelete=(await ownerClient.GetFromJsonAsync<RestoreHistoryPage>("/api/admin/backups/restore/history"))!;Assert.Null(Assert.Single(afterDelete.Items).SafetyBackup);
+
+    }
+
+    [Fact]
+    public async Task SnapshotGateBlocksWritesButBackupStatusRemainsReadable()
+    {
+        await BootstrapOwner(); var gate = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Lifewood.PlatformApi.Features.BackupGate>(factory.Services);
+        using (await gate.PauseAsync(CancellationToken.None)) {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable,(await ownerClient.GetAsync("/api/me")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK,(await ownerClient.GetAsync("/api/admin/backups/")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK,(await ownerClient.GetAsync("/api/admin/backups/restore/")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK,(await ownerClient.GetAsync("/api/admin/backups/restore/history/")).StatusCode);
+        }
+        Assert.Equal(HttpStatusCode.OK,(await ownerClient.GetAsync("/api/me")).StatusCode);
+    }
+
+    [Fact]
     public async Task OwnerCanPersistValidatedRuntimeSettings()
     {
         await BootstrapOwner();
@@ -1866,6 +1967,7 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         await factory.DisposeAsync();
         SqliteConnection.ClearAllPools();
         await DeleteTestDirectoryAsync(root);
+        if (Directory.Exists(root + ".backups")) await DeleteTestDirectoryAsync(root + ".backups");
     }
 
     private static async Task DeleteTestDirectoryAsync(string directory)

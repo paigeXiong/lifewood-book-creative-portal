@@ -1,7 +1,7 @@
 import {LoginSessions} from "@lifewood/ui/login-sessions";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { useConfirm, useConfirmLink } from "../useConfirm";
-import { lazy, Suspense, useRef, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -24,9 +24,16 @@ export function ProfilePage() {
   const [displayName, setDisplayName] = useState<string>();
   const [phone, setPhone] = useState<string>();
   const [saved, setSaved] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const avatarButtonRef = useRef<HTMLButtonElement>(null);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (!editing && wasEditing.current) editButtonRef.current?.focus({ preventScroll: true });
+    wasEditing.current = editing;
+  }, [editing]);
 
   const updateProfile = useMutation({
     mutationFn: () => authService.updateProfile({
@@ -39,6 +46,7 @@ export function ProfilePage() {
       setDisplayName(updated.displayName);
       setPhone(updated.phone ?? "");
       setSaved(true);
+      setEditing(false);
     },
   });
   const avatarUpdate = useMutation({
@@ -63,6 +71,7 @@ export function ProfilePage() {
 
 
   if (!isSupportedLocale(locale)) return null;
+  if (userQuery.isError) return <div className="screen-status" role="alert">{localizedApiError(userQuery.error, t)} <button className="button button-secondary" onClick={() => void userQuery.refetch()}>{t("common.retry")}</button></div>;
   if (userQuery.isPending || !user) return <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={dirty} />{t("common.loading")}</div>;
   const role = user.roles[0] ?? "member";
   const roleLabel = t(`profile.roles.${role}`, { defaultValue: t("profile.roles.member") });
@@ -85,12 +94,12 @@ export function ProfilePage() {
             </span>
           </button>
           <div className="profile-person-copy">
-            <span className="profile-eyebrow">{t("profile.identityEyebrow")}</span>
+
             <h1>{user.displayName}</h1>
-            <p>{user.organization?.name || t("profile.notAssigned")}</p>
+
             <div className="profile-identity-meta">
               <span>{roleLabel}</span>
-              {user.email ? <span>{user.email}</span> : null}
+
             </div>
           </div>
         </div>
@@ -103,22 +112,28 @@ export function ProfilePage() {
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c.5-4 2.8-6 7-6s6.5 2 7 6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
             </span>
             <span><h2 id="profile-contact-title">{t("profile.contactTitle")}</h2></span>
+            {!editing && <button ref={editButtonRef} className="button button-secondary profile-edit-button" type="button" onClick={() => { setEditing(true); setSaved(false); updateProfile.reset(); }}>{t("profile.edit")}</button>}
           </div>
-          <div className="profile-fields">
+          {editing ? <div className="profile-fields">
             <label className="profile-field" htmlFor="profile-display-name">
               <span>{t("profile.displayName")}</span>
-              <input id="profile-display-name" name="displayName" type="text" autoComplete="name" required minLength={2} maxLength={100} value={currentDisplayName} onChange={(event) => { setDisplayName(event.target.value); setSaved(false); }} />
+              <input autoFocus disabled={updateProfile.isPending} id="profile-display-name" name="displayName" type="text" autoComplete="name" required minLength={2} maxLength={100} value={currentDisplayName} onChange={(event) => { setDisplayName(event.target.value); setSaved(false); }} />
             </label>
             <label className="profile-field" htmlFor="profile-phone">
               <span>{t("profile.phone")}</span>
-              <input id="profile-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={currentPhone} onChange={(event) => { setPhone(event.target.value); setSaved(false); }} />
+              <input disabled={updateProfile.isPending} id="profile-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={currentPhone} onChange={(event) => { setPhone(event.target.value); setSaved(false); }} />
             </label>
           </div>
+          : <dl className="profile-contact-list">
+            <div><dt>{t("profile.displayName")}</dt><dd>{user.displayName}</dd></div>
+            <div><dt>{t("profile.phone")}</dt><dd>{user.phone || t("profile.notSet")}</dd></div>
+          </dl>}
           {updateProfile.isError ? <p className="inline-error" role="alert">{localizedApiError(updateProfile.error, t)}</p> : null}
           {saved ? <p className="profile-success" role="status">{t("profile.saved")}</p> : null}
-          <div className="profile-actions">
+          {editing && <div className="profile-actions">
+            <button className="button button-secondary" type="button" disabled={updateProfile.isPending} onClick={() => { setDisplayName(undefined); setPhone(undefined); setEditing(false); updateProfile.reset(); }}>{t("common.cancel")}</button>
             <button className="button button-primary" type="submit" disabled={updateProfile.isPending || unchanged}>{updateProfile.isPending ? t("common.saving") : t("profile.save")}</button>
-          </div>
+          </div>}
         </form>
 
         <div className="profile-side-stack">

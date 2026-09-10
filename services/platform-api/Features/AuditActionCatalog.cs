@@ -11,6 +11,17 @@ internal static class AuditActionCatalog
 
     private static readonly Definition[] Definitions =
     [
+        new("backup.preflight", "校验恢复备份", "Checked restore backup"),
+        new("backup.restore", "恢复平台备份", "Requested platform restore"),
+        new("backup.verify", "请求备份校验", "Requested backup verification"),
+        new("backup.verified", "备份校验通过", "Backup verification passed"),
+        new("backup.verification_failed", "备份校验未通过", "Backup verification did not pass"),
+        new("backup.create", "创建备份", "Requested backup"),
+        new("backup.completed", "备份完成", "Completed backup"),
+        new("backup.download", "下载备份", "Downloaded backup"),
+        new("backup.delete", "删除备份", "Deleted backup"),
+        new("backup.pruned", "清理过期自动备份", "Pruned scheduled backup"),
+        new("backup.policy", "修改备份策略", "Changed backup policy"),
         new("notification.config", "修改通知配置", "Changed notification configuration"),
         new("notification.retry", "重试通知", "Retried notification delivery"),
         new("announcement.delete", "删除公告草稿", "Deleted announcement draft"),

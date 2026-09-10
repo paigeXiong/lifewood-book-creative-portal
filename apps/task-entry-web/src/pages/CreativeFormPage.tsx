@@ -1,3 +1,4 @@
+import { safeLinkUrl } from "@lifewood/domain";
 import { SaveFeedback } from "../components/SaveFeedback";
 import { useDraftRecovery, focusSaveIssue } from "../useDraftRecovery";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
@@ -135,7 +136,7 @@ function ReferenceImageField({
             <ul className="reference-image-grid">
               {assets.map((asset) => (
                 <li key={asset.id}>
-                  <a href={asset.url} target="_blank" rel="noreferrer">
+                  <a href={safeLinkUrl(asset.url, true)} target="_blank" rel="noreferrer">
                     <img src={asset.url} alt={asset.fileName} width="112" height="84" loading="lazy" />
                   </a>
                   <button type="button" disabled={busy} aria-label={t("creative.removeReferenceImage", { name: asset.fileName })} onClick={() => void onRemove(asset)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>

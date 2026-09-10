@@ -17,7 +17,10 @@ import type {
   CurrentUser,
   FormOptions,
   RuntimeAction,
+  BackupPage, BackupPolicy, BackupRecord, BackupSchedule, RestorePreview, RestoreState, RestoreOverview, RestoreHistoryPage,
   RuntimeSettings,
+  WebListenerSettings,
+  RuntimeHealth,
   PagedResult,
   ProjectStats,
   ProjectValidationResult,
@@ -446,8 +449,20 @@ export const adminService = {
   deleteAiProvider: (id: string, locale: SupportedLocale) =>
     request<AiSettings>('/admin/ai-settings/providers/' + encodeURIComponent(id), { method: "DELETE", locale }),
   getOverview: () => request<AdminOverview>("/admin/overview"),
+  restoreHistory: (page: number, status: string, signal?: AbortSignal) => request<RestoreHistoryPage>("/admin/backups/restore/history?"+new URLSearchParams({page:String(page),status}), {signal}),
+  restoreOverview: () => request<RestoreOverview>("/admin/backups/restore"),
+  preflightRestore: (id: string, signal?: AbortSignal) => request<RestorePreview>(`/admin/backups/${encodeURIComponent(id)}/preflight`, {method:"POST",body:"{}",signal}),
+  restoreBackup: (token: string, confirmation: string) => request<RestoreState>("/admin/backups/restore", {method:"POST",body:JSON.stringify({token,confirmation})}),
+  listBackups: (page: number, source: string, status: string, verification = "") => request<BackupPage>("/admin/backups?" + new URLSearchParams({page:String(page),source,status,verification})),
+  verifyBackup: (id: string) => request<BackupRecord>(`/admin/backups/${id}/verify`, {method:"POST",body:"{}"}),
+  createBackup: () => request<BackupRecord>("/admin/backups", {method:"POST",body:"{}"}),
+  saveBackupPolicy: (policy: BackupPolicy) => request<BackupSchedule>("/admin/backups/policy", {method:"PUT",body:JSON.stringify(policy)}),
+  deleteBackup: (id: string) => request<void>(`/admin/backups/${encodeURIComponent(id)}`, {method:"DELETE"}),
+  downloadBackup: (id: string, signal?: AbortSignal) => request<Blob>(`/admin/backups/${encodeURIComponent(id)}/download`, {responseType:"blob",signal}),
+  getRuntimeHealth: () => request<RuntimeHealth>("/admin/runtime-health"),
+  exportAuditEvents: (filters: Record<string,string>, locale: SupportedLocale, signal?:AbortSignal) => request<Blob>("/admin/audit-events/export?" + new URLSearchParams({...filters,locale}), {responseType:"blob", signal, locale}),
   getRuntimeSettings: () => request<RuntimeSettings>("/admin/runtime-settings"),
-  updateRuntimeSettings: (settings: { scheme: "http" | "https"; listenAddress: string; port: number }) =>
+  updateRuntimeSettings: (settings: { scheme: "http" | "https"; listenAddress: string; port: number; customer?: WebListenerSettings; admin?: WebListenerSettings }) =>
     request<RuntimeSettings>("/admin/runtime-settings", { method: "PUT", body: JSON.stringify(settings) }),
   restartPlatform: () =>
     request<RuntimeAction>("/admin/runtime-actions/restart", { method: "POST", body: JSON.stringify({}) }),

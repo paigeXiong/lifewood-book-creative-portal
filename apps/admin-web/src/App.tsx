@@ -1,5 +1,4 @@
 import {SavedViews} from "@lifewood/ui/saved-views";
-import {LoginSessions} from "@lifewood/ui/login-sessions";
 import {readBatchDraft} from "./BatchEditor";
 import {customerPortalUrl} from "./portal-url";
 export {customerPortalUrl} from "./portal-url";
@@ -70,7 +69,6 @@ import { getNarrationEnabled } from "@lifewood/domain";
 import { FinalDeliveryPanel } from "./FinalDeliveryPanel";
 import { ModalFrame } from "./ModalFrame";
 import {
-  ChangeOwnPasswordDialog,
   ResetUserPasswordDialog,
 } from "./PasswordDialogs";
 import { showAdminToast, ToastHost } from "./Toast";
@@ -78,7 +76,6 @@ import { useUnsavedClose } from "./useUnsavedClose";
 import { loadAllOrganizations } from "./organization-loader";
 
 const AnnouncementsPage = lazy(() => import("./AnnouncementsPage").then(module => ({ default: module.AnnouncementsPage })));
-const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((module) => ({ default: module.AvatarEditor })));
 const ReportsPage = lazy(()=>import("./ReportsPage").then(module=>({default:module.ReportsPage})));
 const WorkbenchPage = lazy(() => import("./WorkbenchPage").then(module=>({default:module.WorkbenchPage})));
 const OverviewPage = lazy(() => import("./OverviewPage").then((module) => ({ default: module.OverviewPage })));
@@ -89,6 +86,7 @@ const FileCategoryConfigPage = lazy(() => import("./FileCategoryConfigPage").the
 const CharacterPresetsPage = lazy(() => import("./CharacterPresetsPage").then(module => ({ default: module.CharacterPresetsPage })));
 const VoiceConfigPage = lazy(() => import("./VoiceConfigPage").then((module) => ({ default: module.VoiceConfigPage })));
 const AiSettingsPage = lazy(() => import("./AiSettingsPage").then(module => ({ default: module.AiSettingsPage })));
+const BackupsPage = lazy(() => import("./BackupsPage").then(module => ({ default: module.BackupsPage })));
 const SystemRuntimePage = lazy(() => import("./SystemRuntimePage").then((module) => ({ default: module.SystemRuntimePage })));
 
 type AdminNavIconName = "home" | "overview" | "projects" | "users" | "organizations" | "audit" | "settings";
@@ -121,7 +119,7 @@ function adminAssetUrl(projectId: string, url: string) {
   const fileId = url.split("/").at(-1);
   return fileId
     ? `/api/admin/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`
-    : url;
+    : undefined;
 }
 
 export function resolveProjectSelection(
@@ -302,7 +300,6 @@ function AdminShell({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const confirm = useConfirm();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -318,22 +315,9 @@ function AdminShell({
   const [accountOpen, setAccountOpen] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
   const [logoutFailed, setLogoutFailed] = useState(false);
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
-  const avatarTriggerRef = useRef<HTMLButtonElement>(null);
   const accountId = useId();
   const accountRef = useRef<HTMLDivElement>(null);
   const accountTriggerRef = useRef<HTMLButtonElement>(null);
-  const [avatarFeedback, setAvatarFeedback] = useState<string>();
-  const avatarUpdate = useMutation({
-    mutationFn: (action: { file?: File; remove?: boolean }) => action.remove ? authService.removeAvatar() : authService.uploadAvatar(action.file!),
-    onMutate: () => setAvatarFeedback(undefined),
-    onSuccess: (updated, action) => {
-      queryClient.setQueryData(["admin-me"], updated);
-      setAvatarFeedback(t(action.remove ? "admin.account.avatarRemoved" : "admin.account.avatarUpdated"));
-      setAvatarEditorOpen(false);
-    },
-  });
   useEffect(() => {
     if (!accountOpen) return;
     const closeOutside = (event: PointerEvent) => {
@@ -353,11 +337,6 @@ function AdminShell({
       document.removeEventListener("keydown", closeEscape);
     };
   }, [accountOpen]);
-  useEffect(() => {
-    if (!avatarFeedback) return;
-    const timer = window.setTimeout(() => setAvatarFeedback(undefined), 3200);
-    return () => window.clearTimeout(timer);
-  }, [avatarFeedback]);
   const logout = async () => {
     setLogoutPending(true);
     setLogoutFailed(false);
@@ -397,7 +376,7 @@ function AdminShell({
           </div>
         </div>
         <nav className="admin-navigation" aria-label={t("admin.navGroups.label")}>
-          {user.permissions.includes("tasks.read") && <a className="nav-home" href={customerPortalUrl(locale)}>
+          {user.permissions.includes("tasks.read") && <a className="nav-home" href={`/api/portals/customer?locale=${locale}`}>
             <span className="nav-icon" aria-hidden="true">
               <AdminNavIcon name="home" />
             </span>
@@ -459,14 +438,15 @@ function AdminShell({
                 <option value="en-US">English</option>
               </select>
             </label>
-            <div className="admin-account" ref={accountRef}>
-              <button ref={avatarTriggerRef} className="admin-avatar-trigger" type="button" aria-label={t("admin.account.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
+            <div className="admin-account portal-account-control" ref={accountRef}>
+              <a className="admin-avatar-trigger" href={`/api/portals/profile?locale=${locale}`} aria-label={t("nav.profile")}>
                 <img className="account-avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" />
-              </button>
+              </a>
               <button
                 ref={accountTriggerRef}
-                className="admin-account-trigger"
+                className="admin-account-trigger portal-account-trigger"
                 type="button"
+                aria-haspopup="dialog"
                 aria-expanded={accountOpen}
                 aria-controls={accountId}
                 aria-label={t("nav.accountMenu", { name: user.displayName })}
@@ -480,27 +460,22 @@ function AdminShell({
               {accountOpen && (
                 <div
                   id={accountId}
-                  className="admin-account-popover"
-                  role="region"
+                  className="admin-account-popover portal-account-menu"
+                  role="dialog"
                   aria-label={t("nav.account")}
                 >
-                  <div className="admin-account-identity">
-                    <button type="button" className="admin-account-avatar-preview" aria-label={t("admin.account.openAvatarEditor")} onClick={() => { setAccountOpen(false); setAvatarEditorOpen(true); }}>
+                  <div className="admin-account-identity portal-account-identity">
+                    <a className="admin-account-avatar-preview" href={`/api/portals/profile?locale=${locale}`} aria-label={t("nav.profile")}>
                       <img className="account-avatar account-avatar-large" src={user.avatarUrl || "/api/me/avatar"} alt="" width="46" height="46" />
-                    </button>
-                    <div><strong>{user.displayName}</strong>{user.email && <span>{user.email}</span>}{user.organization?.name && <span>{user.organization.name}</span>}<small>{user.roles.map((role) => t(`admin.roles.${role}`)).join(" · ")}</small></div>
+                    </a>
+                    <div><strong>{user.displayName}</strong>{user.email && <span>{user.email}</span>}{user.organization?.name && <span>{user.organization.name}</span>}</div>
                   </div>
+                  <a className="portal-account-action" href={`/api/portals/profile?locale=${locale}`}>
+                    {t("nav.profile")}
+                  </a>
+                  <AccountSwitcher user={user} destination={next=>next.permissions.includes("admin.access")?`${import.meta.env.BASE_URL.replace(/\/$/, "")}/${locale}/projects`:`/api/portals/customer?locale=${locale}`}/>
                   <button
-                    type="button"
-                    onClick={() => {
-                      setAccountOpen(false);
-                      setChangePasswordOpen(true);
-                    }}
-                  >
-                    {t("admin.account.changePassword")}
-                  </button>
-                  <LoginSessions key={user.id} userId={user.id}/><AccountSwitcher user={user} destination={next=>next.permissions.includes("admin.access")?`${import.meta.env.BASE_URL.replace(/\/$/, "")}/${locale}/projects`:customerPortalUrl(locale)}/>
-                  <button
+                    className="portal-account-action"
                     type="button"
                     disabled={logoutPending}
                     onClick={() => void logout()}
@@ -522,27 +497,8 @@ function AdminShell({
         </div>
       </div>
       <UserPresence key={`presence-${user.id}`} userId={user.id}/><AccountSessionGuard key={user.id} userId={user.id}/>
-      {avatarFeedback && <p className="avatar-update-toast" role="status" aria-live="polite">{avatarFeedback}</p>}
       <ToastHost />
-      {changePasswordOpen && (
-        <ChangeOwnPasswordDialog onClose={() => setChangePasswordOpen(false)} />
-      )}
-      {avatarEditorOpen && <Suspense fallback={null}><AvatarEditor
-        avatarUrl={user.avatarUrl || "/api/me/avatar"}
-        displayName={user.displayName}
-        hasCustomAvatar={Boolean(user.hasCustomAvatar)}
-        busy={avatarUpdate.isPending}
-        error={avatarUpdate.isError ? t("admin.account.avatarFailed") : undefined}
-        onClose={() => { if (!avatarUpdate.isPending) { setAvatarEditorOpen(false); avatarUpdate.reset(); } }}
-        onSave={(file) => avatarUpdate.mutate({ file })}
-        onRemove={async () => { if (await confirm(t("admin.account.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
-        returnFocus={avatarTriggerRef.current}
-        labels={{
-          title: t("admin.account.avatarEditorTitle"), close: t("common.close"), choose: t("admin.account.chooseAvatar"), chooseAnother: t("admin.account.chooseAnotherAvatar"),
-          instruction: t("admin.account.avatarCropInstruction"), zoom: t("admin.account.avatarZoom"), cancel: t("common.cancel"), save: t("admin.account.saveAvatar"),
-          saving: t("admin.account.avatarUploading"), remove: t("admin.account.removeAvatar"), invalidImage: t("admin.account.avatarSourceInvalid"),
-        }}
-      /></Suspense>}
+
     </div>
   );
 }
@@ -1856,7 +1812,7 @@ function AdminRoot() {
         <Route path="projects" element={<ProjectsPage locale={locale} user={me.data} />} />
         <Route path="users" element={<UsersPage locale={locale} currentUserId={me.data.id} />} />
         <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
-        <Route path="audit" element={<AuditPage locale={locale} />} />
+        <Route path="audit" element={<AuditPage key={me.data.id} locale={locale} userId={me.data.id} />} />
         <Route path="settings/announcements" element={<AnnouncementsPage locale={locale} />} />
         <Route path="settings/characters" element={<CharacterPresetsPage locale={locale} imageBase={customerPortalUrl(locale)} />} />
         <Route path="settings/ai" element={<AiSettingsPage locale={locale} />} />
@@ -1873,9 +1829,10 @@ function AdminRoot() {
           path="settings/voices"
           element={<VoiceConfigPage locale={locale} />}
         />
+        <Route path="settings/backups" element={<BackupsPage key={me.data.id} locale={locale} userId={me.data.id} allowed={me.data.permissions.includes("admin.runtime.manage")} />} />
         <Route
           path="settings/runtime"
-          element={<SystemRuntimePage locale={locale} />}
+          element={<SystemRuntimePage key={me.data.id} locale={locale} userId={me.data.id} />}
         />
         <Route
           path="voices"

@@ -167,6 +167,9 @@ export function TaskListPage() {
 
   const statusLabel = status === "action_required" ? t("clientUx.actionRequired") : statusMap.get(status)?.label ?? t("tasks.filterLabel");
   const filtered = Boolean(search || status);
+  // The attention tab already represents this status; do not repeat it below the toolbar.
+  const chipStatus = status && status !== "action_required";
+  const hasFilterChips = Boolean(search || chipStatus);
   const emptyKind = search ? "noResults" : status === "action_required" ? "noAction" : status ? "noResults" : "new";
   const clearFilters = () => { setSearchDraft(""); updateFilters({ q: "", status: "", page: 1 }); };
   const sortLabel = (field: TaskSortField) => t(`tasks.columns.${field === "author" ? "book" : field}`);
@@ -222,9 +225,9 @@ export function TaskListPage() {
               </button>
             </div>
           </div>
-          {filtered && <div className="task-filter-chips" aria-label={t("tasks.listUx.activeFilters")}>
+          {hasFilterChips && <div className="task-filter-chips" aria-label={t("tasks.listUx.activeFilters")}>
             {search && <button type="button" className="task-filter-chip" aria-label={t("tasks.listUx.removeSearch", { value: search })} onClick={() => updateFilters({ q: "", page: 1 })}><span>{t("tasks.filters.keyword")}: {search}</span><span aria-hidden="true">×</span></button>}
-            {status && <button type="button" className="task-filter-chip" aria-label={t("tasks.listUx.removeStatus", { value: statusLabel })} onClick={() => updateFilters({ status: "", page: 1 })}><span>{statusLabel}</span><span aria-hidden="true">×</span></button>}
+            {chipStatus && <button type="button" className="task-filter-chip" aria-label={t("tasks.listUx.removeStatus", { value: statusLabel })} onClick={() => updateFilters({ status: "", page: 1 })}><span>{statusLabel}</span><span aria-hidden="true">×</span></button>}
             <button type="button" className="button button-quiet task-clear-filters" onClick={clearFilters}>{t("tasks.listUx.clearAll")}</button>
           </div>}
           <div className="table-scroll">

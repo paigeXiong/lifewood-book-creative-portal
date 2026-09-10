@@ -1,3 +1,4 @@
+import { safeLinkUrl } from "@lifewood/domain";
 import { RevisionNavigation, RevisionLink, ReviewSection, useRevisionPrevious } from "../revision-navigation";
 import { createId } from "../create-id";
 import { useContext, useRef, useState } from "react";
@@ -143,8 +144,7 @@ export function UpcomingStepPage() {
     label: voice.name,
   }));
   const referenceUrls = draft.voiceAndReferences.competitorUrls
-    .map((url) => url.trim())
-    .filter(Boolean);
+    .flatMap((url) => { const safe = safeLinkUrl(url); return safe ? [safe] : []; });
   const bookCover = draft.book.sourceAssets.find(
     (asset) => asset.categoryId === "book-cover",
   );
@@ -360,7 +360,7 @@ export function UpcomingStepPage() {
                   <ul className="receipt-links">
                     {draft.book.sourceAssets.map((asset) => (
                       <li key={asset.id}>
-                        <a href={asset.url}>{asset.fileName}</a>
+                        <a href={safeLinkUrl(asset.url, true)}>{asset.fileName}</a>
                       </li>
                     ))}
                   </ul>
@@ -573,7 +573,7 @@ export function UpcomingStepPage() {
                     <ul className="receipt-links">
                       {draft.voiceAndReferences.assets.map((asset) => (
                         <li key={asset.id}>
-                          <a href={asset.url}>{asset.fileName}</a>
+                          <a href={safeLinkUrl(asset.url, true)}>{asset.fileName}</a>
                         </li>
                       ))}
                     </ul>

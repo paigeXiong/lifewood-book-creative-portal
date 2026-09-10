@@ -1,6 +1,6 @@
 {
   "name": "@lifewood/test-console-removable",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,10 +8,10 @@
     "build": "tsc -b && vite build --mode test-console"
   },
   "dependencies": {
-    "@lifewood/api-client": "0.3.11",
-    "@lifewood/domain": "0.3.11",
-    "@lifewood/i18n": "0.3.11",
-    "@lifewood/ui": "0.3.11",
+    "@lifewood/api-client": "0.3.12",
+    "@lifewood/domain": "0.3.12",
+    "@lifewood/i18n": "0.3.12",
+    "@lifewood/ui": "0.3.12",
     "@tanstack/react-query": "^5.87.1",
     "i18next": "^25.5.2",
     "react": "^19.1.1",

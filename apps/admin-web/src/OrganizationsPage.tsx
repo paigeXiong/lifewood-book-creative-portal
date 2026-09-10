@@ -14,6 +14,12 @@ function formatDate(value: string, locale: SupportedLocale) {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function OrganizationIdentity({ organization }: { organization: AdminOrganization }) {
+  const [failed, setFailed] = useState(false);
+  if (!organization.avatarUrl || failed) return <span>{organization.name}</span>;
+  return <img className="organization-wordmark" src={organization.avatarUrl} alt={organization.name} title={organization.name} width="216" height="36" loading="lazy" decoding="async" onError={()=>setFailed(true)} />;
+}
+
 export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -93,7 +99,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
           </tr></thead>
           <tbody>{organizations.data?.items.map((organization) => (
             <tr key={organization.id}>
-              <td data-label={t("admin.organizations.name")}><strong>{picking ? organization.name : <Link className="organization-members-link" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}>{organization.name}</Link>}</strong></td>
+              <td data-label={t("admin.organizations.name")}><strong>{picking ? <OrganizationIdentity key={organization.avatarUrl} organization={organization} /> : <Link className="organization-members-link organization-identity-link" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}><OrganizationIdentity key={organization.avatarUrl} organization={organization} /></Link>}</strong></td>
               <td data-label={t("admin.organizations.members")}>{picking ? organization.memberCount : <Link className="organization-members-link organization-member-count" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} aria-label={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}>{organization.memberCount}</Link>}</td>
               <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
               <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>

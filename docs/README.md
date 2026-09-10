@@ -80,3 +80,7 @@ npm run stop:local
 - [账号永久注销](./account-closure.md)：注销确认、数据清理与保留范围、会话失效和不可恢复规则。
 
 - [退回修改前后对比](./revision-comparison.md)：管理员按单元查看字段变化及附件增删，兼容历史快照和中英文。
+
+- [审计增强与运行状态](./admin-audit-and-runtime.md)：可读对象、配置变化、CSV 导出和运行采样，以及隔离升级恢复验证。
+
+- [后台备份管理](./managed-backups.md)：一致性快照、负责人权限、手动与定时备份、校验、保留策略及恢复兼容性。

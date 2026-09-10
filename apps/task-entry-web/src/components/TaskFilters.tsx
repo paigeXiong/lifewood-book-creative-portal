@@ -46,7 +46,7 @@ export function TaskFilters({ status, statuses, onApply }: {
   return <>
     <button ref={buttonRef} className={`button button-secondary task-filter-button${activeCount ? " active" : ""}`} type="button" popoverTarget={id} aria-expanded={open} aria-controls={id} aria-haspopup="dialog">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" strokeLinejoin="round" /></svg>
-      {t("tasks.filters.open")}{activeCount > 0 && <span className="task-filter-count">{activeCount}</span>}
+      {t("tasks.filters.open")}<span className="task-filter-count" style={{ visibility: activeCount ? "visible" : "hidden" }} aria-hidden={!activeCount}>{activeCount || 1}</span>
     </button>
     <div ref={panelRef} id={id} popover="auto" className="task-filter-popover" role="dialog" aria-labelledby={`${id}-title`} onToggle={(event) => {
       const nextOpen = event.newState === "open";

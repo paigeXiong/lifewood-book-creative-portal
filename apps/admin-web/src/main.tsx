@@ -6,17 +6,18 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AppErrorBoundary } from "@lifewood/ui/error-boundary";
 import "@lifewood/ui/tokens.css";
-import "@lifewood/ui/avatar-editor.css";
 import "@lifewood/ui/error-boundary.css";
 import "@lifewood/i18n";
 import "./i18n";
 import { App } from "./App";
+import { SettingsNavigationProvider } from "./SettingsTabs";
 import "./styles.css";
 import "./voice-config.css";
 import "./surface-theme.css";
+import "@lifewood/ui/account-menu.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000, refetchOnWindowFocus: false } } });
-const router = createBrowserRouter([{ path: "*", element: <App /> }], { basename: import.meta.env.BASE_URL.replace(/\/$/, "") || undefined });
+const router = createBrowserRouter([{ path: "*", element: <SettingsNavigationProvider><App /></SettingsNavigationProvider> }], { basename: import.meta.env.BASE_URL.replace(/\/$/, "") || undefined });
 
 function RootErrorBoundary({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();

@@ -1,3 +1,4 @@
+import { safeLinkUrl } from "@lifewood/domain";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -77,8 +78,7 @@ export function TaskDetailPage() {
     label: voice.name,
   }));
   const referenceUrls = task.data.voiceAndReferences.competitorUrls
-    .map((url) => url.trim())
-    .filter(Boolean);
+    .flatMap((url) => { const safe = safeLinkUrl(url); return safe ? [safe] : []; });
   const bookCover = task.data.book.sourceAssets.find(
     (asset) => asset.categoryId === "book-cover",
   );
@@ -274,7 +274,7 @@ export function TaskDetailPage() {
                     <ul className="receipt-links">
                       {task.data.book.sourceAssets.map((asset) => (
                         <li key={asset.id}>
-                          <a href={asset.url}>{asset.fileName}</a>
+                          <a href={safeLinkUrl(asset.url, true)}>{asset.fileName}</a>
                         </li>
                       ))}
                     </ul>
@@ -491,7 +491,7 @@ export function TaskDetailPage() {
                     <ul className="receipt-links">
                       {task.data.voiceAndReferences.assets.map((asset) => (
                         <li key={asset.id}>
-                          <a href={asset.url}>{asset.fileName}</a>
+                          <a href={safeLinkUrl(asset.url, true)}>{asset.fileName}</a>
                         </li>
                       ))}
                     </ul>

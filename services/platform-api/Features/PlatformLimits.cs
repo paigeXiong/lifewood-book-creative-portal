@@ -19,9 +19,7 @@ internal sealed class StorageQuota(string dataDirectory, PlatformLimits limits)
         await gate.WaitAsync(cancellationToken);
         try
         {
-            var used = Directory.EnumerateFiles(dataDirectory, "*", SearchOption.AllDirectories)
-                .Where(path => !Path.GetFileName(path).Equals("platform.lock", StringComparison.OrdinalIgnoreCase))
-                .Sum(path => new FileInfo(path).Length);
+            var used = MeasureFiles(Directory.EnumerateFiles(dataDirectory, "*", SearchOption.AllDirectories), cancellationToken);
             if (requestedBytes > limits.MaxStoredBytes - used)
             {
                 gate.Release();
@@ -30,6 +28,21 @@ internal sealed class StorageQuota(string dataDirectory, PlatformLimits limits)
             return new Reservation(gate);
         }
         catch { gate.Release(); throw; }
+    }
+    internal static long MeasureFiles(IEnumerable<string> paths, CancellationToken token)
+    {
+        long used = 0;
+        foreach (var path in paths)
+        {
+            token.ThrowIfCancellationRequested();
+            if (Path.GetFileName(path).Equals("platform.lock", StringComparison.OrdinalIgnoreCase)) continue;
+            try { used = checked(used + new FileInfo(path).Length); }
+            // SQLite journals and staged files may disappear between enumeration and stat.
+            // Only a missing file is safe to omit; permissions and other I/O errors still fail closed.
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+        }
+        return used;
     }
     private sealed class Reservation(SemaphoreSlim gate) : IAsyncDisposable
     {

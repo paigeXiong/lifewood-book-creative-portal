@@ -21,3 +21,10 @@ backups/
 # Browser verification output
 test-results/
 playwright-report/
+
+# Managed backup archives contain private platform data.
+**/*.backups/
+
+# Private managed restore staging and rollback directories.
+**/*.restore-*/
+**/*.rollback-*/

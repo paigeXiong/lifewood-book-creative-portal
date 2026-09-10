@@ -27,6 +27,8 @@ if (DatabaseIntegrityCommand.TryRun(args, out var databaseValidationExitCode))
     return;
 }
 
+if (await RestoreEngine.TryRun(args)) return;
+
 RestartWaiter.Wait(args);
 var serviceMode = OperatingSystem.IsWindows() && WindowsServiceHelpers.IsWindowsService();
 var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
@@ -85,9 +87,11 @@ using var restoreStartupLock = RestoreStartupLock.Acquire(
     dataDirectory,
     builder.Configuration["Lifewood:CoordinationDirectory"],
     TimeSpan.FromSeconds(120));
+var backupDirectory = Path.GetFullPath(builder.Configuration["Lifewood:BackupDirectory"] ?? Path.TrimEndingDirectorySeparator(dataDirectory) + ".backups");
+RestoreEngine.Recover(dataDirectory, backupDirectory, builder.Configuration["Lifewood:RestoreAttempt"]);
 Directory.CreateDirectory(dataDirectory);
-var runtimeSettings = new RuntimeSettingsStore(dataDirectory, builder.Configuration["urls"]);
-builder.WebHost.UseUrls(runtimeSettings.ActiveUrl);
+var runtimeSettings = new RuntimeSettingsStore(dataDirectory, builder.Configuration["urls"], builder.Configuration["Lifewood:CustomerUrl"], builder.Configuration["Lifewood:AdminUrl"]);
+builder.WebHost.UseUrls(runtimeSettings.ActiveUrls);
 builder.Services.AddSingleton(runtimeSettings);
 builder.Services.AddSingleton(serviceProvider =>
     new RuntimeLifecycle(serviceProvider.GetRequiredService<IHostApplicationLifetime>(), serviceMode));
@@ -127,19 +131,21 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
+        options.Events.OnCheckSlidingExpiration = context => { if (context.HttpContext.Items.ContainsKey("backup.read_only")) context.ShouldRenew = false; return Task.CompletedTask; };
         options.Events.OnValidatePrincipal = context => {
+            var readOnly = context.HttpContext.Items.ContainsKey("backup.read_only");
             var principal=context.Principal;var id=principal?.FindFirstValue(ClaimTypes.NameIdentifier);
             if(id is null||!int.TryParse(principal?.FindFirstValue("lw_session_version"),out var version)){context.RejectPrincipal();return Task.CompletedTask;}
             var user=context.HttpContext.RequestServices.GetRequiredService<UserRepository>().Get(id,version);
             if(user is null){context.RejectPrincipal();return Task.CompletedTask;}
             var accounts=context.HttpContext.RequestServices.GetRequiredService<AccountSwitchStore>();
             var session=principal?.FindFirstValue("lw_login_session");
-            if(session is null){
+            if(session is null && !readOnly){
                 session=user is null?null:accounts.Remember(context.HttpContext,user,version,context.Properties.ExpiresUtc??DateTimeOffset.UtcNow,context.Properties.IsPersistent,true,principal?.FindFirstValue("lw_presence_session"));
                 if(session is not null){((ClaimsIdentity)principal!.Identity!).AddClaim(new Claim("lw_login_session",session));context.ShouldRenew=true;}
             }
-            if(session is null||!accounts.IsSessionActive(id,session,version))context.RejectPrincipal();
-            else if(context.Properties.AllowRefresh!=false && context.Properties.IssuedUtc is {} issued && context.Properties.ExpiresUtc is {} expiry && DateTimeOffset.UtcNow-issued>expiry-DateTimeOffset.UtcNow){
+            if(session is null||!accounts.IsSessionActive(id,session,version,!readOnly))context.RejectPrincipal();
+            else if(!readOnly && context.Properties.AllowRefresh!=false && context.Properties.IssuedUtc is {} issued && context.Properties.ExpiresUtc is {} expiry && DateTimeOffset.UtcNow-issued>expiry-DateTimeOffset.UtcNow){
                 if(accounts.RenewSession(context.HttpContext,id,session,version,DateTimeOffset.UtcNow+(expiry-issued)))context.ShouldRenew=true;else context.RejectPrincipal();
             }
             return Task.CompletedTask;
@@ -234,6 +240,7 @@ builder.Services.AddSingleton(savedAccounts);
 var notifications = new NotificationRepository(databaseConnection);
 notifications.Initialize();
 builder.Services.AddSingleton(notifications);
+builder.Services.AddSingleton<BackupGate>();
 builder.Services.AddHostedService<NotificationWorker>();
 var characterPresets = new CharacterPresetRepository(databaseConnection);
 builder.Services.AddSingleton(characterPresets);
@@ -252,12 +259,21 @@ fileCategories.Initialize();
 builder.Services.AddSingleton(fileCategories);
 builder.Services.AddSingleton(platformLimits);
 builder.Services.AddSingleton(new StorageQuota(dataDirectory, platformLimits));
+builder.Services.AddSingleton(new RuntimeMonitor(databaseConnection, dataDirectory, platformLimits.MaxStoredBytes));
+builder.Services.AddHostedService(provider => provider.GetRequiredService<RuntimeMonitor>());
 
+builder.Services.AddSingleton(provider => new BackupService(dataDirectory, backupDirectory, provider.GetRequiredService<BackupGate>(), provider.GetRequiredService<AuditRepository>(), provider.GetRequiredService<ILogger<BackupService>>()));
+builder.Services.AddHostedService(provider => provider.GetRequiredService<BackupService>());
+builder.Services.AddSingleton(provider => new RestoreService(dataDirectory, backupDirectory, builder.Configuration["Lifewood:CoordinationDirectory"], !serviceMode && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("INVOCATION_ID")) && !string.IsNullOrEmpty(Environment.ProcessPath) && !Path.GetFileNameWithoutExtension(Environment.ProcessPath).Contains("testhost", StringComparison.OrdinalIgnoreCase), provider.GetRequiredService<RuntimeSettingsStore>(), provider.GetRequiredService<BackupService>(), provider.GetRequiredService<BackupGate>(), provider.GetRequiredService<AuditRepository>(), provider.GetRequiredService<IHostApplicationLifetime>(), provider.GetRequiredService<ILogger<RestoreService>>()));
+builder.Services.AddHostedService(provider => provider.GetRequiredService<RestoreService>());
 var app = builder.Build();
 var configuredWebRoot = builder.Configuration["Lifewood:WebRoot"];
 var webRoot = string.IsNullOrWhiteSpace(configuredWebRoot)
     ? Path.Combine(AppContext.BaseDirectory, "web")
     : Path.GetFullPath(Path.IsPathRooted(configuredWebRoot) ? configuredWebRoot : Path.Combine(app.Environment.ContentRootPath, configuredWebRoot));
+var backupPathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+if (backupDirectory.Equals(Path.TrimEndingDirectorySeparator(webRoot), backupPathComparison) || backupDirectory.StartsWith(Path.TrimEndingDirectorySeparator(webRoot) + Path.DirectorySeparatorChar, backupPathComparison))
+    throw new InvalidOperationException("Backup storage cannot be inside publicly served web assets.");
 var customerWebRoot = Path.Combine(webRoot, "customer");
 var adminWebRoot = Path.Combine(webRoot, "admin");
 var customerIndex = Path.Combine(customerWebRoot, "index.html");
@@ -289,6 +305,27 @@ app.Use(async (context, next) =>
     context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'";
     context.Response.Headers.Append("X-Request-Id", context.TraceIdentifier);
     await next();
+});
+var sharedPresetRoot = Path.Combine(customerWebRoot, "character-presets");
+if (Directory.Exists(sharedPresetRoot))
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(sharedPresetRoot), RequestPath = "/character-presets" });
+app.Use(async (context, next) => {
+    var port = context.Connection.LocalPort;
+    if (!runtimeSettings.ExternalFrontends && port != 0) {
+        var backend = port == runtimeSettings.Active.Port;
+        var customerHere = runtimeSettings.Active.Customer!.Shared ? backend : port == runtimeSettings.Active.Customer.Port;
+        var adminHere = runtimeSettings.Active.Admin!.Shared ? backend : port == runtimeSettings.Active.Admin.Port;
+        var path = context.Request.Path;
+        if (path.StartsWithSegments("/api")) {
+            if (path.StartsWithSegments("/api/admin") && !backend && !adminHere) { context.Response.StatusCode = 404; return; }
+        } else if (path.StartsWithSegments("/admin")) {
+            if (!adminHere) { context.Response.StatusCode = 404; return; }
+        } else if (!customerHere) {
+            if (adminHere) { context.Response.Redirect("/admin" + path + context.Request.QueryString); return; }
+            context.Response.StatusCode = 404; return;
+        }
+    }
+    await next(context);
 });
 if (Directory.Exists(adminWebRoot))
     app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(adminWebRoot), RequestPath = "/admin" });
@@ -355,6 +392,17 @@ app.Use(async (context, next) =>
     }
 });
 
+app.Use(async (context, next) => {
+    var normalizedPath = context.Request.Path.Value?.TrimEnd('/').ToLowerInvariant();
+    if (!context.Request.Path.StartsWithSegments("/api") || HttpMethods.IsGet(context.Request.Method) && normalizedPath is "/api/admin/backups" or "/api/admin/backups/restore" or "/api/admin/backups/restore/history" or "/api/notifications/stream" or "/api/health") { context.Items["backup.read_only"] = true; await next(); return; }
+    using var lease = context.RequestServices.GetRequiredService<BackupGate>().TryEnter();
+    if (lease is null) {
+        context.Response.Headers.RetryAfter = "5";
+        await Error(context, 503, "backup.snapshot", "backups.paused", "A consistent backup snapshot is being prepared. Retry shortly.", true).ExecuteAsync(context);
+        return;
+    }
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
@@ -390,17 +438,33 @@ app.Use(async (context, next) =>
         return;
     }
 
+    var configChange = action.TargetType == "form_option" || action.TargetType == "notification" && action.ActionId == "notification.config";
+    if (configChange) await auditEvents.ConfigurationGate.WaitAsync(context.RequestAborted);
+    AuditSnapshot? before = null;
     var responseBody = context.Response.Body;
     await using var bufferedBody = new MemoryStream();
     context.Response.Body = bufferedBody;
     try
     {
+        if (action is { TargetType: "notification", TargetId: "rules" } && Can(actor, "admin.config.manage"))
+        {
+            context.Request.EnableBuffering();
+            try
+            {
+                using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+                if (body.RootElement.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String)
+                    action = action with { TargetId = "rules/" + kind.GetString() };
+            }
+            catch (JsonException) { }
+            finally { context.Request.Body.Position = 0; }
+        }
+        before = auditEvents.Capture(action);
         await next();
         if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 300)
         {
             if (context.Items.TryGetValue(AuditActionCatalog.TargetIdItemKey, out var targetId) && targetId is string value)
                 action = action with { TargetId = value };
-            try { auditEvents.Record(actor, action, context.TraceIdentifier); }
+            try { auditEvents.Record(actor, action, context.TraceIdentifier, before); }
             catch (Exception exception)
             {
                 app.Logger.LogCritical(exception, "Failed to persist audit event {RequestId}; the business operation may already be committed and will not be acknowledged as successful.", context.TraceIdentifier);
@@ -429,13 +493,31 @@ app.Use(async (context, next) =>
     finally
     {
         context.Response.Body = responseBody;
+        if (configChange) auditEvents.ConfigurationGate.Release();
     }
 });
 
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 var api = app.MapGroup("/api");
+api.MapBackups(CurrentUser);
+api.MapGet("/portals/{portal}", (string portal, string? locale, HttpContext context, RuntimeSettingsStore settings) => {
+    if (portal is not ("customer" or "admin" or "profile")) return Results.NotFound();
+    var language = locale == "en-US" ? "en-US" : "zh-CN";
+    context.Response.Headers.CacheControl = "no-store";
+    var destination = settings.PortalUrl(portal == "admin", context.Request.Host.Host, language, context.Connection.LocalPort);
+    return Results.Redirect(portal == "profile" ? destination[..^6] + "/profile" : destination);
+});
 api.MapDeliveryEndpoints(dataDirectory);
+api.MapAuditTools(CurrentUser);
+api.MapGet("/admin/runtime-health", (HttpContext c, RuntimeMonitor monitor) =>
+{
+    var user = CurrentUser(c);
+    if (user is null) return Results.Unauthorized();
+    if (!Can(user, "admin.runtime.manage")) return Results.Forbid();
+    c.Response.Headers.CacheControl = "no-store";
+    return Results.Ok(monitor.Snapshot);
+});
 
 api.MapGet("/health", () => TypedResults.Ok(new HealthDto("ok")));
 api.MapGet("/auth/status", (UserRepository accounts) => Results.Ok(new AuthStatusDto(accounts.RequiresBootstrap())));
@@ -731,27 +813,27 @@ api.MapPut("/admin/runtime-settings", (UpdateRuntimeSettingsRequest? request, Ht
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
     if (request is null) return Error(context, 400, "validation.failed", "errors.validation.failed", "The request body is required.", false);
-    if (!settings.Save(request.Scheme, request.ListenAddress, request.Port, out var field))
+    if (!settings.Save(request.Scheme, request.ListenAddress, request.Port, request.Customer, request.Admin, out var field))
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The listening settings are invalid.", false,
             [new FieldErrorDto(field ?? "request", "invalid", "errors.validation.invalid")]);
     return Results.Ok(settings.Get(lifecycle.CanRestart, true));
 });
 
-api.MapPost("/admin/runtime-actions/restart", (HttpContext context, RuntimeLifecycle lifecycle) =>
+api.MapPost("/admin/runtime-actions/restart", (HttpContext context, RuntimeLifecycle lifecycle, RuntimeSettingsStore settings) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
-    if (!lifecycle.RequestRestart()) return Error(context, 409, "runtime.action_unavailable", "errors.admin.runtimeActionUnavailable", "The platform cannot restart itself in the current process mode, or another stop action is already running.", false);
+    if (settings.ExternalFrontends || !lifecycle.RequestRestart()) return Error(context, 409, "runtime.action_unavailable", "errors.admin.runtimeActionUnavailable", "The platform cannot restart itself in the current process mode, or another stop action is already running.", false);
     return Results.Accepted(value: new RuntimeActionDto("restart", DateTimeOffset.UtcNow));
 });
 
-api.MapPost("/admin/runtime-actions/shutdown", (HttpContext context, RuntimeLifecycle lifecycle) =>
+api.MapPost("/admin/runtime-actions/shutdown", (HttpContext context, RuntimeLifecycle lifecycle, RuntimeSettingsStore settings) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.runtime.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Platform owner permission is required.", false);
-    if (!lifecycle.RequestShutdown()) return Error(context, 409, "runtime.action_unavailable", "errors.admin.runtimeActionUnavailable", "Another stop action is already running.", false);
+    if (settings.ExternalFrontends || !lifecycle.RequestShutdown()) return Error(context, 409, "runtime.action_unavailable", "errors.admin.runtimeActionUnavailable", "Another stop action is already running.", false);
     return Results.Accepted(value: new RuntimeActionDto("shutdown", DateTimeOffset.UtcNow));
 });
 
@@ -836,7 +918,9 @@ api.MapGet("/admin/audit-events", (HttpContext context, AuditRepository audit, s
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.audit.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    return Results.Ok(audit.List(search, actionId, from, to, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+    context.Response.Headers.CacheControl = "no-store";
+    var result = audit.List(search, actionId, from, to, Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
+    return Results.Ok(result with { Items = result.Items.Select(audit.Present).ToArray() });
 });
 
 api.MapGet("/admin/audit-avatar/{actorId}", (string actorId, string? name, HttpContext context, UserRepository accounts) =>
@@ -1489,6 +1573,19 @@ api.MapGet("/admin/organizations", (HttpContext context, AdminRepository admin, 
     return Results.Ok(admin.ListOrganizations(search, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
 });
 
+api.MapGet("/admin/organizations/{id}/avatar", (string id, HttpContext context, AdminRepository admin) =>
+{
+    var current = CurrentUser(context);
+    if (current is null) return Results.Unauthorized();
+    if (!Can(current, "admin.users.manage")) return Results.StatusCode(403);
+    var organization = admin.GetOrganization(id);
+    if (organization is null) return Results.NotFound();
+    context.Response.Headers.CacheControl = "private, no-store";
+    context.Response.Headers.ContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+    context.Response.Headers.XContentTypeOptions = "nosniff";
+    return Results.Text(AvatarImage.CreateOrganization(organization.Name), "image/svg+xml", Encoding.UTF8);
+});
+
 api.MapPost("/admin/organizations", (CreateOrganizationRequest? request, HttpContext context, AdminRepository admin) =>
 {
     var current = CurrentUser(context);
@@ -1976,6 +2073,25 @@ app.MapGet("/api/{**path}", () => Results.NotFound());
 if (File.Exists(customerIndex))
     app.MapGet("/{**path}", () => Results.File(customerIndex, "text/html; charset=utf-8"));
 
+if (builder.Configuration["Lifewood:LocalProcessRecord"] is {} localProcessRecord && builder.Configuration["Lifewood:LocalLaunchId"] is {} localLaunchId)
+    app.Lifetime.ApplicationStarted.Register(() => File.WriteAllText(localProcessRecord, JsonSerializer.Serialize(new LocalProcessReceipt(Environment.ProcessId, Environment.ProcessPath!, localLaunchId), AppJsonContext.Default.LocalProcessReceipt)));
+if (builder.Configuration["Lifewood:RestoreReady"] is {} restoreReady && builder.Configuration["Lifewood:RestoreAttempt"] is {} restoreAttempt)
+{
+    var restoreJob = RestoreEngine.Read(backupDirectory);
+    if (restoreJob?.State.Id != restoreAttempt || RestoreEngine.Ready(restoreJob) != restoreReady) throw new IOException("Invalid restore readiness marker.");
+    // The child reports readiness before the helper commits. Keep both requests and background writers paused until then.
+    var restoreStartupPause = await app.Services.GetRequiredService<BackupGate>().PauseAsync(CancellationToken.None);
+    app.Lifetime.ApplicationStarted.Register(() => {
+        File.WriteAllText(restoreReady, restoreAttempt);
+        _ = Task.Run(async () => {
+            if (await RestoreEngine.WaitForCommit(backupDirectory, restoreAttempt, app.Lifetime.ApplicationStopping)) { restoreStartupPause.Dispose(); return; }
+            if (!app.Lifetime.ApplicationStopping.IsCancellationRequested) {
+                app.Logger.LogError("Restore commit acknowledgement did not arrive; restarting through journal recovery.");
+                if (!app.Services.GetRequiredService<RuntimeLifecycle>().RequestRestart()) app.Lifetime.StopApplication();
+            }
+        });
+    });
+}
 app.Run();
 
 static IEnumerable<ReferenceAssetDto> AllProjectAssets(TaskDraftDto project) =>
@@ -1990,7 +2106,7 @@ static CurrentUserDto? CurrentUser(HttpContext context)
     var sessionClaim = context.User.FindFirstValue("lw_session_version");
     return string.IsNullOrWhiteSpace(userId) || !int.TryParse(sessionClaim, NumberStyles.None, CultureInfo.InvariantCulture, out var sessionVersion)
         ? null
-        : context.User.FindFirstValue("lw_login_session") is not {} login||!context.RequestServices.GetRequiredService<AccountSwitchStore>().IsSessionActive(userId,login,sessionVersion)?null:context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
+        : context.User.FindFirstValue("lw_login_session") is not {} login||!context.RequestServices.GetRequiredService<AccountSwitchStore>().IsSessionActive(userId,login,sessionVersion,!context.Items.ContainsKey("backup.read_only"))?null:context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
 }
 
 static async Task<bool> SignIn(HttpContext context, CurrentUserDto user, bool persistent, DateTimeOffset? expires = null, int? savedVersion = null, bool refreshExisting = false)

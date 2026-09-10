@@ -41,6 +41,8 @@ jobs:
       - run: dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-ci
       - shell: powershell
         run: ./scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-ci
+      - name: Verify managed restore and startup rollback
+        run: node scripts/test-managed-restore.mjs artifacts/aot-ci/Lifewood.BookPortal.Server.exe
       - name: Build and inspect localized MSI packages
         shell: powershell
         run: ./scripts/build-msi.ps1 -SkipFrontendBuild

@@ -14,6 +14,7 @@ import { clearUserProjectQueries } from "../projectQueryCache";
 import type { CurrentUser, SupportedLocale } from "@lifewood/domain";
 
 export function adminCenterUrl(locale: SupportedLocale, configuredBase = import.meta.env.VITE_ADMIN_APP_URL): string {
+  if (!configuredBase?.trim() && !import.meta.env.DEV) return `/api/portals/admin?locale=${locale}`;
   const base = configuredBase?.trim()
     || (import.meta.env.DEV ? `${window.location.protocol}//${window.location.hostname}:5174` : "/admin");
   return `${base.replace(/\/$/, "")}/${locale}/projects`;
@@ -78,18 +79,18 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
         <div className="topbar-actions">
           <NotificationBell key={`notifications-${user.id}`}/><Announcements key={user.id} userId={user.id} locale={locale} />
           {canAccessAdmin ? (
-            <a className="admin-entry" href={adminCenterUrl(locale)} aria-label={t("nav.adminCenter")} onClick={event => guardLink(event, undefined, true)}>
+            <a className="admin-entry" href={`/api/portals/admin?locale=${locale}`} aria-label={t("nav.adminCenter")} onClick={event => guardLink(event, undefined, true)}>
               <span className="admin-entry-icon" aria-hidden="true">⚙</span>
               <span>{t("nav.adminCenter")}</span>
             </a>
           ) : null}
-          <div className="account-menu" ref={accountRef}>
+          <div className="account-menu portal-account-control" ref={accountRef}>
             <Link className="avatar-trigger" to={`/${locale}/profile`} aria-label={t("nav.profile")} onClick={event => guardLink(event, () => setAccountOpen(false))}>
               <img className="avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" />
             </Link>
             <button
               ref={accountTriggerRef}
-              className="profile-chip"
+              className="profile-chip portal-account-trigger"
               type="button"
               aria-haspopup="dialog"
               aria-expanded={accountOpen}
@@ -101,18 +102,18 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
               <span className="account-chevron" aria-hidden="true">⌄</span>
             </button>
             {accountOpen ? (
-              <div id={accountPopoverId} className="account-popover" role="dialog" aria-label={t("nav.account")}>
-                <div className="account-identity">
+              <div id={accountPopoverId} className="account-popover portal-account-menu" role="dialog" aria-label={t("nav.account")}>
+                <div className="account-identity portal-account-identity">
                   <Link className="account-avatar-preview" to={`/${locale}/profile`} aria-label={t("nav.profile")} onClick={event => guardLink(event, () => setAccountOpen(false))}>
                     <img className="avatar avatar-large" src={user.avatarUrl || "/api/me/avatar"} alt="" width="46" height="46" />
                   </Link>
                   <div><strong>{user.displayName}</strong>{user.email ? <span>{user.email}</span> : null}{user.organization?.name ? <small>{user.organization.name}</small> : null}</div>
                 </div>
-                <Link className="account-action" to={`/${locale}/profile`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
+                <Link className="account-action portal-account-action" to={`/${locale}/profile`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
                   {t("nav.profile")}
                 </Link>
                 <AccountSwitcher user={user} destination={()=>`/${locale}/tasks`}/>
-                <button className="account-action" type="button" disabled={logout.isPending} onClick={async () => { if (await confirmLeave()) logout.mutate(); }}>
+                <button className="account-action portal-account-action" type="button" disabled={logout.isPending} onClick={async () => { if (await confirmLeave()) logout.mutate(); }}>
                   {logout.isPending ? t("nav.loggingOut") : t("nav.logout")}
                 </button>
                 {logout.isError ? <p className="account-error" role="alert">{t("nav.logoutFailed")}</p> : null}

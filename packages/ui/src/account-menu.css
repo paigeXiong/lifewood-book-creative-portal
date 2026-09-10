@@ -1,0 +1,75 @@
+/* Shared account dropdown styling, scoped away from nested dialogs. */
+.portal-account-menu:is(.account-popover, .admin-account-popover) {
+  position: absolute; top: calc(100% + 7px); right: 0; z-index: 40;
+  display: grid; gap: 4px; width: min(280px, calc(100vw - 24px));
+  max-height: calc(100dvh - 90px); overflow-y: auto;
+  padding: 8px; border: 0; border-radius: 12px; background: #fff;
+  color: #173d2f; font-family: var(--lw-font-body); font-size: 13px; font-weight: 400; line-height: 1.4;
+  box-shadow: 0 14px 40px -18px #132f208c;
+}
+.portal-account-menu .portal-account-identity {
+  display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; background: #f3f7f4;
+}
+.portal-account-menu .portal-account-identity > :is(a, button) {
+  display: grid; place-items: center; flex: 0 0 46px; width: 46px; height: 46px; min-height: 46px;
+  margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: none;
+}
+.portal-account-menu .portal-account-identity img { display: block; width: 46px; height: 46px; border-radius: 50%; object-fit: cover; }
+.portal-account-menu .portal-account-identity > div { min-width: 0; }
+.portal-account-menu .portal-account-identity strong { display: block; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.portal-account-menu .portal-account-identity :is(span, small) { display: block; margin-top: 3px; color: #657870; font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.portal-account-menu > :is(.portal-account-action, .login-devices-trigger),
+.portal-account-menu > .account-switcher > .account-switch-add {
+  display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%;
+  min-height: 38px; margin: 0; padding: 8px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: #214d3b; box-shadow: none;
+  font: inherit; font-weight: 550; text-align: start; text-decoration: none;
+}
+.portal-account-menu > :is(.portal-account-action, .login-devices-trigger):hover:not(:disabled),
+.portal-account-menu > .account-switcher > .account-switch-add:hover:not(:disabled) { background: #edf4f0; }
+.portal-account-menu > .account-switcher { margin: 2px 0; padding-top: 8px; }
+.portal-account-menu .account-switch-heading { padding: 0 10px; font-size: 12px; }
+.portal-account-menu .saved-account-list { gap: 4px; }
+.portal-account-menu .saved-account-list li { gap: 4px; border: 0; }
+.portal-account-menu .saved-account-list :is(.saved-account-select, .saved-account-remove) { margin: 0; min-height: 38px; border: 0; border-radius: 8px; background: transparent; box-shadow: none; }
+.portal-account-menu .saved-account-list .saved-account-select { padding: 8px 10px; gap: 10px; font-size: 13px; }
+.portal-account-menu .saved-account-list .saved-account-remove { padding: 0; min-width: 34px; color: #657870; }
+.portal-account-menu .saved-account-list button:hover:not(:disabled) { background: #edf4f0; }
+.portal-account-trigger:is(.admin-account-trigger, .profile-chip) { background: transparent; box-shadow: none; border: 0; }
+.portal-account-trigger:is(.admin-account-trigger, .profile-chip):hover,
+.portal-account-trigger:is(.admin-account-trigger, .profile-chip)[aria-expanded=true] { background: #edf4f0; }
+@media(max-width: 680px) {
+  .portal-account-menu > :is(.portal-account-action, .login-devices-trigger),
+  .portal-account-menu > .account-switcher > .account-switch-add,
+  .portal-account-menu .saved-account-list :is(.saved-account-select, .saved-account-remove) { min-height: 44px; }
+}
+
+.portal-account-trigger:is(.admin-account-trigger, .profile-chip) {
+  min-height: 38px; padding: 4px 8px; gap: 7px; border-radius: 999px;
+  font-family: var(--lw-font-body); font-size: 13px; font-weight: 650; color: #173d2f;
+}
+.portal-account-trigger:is(.admin-account-trigger, .profile-chip):focus-visible { outline: 2px solid #356b50; outline-offset: 2px; box-shadow: none; }
+.portal-account-trigger .account-chevron { display: inline-block; transition: transform .15s ease; }
+.portal-account-trigger[aria-expanded=true] .account-chevron { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .portal-account-trigger .account-chevron { transition: none; } }
+
+/* Avatar and name share one capsule in both portals. */
+.portal-account-control:is(.account-menu, .admin-account) {
+  position: relative; display: flex; align-items: center; flex: 0 0 auto; min-width: 0;
+  gap: 1px; padding: 2px; border: 0; border-radius: 999px;
+  background: transparent; transition: background-color .15s ease;
+}
+.portal-account-control:is(.account-menu, .admin-account):is(:hover, :focus-within),
+.portal-account-control:is(.account-menu, .admin-account):has(> .portal-account-trigger[aria-expanded=true]) { background: #e8f2ec; }
+.portal-account-control > :is(.avatar-trigger, .admin-avatar-trigger) {
+  display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; min-height: 36px;
+  padding: 0; border: 0; border-radius: 50%; background: transparent; box-shadow: none;
+}
+.portal-account-control > :is(.avatar-trigger, .admin-avatar-trigger):hover { background: transparent; box-shadow: none; }
+.portal-account-control > :is(.avatar-trigger, .admin-avatar-trigger) img { width: 30px; height: 30px; object-fit: cover; border-radius: 50%; }
+.portal-account-control > .portal-account-trigger:is(.admin-account-trigger, .profile-chip) {
+  display: flex; align-items: center; height: 38px; min-height: 38px; line-height: 1.4; background: transparent;
+}
+.portal-account-control > .portal-account-trigger:is(.admin-account-trigger, .profile-chip):is(:hover, [aria-expanded=true]) { background: transparent; }
+.portal-account-control > .portal-account-trigger .account-chevron { font-size: 12px; color: #64756d; }
+@media (prefers-reduced-motion: reduce) { .portal-account-control:is(.account-menu, .admin-account) { transition: none; } }

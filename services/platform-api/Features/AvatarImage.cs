@@ -28,6 +28,31 @@ internal static class AvatarImage
             """;
     }
 
+    public static string CreateOrganization(string name)
+    {
+        var clean = string.Concat(name.EnumerateRunes().Where(r => !Rune.IsControl(r) && r.Value is not (0xfffe or 0xffff)).Select(r => r.ToString()));
+        var value = string.Join(" ", clean.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+        if (value.Length == 0) value = "?";
+        var palette = Palettes[StableIndex(value, Palettes.Length)];
+        var elements = StringInfo.GetTextElementEnumerator(value);
+        var text = new StringBuilder(); double units = 0;
+        while (elements.MoveNext())
+        {
+            var element = elements.GetTextElement();
+            var width = element.EnumerateRunes().First().Value < 128 ? .65 : 1;
+            if (units + width > 19) { text.Append('…'); units += 1; break; }
+            text.Append(element); units += width;
+        }
+        var fontSize = Math.Clamp(530 / Math.Max(1, units), 26, 48);
+        var length = Math.Min(530, units * fontSize);
+        return $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="600" height="100" viewBox="0 0 600 100">
+              <rect width="600" height="100" rx="14" fill="{palette.Background}"/>
+              <text x="300" y="52" text-anchor="middle" dominant-baseline="middle" fill="{palette.Foreground}" font-family="Segoe UI, Microsoft YaHei, Noto Sans SC, sans-serif" font-size="{fontSize.ToString("0.##", CultureInfo.InvariantCulture)}" font-weight="750" textLength="{length.ToString("0.##", CultureInfo.InvariantCulture)}" lengthAdjust="spacingAndGlyphs">{Escape(text.ToString())}</text>
+            </svg>
+            """;
+    }
+
     internal static string Initials(string displayName)
     {
         var value = displayName.Trim();
