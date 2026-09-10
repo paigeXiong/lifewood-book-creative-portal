@@ -12,7 +12,15 @@ const args=['--urls',base,'--Lifewood:DataDirectory='+data,'--Lifewood:Coordinat
 const env={...process.env,ASPNETCORE_ENVIRONMENT:'Development'};let processHandle;const cookies=new Map();
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 function start(exe,argv,label){const fd=openSync(join(run,label+'.log'),'a');const child=spawn(exe,argv,{cwd:dirname(executable),env,windowsHide:true,stdio:['ignore',fd,fd]});closeSync(fd);return child;}
-async function health(){for(let i=0;i<240;i++){try{if((await fetch(base+'/api/health')).ok)return;}catch{}await delay(250);}throw new Error('Startup timeout');}
+async function health(){
+ // Health responds before the restore helper commits and the child releases BackupGate.
+ // Wait for an anonymous business request to reach authentication before checking saved sessions.
+ for(let i=0;i<240;i++){
+  try{if((await fetch(base+'/api/health')).ok && (await fetch(base+'/api/me')).status===401)return;}catch{}
+  await delay(250);
+ }
+ throw new Error('Startup timeout: business requests did not resume');
+}
 async function raw(path,options={}){const headers=new Headers(options.headers);headers.set('Cookie',[...cookies].map(([k,v])=>k+'='+v).join('; '));const r=await fetch(base+path,{...options,headers});for(const cookie of r.headers.getSetCookie()){const pair=cookie.split(';',1)[0],cut=pair.indexOf('=');cookies.set(pair.slice(0,cut),pair.slice(cut+1));}return r;}
 async function api(path,method='GET',body){const headers={};if(method!=='GET')headers['X-CSRF-TOKEN']=(await(await raw('/api/auth/csrf')).json()).token;if(body!==undefined){headers['Content-Type']='application/json';body=JSON.stringify(body);}const r=await raw(path,{method,headers,body});assert(r.ok,path+' '+r.status+' '+(r.ok?'':await r.text()));return r.status===204?null:r.json();}
 async function login(){cookies.clear();await api('/api/auth/login','POST',{email,password,rememberMe:false});}
