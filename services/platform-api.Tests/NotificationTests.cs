@@ -17,6 +17,35 @@ public sealed class NotificationTests:IDisposable {
  void Sql(string sql){using var c=new SqliteConnection(connection);c.Open();using var q=c.CreateCommand();q.CommandText=sql;q.ExecuteNonQuery();}
  NotificationPage Feed(string user="admin",long? before=null,string? state=null)=>repo.List(user,"zh-CN",before,null,null,state,null,null,null);
  void Capture(string key,string kind="workflow",string actor="admin",string target=""){using var c=new SqliteConnection(connection);c.Open();using var tx=c.BeginTransaction();NotificationRepository.Capture(c,tx,key,kind,"p",actor,target);tx.Commit();}
+ [Fact] public void BackupAlertsAreOwnerOnlyDeduplicatedDurableAndResolved(){
+  var now=DateTimeOffset.Parse("2026-09-11T00:00:00Z");var policy=new BackupPolicy(true);var failed=new BackupRecord("failed",now,"scheduled","failed");
+  repo.CheckBackupAlerts(policy,[failed],now);repo.Dispatch();var first=Assert.Single(Feed("owner").Items);
+  Assert.Equal("backup_failed",first.Kind);Assert.Equal("pending",first.State);Assert.Empty(Feed("admin").Items);Assert.Empty(Feed("customer").Items);
+  Assert.Equal("/en-US/settings/backups",repo.Target("owner",first.Id,"en-US",true)!.Path);
+  Assert.Equal("/api/portals/backups?locale=zh-CN",repo.Target("owner",first.Id,"zh-CN",false)!.Path);
+  Assert.Contains("Automatic backup failed",repo.List("owner","en-US",null,null,null,null,null,null,null).Items[0].Title);
+  var restarted=new NotificationRepository(connection);restarted.Initialize();restarted.CheckBackupAlerts(policy,[failed],now.AddMinutes(2));restarted.Dispatch();Assert.Single(Feed("owner").Items);
+  var good=new BackupRecord("good",now.AddHours(1),"manual","completed",VerificationStatus:"passed");repo.CheckBackupAlerts(policy,[failed,good],now.AddHours(1));Assert.Equal("done",Feed("owner").Items[0].State);
+  repo.CheckBackupAlerts(policy,[failed,good,failed with{Id="next",CreatedAt=now.AddHours(2)}],now.AddHours(2));repo.Dispatch();Assert.Equal(2,Feed("owner").Items.Length);
+  Sql("UPDATE users SET role='admin' WHERE id='owner'");Assert.Empty(Feed("owner").Items);Assert.Equal(0,repo.Counts("owner").Unread);Assert.Null(repo.Target("owner",first.Id,"en-US",true));
+ }
+ [Theory][InlineData("daily",2)][InlineData("weekly",14)] public void MissingBackupAlertHonorsEnablementGracePeriodAndDoesNotRepeat(string frequency,int days){
+  var now=DateTimeOffset.Parse("2026-09-11T00:00:00Z");var policy=new BackupPolicy(true,frequency);
+  repo.CheckBackupAlerts(new(false,frequency),[],now.AddDays(-30));repo.CheckBackupAlerts(policy,[],now);
+  repo.CheckBackupAlerts(policy,[new BackupRecord("old",now.AddDays(-60),"manual","completed")],now.AddDays(days).AddSeconds(-1));repo.Dispatch();Assert.Empty(Feed("owner").Items);
+  repo.CheckBackupAlerts(policy,[],now.AddDays(days));repo.Dispatch();Assert.Equal("backup_stale",Assert.Single(Feed("owner").Items).Kind);
+  repo.CheckBackupAlerts(policy,[],now.AddDays(days+1));repo.Dispatch();Assert.Single(Feed("owner").Items);
+  repo.CheckBackupAlerts(policy with{Enabled=false},[],now.AddDays(days+2));Assert.Equal("done",Feed("owner").Items[0].State);
+ }
+ [Fact] public void DamagedBackupAlertsPersistThroughRecheckAndRespectRuleAndRecipientRestrictions(){
+  var now=DateTimeOffset.UtcNow;var bad=new BackupRecord("bad",now,"manual","completed",VerificationStatus:"damaged");
+  var rule=repo.Rules().Items.Single(x=>x.Kind=="backup_damaged");Assert.False(repo.SaveRule(rule with{Audience="allAdmins"}));
+  repo.CheckBackupAlerts(new(),[bad],now);repo.Dispatch();Assert.Equal("backup_damaged",Assert.Single(Feed("owner").Items).Kind);
+  foreach(var status in new[]{"checking","interrupted","unavailable","recordFailed"}){repo.CheckBackupAlerts(new(),[bad with{VerificationStatus=status}],now);Assert.Equal("pending",Feed("owner").Items[0].State);}
+  repo.CheckBackupAlerts(new(),[bad],now);repo.Dispatch();Assert.Single(Feed("owner").Items);
+  repo.CheckBackupAlerts(new(),[bad with{VerificationStatus="passed"}],now);Assert.Equal("done",Feed("owner").Items[0].State);
+  Assert.True(repo.SaveRule(rule with{Enabled=false}));repo.CheckBackupAlerts(new(),[bad],now);repo.Dispatch();Assert.Single(Feed("owner").Items);
+ }
  [Fact] public void PromotedOperatorDoesNotKeepCustomerNotificationAccessToUnassignedProjects(){
   Capture("owned");repo.Dispatch();var item=Assert.Single(Feed("customer").Items);
   Sql("UPDATE users SET role='operator' WHERE id='customer'");

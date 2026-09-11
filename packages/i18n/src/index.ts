@@ -1460,3 +1460,6 @@ i18n.addResourceBundle("en-US","translation",{"backups": {"check": {"label": "Ve
 i18n.addResourceBundle("zh-CN","translation",{"backups": {"check": {"recordFailed": "结果未保存", "help": {"recordFailed": "检查结果未能保存。请检查存储空间和权限后重新校验；当前结果未被确认为通过。"}}}},true,true);
 
 i18n.addResourceBundle("en-US","translation",{"backups": {"check": {"recordFailed": "Result not saved", "help": {"recordFailed": "The check result could not be saved. Check storage space and permissions, then verify again. This result is not confirmed as passed."}}}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{notifications:{openBackups:"查看备份",owners:"平台负责人",backupAudienceHint:"备份提醒仅发送给有效的平台负责人。",kinds:{backup_failed:"自动备份失败",backup_damaged:"备份损坏",backup_stale:"缺少近期备份"}}},true,true);
+i18n.addResourceBundle("en-US","translation",{notifications:{openBackups:"View backups",owners:"Platform owners",backupAudienceHint:"Backup alerts are sent only to active platform owners.",kinds:{backup_failed:"Automatic backup failed",backup_damaged:"Damaged backup",backup_stale:"No recent backup"}}},true,true);

@@ -19,6 +19,6 @@ export default defineConfig(({ mode }) => {
       "/api": env.VITE_API_PROXY_TARGET || (mode === "e2e" ? "http://127.0.0.1:5090" : "http://127.0.0.1:5077"),
       },
     },
-    build: { sourcemap: false },
+    build: { sourcemap: false, manifest: true, rollupOptions: { output: { manualChunks: id => /\/node_modules\/(?:react(?:-dom|-router(?:-dom)?|-i18next)?|scheduler|i18next|@tanstack\/(?:query-core|react-query)|@remix-run\/router)\//.test(id.replaceAll("\\\\", "/")) ? "vendor" : undefined } } },
   };
 });

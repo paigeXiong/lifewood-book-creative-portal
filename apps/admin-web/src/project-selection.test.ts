@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { localizedAdminLocation, resolveProjectSelection } from "./App";
+import { localizedAdminLocation } from "./App";
+import { resolveProjectSelection } from "./project-utils";
 
 describe("project deep-link selection", () => {
   it.each([

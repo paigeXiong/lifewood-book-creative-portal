@@ -1,5 +1,5 @@
 import {NotificationCenter} from "@lifewood/ui/notifications";
-import { RevisionWorkspace } from "./components/RevisionWorkspace";
+
 import { lazy, Suspense, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Navigate, Outlet, Route, createRoutesFromElements, useLocation, useParams, useRouteError } from "react-router-dom";
@@ -9,6 +9,7 @@ import { i18n, isSupportedLocale, localizedPath, setLocale } from "@lifewood/i18
 import type { SupportedLocale } from "@lifewood/domain";
 import { AppShell } from "./components/AppShell";
 import { ScreenError } from "./components/ScreenError";
+const RevisionWorkspace = lazy(() => import("./components/RevisionWorkspace").then(module => ({ default: module.RevisionWorkspace })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
 const TaskListPage = lazy(() => import("./pages/TaskListPage").then((module) => ({ default: module.TaskListPage })));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage").then((module) => ({ default: module.TaskDetailPage })));
@@ -59,7 +60,7 @@ function ProtectedLayout() {
     return <ScreenError error={userQuery.error} onRetry={() => userQuery.refetch()} />;
   }
 
-  return <AppShell user={userQuery.data}><Suspense fallback={<ScreenLoading />}><RevisionWorkspace><Outlet context={{ locale, user: userQuery.data }} /></RevisionWorkspace></Suspense></AppShell>;
+  return <AppShell user={userQuery.data}><Suspense fallback={<ScreenLoading />}>{/\/tasks\/[^/]+/.test(location.pathname) ? <RevisionWorkspace><Outlet context={{ locale, user: userQuery.data }} /></RevisionWorkspace> : <Outlet context={{ locale, user: userQuery.data }} />}</Suspense></AppShell>;
 }
 
 export const appRoutes = createRoutesFromElements(<>

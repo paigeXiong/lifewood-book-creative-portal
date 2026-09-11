@@ -20,6 +20,8 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       sourcemap: mode !== "production",
+      manifest: true,
+      rollupOptions: { output: { manualChunks: id => /\/node_modules\/(?:react(?:-dom|-router(?:-dom)?|-i18next)?|scheduler|i18next|@tanstack\/(?:query-core|react-query)|@remix-run\/router)\//.test(id.replaceAll("\\\\", "/")) ? "vendor" : undefined } },
     },
     test: {
       environment: "jsdom",

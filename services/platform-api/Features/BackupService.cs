@@ -79,6 +79,10 @@ internal sealed partial class BackupService : BackgroundService
     {
         lock (sync) { var items = records.Where(x => (string.IsNullOrEmpty(source) || x.Source == source) && (string.IsNullOrEmpty(status) || x.Status == status) && (string.IsNullOrEmpty(verification) || (verification=="unchecked" ? x.Status=="completed" && x.VerificationStatus is null : x.VerificationStatus==verification))).OrderByDescending(x => x.CreatedAt).ToArray(); page = Math.Max(1, page); return new(items.Skip((page - 1) * 20).Take(20).ToArray(), page, 20, items.Length, schedule, current, gate.Paused, VerificationFilters); }
     }
+    internal (BackupPolicy Policy, BackupRecord[] Records) HealthSnapshot()
+    {
+        lock(sync) return (schedule.Policy, records.ToArray());
+    }
     public static bool Valid(BackupPolicy policy) => policy.Frequency is "daily" or "weekly" && policy.Hour is >= 0 and <= 23 && policy.DayOfWeek is >= 0 and <= 6 && policy.TimeZoneId is "Asia/Shanghai" or "UTC" && policy.RetainDays is >= 1 and <= 3650 && policy.RetainCount is >= 1 and <= 500;
     internal static DateTimeOffset NextRun(BackupPolicy policy, DateTimeOffset now)
     {
@@ -164,9 +168,10 @@ internal sealed partial class BackupService : BackgroundService
             await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
         }
     }
-    private async Task Run(BackupRecord job, CancellationToken token)
+    internal async Task Run(BackupRecord job, CancellationToken token)
     {
         var stage = Path.Combine(storage, $".backup-{job.Id}.stage"); var partial = ZipPath(job.Id) + ".partial";
+        var outcome = job;
         try
         {
             Update(job with { Status = "snapshot" });
@@ -183,21 +188,37 @@ internal sealed partial class BackupService : BackgroundService
             await using var file = new FileStream(partial, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
             var hash = Convert.ToHexString(await SHA256.HashDataAsync(file, token)); var size = file.Length; await file.DisposeAsync();
             File.Move(partial, ZipPath(job.Id));
-            Update(job with { Status = "completed", Size = size, FileCount = manifest.Files.Length, Sha256 = hash, VerificationStatus="passed", VerifiedAt=DateTimeOffset.UtcNow });
+            outcome = job with { Status = "completed", Size = size, FileCount = manifest.Files.Length, Sha256 = hash, VerificationStatus="passed", VerifiedAt=DateTimeOffset.UtcNow };
             try { audit.Record(actor ?? SystemActor, new("backup.completed", "backup", job.Id), "backup-" + job.Id); }
             catch (Exception exception) { logger.LogCritical(exception, "Completed backup audit could not be recorded"); }
-            try { Prune(); }
-            catch (Exception exception) { logger.LogWarning(exception, "Backup retention will retry after the next backup"); }
         }
         catch (Exception exception)
         {
             logger.LogError(exception, "Backup {Id} failed", job.Id);
-            Update(job with { Status = "failed", ErrorCode = exception is OperationCanceledException ? "interrupted" : "failed" });
+            outcome = job with { Status = "failed", ErrorCode = exception is OperationCanceledException ? "interrupted" : "failed" };
         }
         finally
         {
             CleanupScratch(job.Id);
-            lock (sync) { current = null; actor = null; }
+            // Publish the terminal record and release the reservation together. A reader must
+            // never observe a finished backup while the next operation is still rejected as busy.
+            lock (sync) {
+                try {
+                    try { Update(outcome); }
+                    catch (Exception exception) {
+                        outcome = job with { Status = "failed", ErrorCode = "failed" };
+                        logger.LogError(exception,"Backup terminal state could not be persisted");
+                        try { WriteRecord(outcome); }
+                        catch (Exception writeError) { logger.LogError(writeError,"Backup failure record could not be persisted"); }
+                        records[records.FindIndex(x=>x.Id==job.Id)] = outcome;
+                    }
+                    if (outcome.Status == "completed") {
+                        try { Prune(); }
+                        catch (Exception exception) { logger.LogWarning(exception, "Backup retention will retry after the next backup"); }
+                    }
+                }
+                finally { current = null; actor = null; }
+            }
         }
     }
     internal void Prune()

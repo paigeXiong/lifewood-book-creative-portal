@@ -867,9 +867,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                               activeCharacterIndex - 1,
                             )
                           }
-                        >
-                          ↑
-                        </button>
+                         data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>↑</span></button>
                         <button
                           type="button"
                           aria-label={t("creative.moveDown")}
@@ -884,9 +882,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                               activeCharacterIndex + 1,
                             )
                           }
-                        >
-                          ↓
-                        </button>
+                         data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>↓</span></button>
                         <button
                           type="button"
                           className="danger-link"

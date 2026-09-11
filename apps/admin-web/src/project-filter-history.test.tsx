@@ -7,7 +7,7 @@ import {expect,it,vi} from "vitest";
 import {adminService} from "@lifewood/api-client";
 import {i18n} from "@lifewood/i18n";
 import type {CurrentUser} from "@lifewood/domain";
-import {ProjectsPage} from "./App";
+import {ProjectsPage} from "./ProjectsPage";
 import "./i18n";
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 it.each(["zh-CN","en-US"] as const)("restores saved-filter search, status, priority and page through history (%s)",async locale=>{

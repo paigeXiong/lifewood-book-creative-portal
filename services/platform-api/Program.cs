@@ -502,11 +502,11 @@ if (app.Environment.IsDevelopment()) app.MapOpenApi();
 var api = app.MapGroup("/api");
 api.MapBackups(CurrentUser);
 api.MapGet("/portals/{portal}", (string portal, string? locale, HttpContext context, RuntimeSettingsStore settings) => {
-    if (portal is not ("customer" or "admin" or "profile")) return Results.NotFound();
+    if (portal is not ("customer" or "admin" or "profile" or "backups")) return Results.NotFound();
     var language = locale == "en-US" ? "en-US" : "zh-CN";
     context.Response.Headers.CacheControl = "no-store";
-    var destination = settings.PortalUrl(portal == "admin", context.Request.Host.Host, language, context.Connection.LocalPort);
-    return Results.Redirect(portal == "profile" ? destination[..^6] + "/profile" : destination);
+    var destination = settings.PortalUrl(portal is "admin" or "backups", context.Request.Host.Host, language, context.Connection.LocalPort);
+    return Results.Redirect(portal switch { "profile" => destination[..^6] + "/profile", "backups" => destination[..^9] + "/settings/backups", _ => destination });
 });
 api.MapDeliveryEndpoints(dataDirectory);
 api.MapAuditTools(CurrentUser);

@@ -1,6 +1,6 @@
 using Lifewood.PlatformApi.Persistence;
 namespace Lifewood.PlatformApi.Features;
-internal sealed class NotificationWorker(NotificationRepository repository, OperationsRepository operations, ILogger<NotificationWorker> logger, BackupGate gate) : BackgroundService
+internal sealed class NotificationWorker(NotificationRepository repository, OperationsRepository operations, ILogger<NotificationWorker> logger, BackupGate gate, BackupService backups) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -13,7 +13,7 @@ internal sealed class NotificationWorker(NotificationRepository repository, Oper
                 using var lease = gate.TryEnter();
                 if (lease is null) { await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); continue; }
                 var now=DateTimeOffset.UtcNow;
-                if(now-lastReminders>TimeSpan.FromMinutes(1)){operations.CreateDueReminders(now);lastReminders=now;}
+                if(now-lastReminders>TimeSpan.FromMinutes(1)){operations.CreateDueReminders(now);var health=backups.HealthSnapshot();repository.CheckBackupAlerts(health.Policy,health.Records,now);lastReminders=now;}
                 repository.Dispatch();
                 if(now-lastCleanup>TimeSpan.FromHours(24)){repository.Cleanup();lastCleanup=now;}
             }

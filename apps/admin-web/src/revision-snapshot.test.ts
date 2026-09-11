@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { TaskDraft } from "@lifewood/domain";
-import { RevisionSnapshotDetails } from "./App";
+import { RevisionSnapshotDetails } from "./ProjectsPage";
 import { describe, expect, it } from "vitest";
 import { readRevisionSnapshot } from "./revision-snapshot";
 

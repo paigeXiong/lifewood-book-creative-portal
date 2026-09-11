@@ -12,7 +12,7 @@ export function RestoreDialog({ item, locale, userId, onClose }: { item: BackupR
   const restore=useMutation({mutationFn:()=>adminService.restoreBackup(preview.data!.token,confirmation),onSuccess:()=>{void cache.invalidateQueries({queryKey:["restore",userId]});void cache.invalidateQueries({queryKey:["backups",userId]});onClose();}});
   const time=new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeStyle:"short"}).format(new Date(item.createdAt));
   return <ModalFrame labelledBy="restore-title" busy={restore.isPending} onClose={onClose} className="restore-dialog"><form onSubmit={e=>{e.preventDefault();if(preview.data&&confirmation==="RESTORE")restore.mutate();}}>
-    <div className="modal-title"><h2 id="restore-title">{t("restore.title")}</h2><button type="button" aria-label={t("common.close")} disabled={restore.isPending} onClick={onClose}>×</button></div>
+    <div className="modal-title"><h2 id="restore-title">{t("restore.title")}</h2><button type="button" aria-label={t("common.close")} disabled={restore.isPending} onClick={onClose} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div>
     <p>{t("restore.target",{time})}</p>
     {preview.isPending&&<p role="status">{t("restore.checking")}</p>}
     {preview.data&&<><div className="restore-result"><strong>{t("restore.verified")}</strong><span>{t("restore.files",{count:preview.data.fileCount})}</span><HelpPopover label={t("restore.verified")}>{t("restore.checkHelp")}</HelpPopover></div>

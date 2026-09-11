@@ -60,5 +60,36 @@ public sealed class BackupTests : IDisposable
         Assert.Equal("failed",service.List(1,null,null).Items.Single(x=>x.Id==interrupted).Status);
         service.Prune();Assert.True(File.Exists(Path.Combine(storage,$"backup-{manual}.zip")));Assert.True(File.Exists(Path.Combine(storage,$"backup-{newest}.zip")));Assert.False(File.Exists(Path.Combine(storage,$"backup-{old}.zip")));
     }
+    [Theory][InlineData(false)][InlineData(true)] public async Task TerminalBackupIsNotPublishedUntilFinalizationReleasesReservation(bool failRecord)
+    {
+        var data=Path.Combine(root,"data");var storage=Path.Combine(root,"backups");Directory.CreateDirectory(data);
+        var connection=$"Data Source={Path.Combine(data,"platform.db")};Pooling=False";
+        var audit=new Lifewood.PlatformApi.Persistence.AuditRepository(connection,data);audit.Initialize();
+        // Force the audit fallback to fail, and hold its error reporting until the observer has read state.
+        using(var db=new SqliteConnection(connection)){db.Open();using var q=db.CreateCommand();q.CommandText="CREATE TRIGGER reject_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(FAIL,'fixture'); END;";q.ExecuteNonQuery();}
+        Directory.CreateDirectory(Path.Combine(data,"audit-pending.ndjson"));
+        using var paused=new ManualResetEventSlim();using var release=new ManualResetEventSlim();
+        var logger=new FinalizationLogger(paused,release);
+        using var service=new BackupService(data,storage,new BackupGate(),audit,logger);
+        var actor=new CurrentUserDto("system",null,"System",null,null,null,[],[],"en-US",null);
+        var job=service.Queue(actor)!;var running=Task.Run(()=>service.Run(job,CancellationToken.None));
+        try {
+            Assert.True(paused.Wait(TimeSpan.FromSeconds(20)),"Expected the controlled finalization pause");
+            var busy=service.List(1,null,null);
+            Assert.Equal("verifying",Assert.Single(busy.Items).Status);Assert.NotNull(busy.Current);
+            Assert.Null(service.QueueVerification(job.Id,actor));Assert.False(service.ReserveRestore());
+            if(failRecord)Directory.CreateDirectory(Path.Combine(storage,$"backup-{job.Id}.json.tmp"));
+        } finally {release.Set();await running;}
+        var finished=service.List(1,null,null);Assert.Equal(failRecord?"failed":"completed",Assert.Single(finished.Items).Status);Assert.Null(finished.Current);
+        if(!failRecord)Assert.NotNull(service.QueueVerification(job.Id,actor));
+    }
+    private sealed class FinalizationLogger(ManualResetEventSlim paused,ManualResetEventSlim release) : Microsoft.Extensions.Logging.ILogger<BackupService>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState:notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel level)=>true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel level,Microsoft.Extensions.Logging.EventId id,TState state,Exception? error,Func<TState,Exception?,string> format){
+            if(level==Microsoft.Extensions.Logging.LogLevel.Critical){paused.Set();if(!release.Wait(TimeSpan.FromSeconds(25)))throw new TimeoutException("Finalization test did not release logger");}
+        }
+    }
     public void Dispose() { SqliteConnection.ClearAllPools(); Directory.Delete(root,true); }
 }
