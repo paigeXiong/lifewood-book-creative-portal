@@ -36,6 +36,14 @@ jobs:
       - run: dotnet build services/platform-api/Lifewood.PlatformApi.csproj --configuration Release --nologo
       - run: npm exec playwright install chromium
       - run: npm run test:e2e
+      - name: Retain failed browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-diagnostics
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
       - run: dotnet test services/platform-api.Tests/Lifewood.PlatformApi.Tests.csproj --configuration Release --nologo
       - run: npm run test:ops
       - run: dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-ci

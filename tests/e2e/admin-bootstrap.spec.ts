@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+// Bootstrap mutates shared fixture state and cannot be replayed against the same database.
+test.describe.configure({ retries: 0 });
+
 test("owner can initialize the platform and navigate the localized admin shell", async ({
   page, browser,
 }) => {
@@ -33,7 +36,10 @@ test("owner can initialize the platform and navigate the localized admin shell",
     await expect(page.getByRole("spinbutton", { name: "公示天数", exact: true })).toHaveValue("30");
     await page.getByRole("spinbutton", { name: "公示天数", exact: true }).fill("1");
     await expect(page.locator("input[type=datetime-local]")).toHaveCount(0);
+    const savedNotice = page.waitForResponse(response => response.request().method() === "PUT" && /\/api\/admin\/announcements\/[^/]+$/.test(new URL(response.url()).pathname));
     await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+    const saveResponse = await savedNotice;
+    expect(saveResponse.ok(), `Announcement save returned ${saveResponse.status()}: ${await saveResponse.text()}`).toBeTruthy();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.getByRole("button", { name: "发布", exact: true }).click();
     await expect(page.getByRole("dialog")).toContainText("预计发送给 1 个账号");

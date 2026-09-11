@@ -5,6 +5,11 @@ test('unreviewed project text never becomes embedded HTML in either portal',asyn
  const csrf=async()=>(await(await page.request.get('/api/auth/csrf')).json()).token;
  const status=await(await page.request.get('/api/auth/status')).json();
  const auth=await page.request.post(status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
+ const account=await(await page.request.get('/api/me')).json();
+ if(!account.organization){
+  const createdOrganization=await page.request.post('/api/admin/organizations',{headers:{'X-CSRF-TOKEN':await csrf()},data:{name:'Injection fixture '+Date.now()}});expect(createdOrganization.ok()).toBeTruthy();
+  const organization=await createdOrganization.json();const assigned=await page.request.put(`/api/admin/users/${account.id}`,{headers:{'X-CSRF-TOKEN':await csrf()},data:{displayName:account.displayName,role:'owner',active:true,organizationId:organization.id}});expect(assigned.ok()).toBeTruthy();
+ }
  const created=await page.request.post('/api/projects',{headers:{'X-CSRF-TOKEN':await csrf()},data:{}});expect(created.ok()).toBeTruthy();
  const draft=await created.json();
  const payload='<img data-injection-probe src=x onerror="window.__injected=1"><script data-injection-probe>window.__injected=1</script><iframe data-injection-probe srcdoc="attack"></iframe><svg data-injection-probe onload="window.__injected=1"></svg>';
