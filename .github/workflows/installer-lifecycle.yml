@@ -37,8 +37,17 @@ jobs:
           $next = '{0}.{1}.{2}' -f $version.Major,$version.Minor,($version.Build + 1)
           ./scripts/build-msi.ps1 -Version $version.ToString() -OutputDirectory artifacts/lifecycle-previous -SkipFrontendBuild
           if ($LASTEXITCODE -ne 0) { throw 'Previous test MSI build failed.' }
+          $previousHashes = @{}
+          Get-ChildItem artifacts/lifecycle-previous -Recurse -Filter '*.msi' | ForEach-Object {
+            $previousHashes[$_.FullName] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+          }
           ./scripts/build-msi.ps1 -Version $next -OutputDirectory artifacts/lifecycle-current -SkipFrontendBuild
           if ($LASTEXITCODE -ne 0) { throw 'Current test MSI build failed.' }
+          foreach ($path in $previousHashes.Keys) {
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $previousHashes[$path]) {
+              throw 'Building the next version changed a previous MSI package.'
+            }
+          }
       - name: Exercise real service install, cross-language upgrade and reinstall
         shell: powershell
         env:

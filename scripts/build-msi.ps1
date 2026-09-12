@@ -14,6 +14,8 @@ $payloadRoot = Join-Path $artifactsRoot "msi-payload"
 $installerActionsRoot = Join-Path $artifactsRoot "msi-installer-actions"
 $outputRoot = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { Join-Path $artifactsRoot "installer" } else { [IO.Path]::GetFullPath($OutputDirectory) }
 $projectPath = Join-Path $repositoryRoot "installer\Lifewood.Installer.wixproj"
+# Old output folders may still link to the legacy obj tree. Never bind into that tree.
+$msiIntermediateRoot = Join-Path $artifactsRoot ("msi-obj-" + [guid]::NewGuid().ToString("N"))
 
 function Assert-ArtifactPath([string]$Path) {
     $root = [IO.Path]::GetFullPath($artifactsRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
@@ -54,6 +56,7 @@ if ($versionParts[0] -gt 255 -or $versionParts[1] -gt 255 -or $versionParts[2] -
 Assert-ArtifactPath $payloadRoot
 Assert-ArtifactPath $installerActionsRoot
 Assert-ArtifactPath $outputRoot
+Assert-ArtifactPath $msiIntermediateRoot
 Remove-ArtifactDirectory $payloadRoot
 Remove-ArtifactDirectory $installerActionsRoot
 Remove-ArtifactDirectory $outputRoot
@@ -108,7 +111,7 @@ if ($LASTEXITCODE -ne 0) { throw "Installer data-path validation test failed." }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-backup-path.ps1") -LibraryPath (Join-Path $installerActionsRoot "Lifewood.InstallerActions.dll")
 if ($LASTEXITCODE -ne 0) { throw "Installer backup permission test failed." }
 
-& dotnet build $projectPath -c Release -p:PayloadDir=$payloadRoot -p:InstallerActionsDir=$installerActionsRoot -p:ProductVersion=$Version -p:OutputPath=$outputRoot
+& dotnet build $projectPath -c Release -p:PayloadDir=$payloadRoot -p:InstallerActionsDir=$installerActionsRoot -p:ProductVersion=$Version -p:OutputPath=$outputRoot "-p:BaseIntermediateOutputPath=$msiIntermediateRoot/"
 if ($LASTEXITCODE -ne 0) { throw "MSI build failed." }
 
 $packages = @(Get-ChildItem -LiteralPath $outputRoot -Filter "*.msi" -Recurse -File)
@@ -126,3 +129,5 @@ foreach ($packagePath in $packages) {
 
 Remove-ArtifactDirectory $payloadRoot
 Remove-ArtifactDirectory $installerActionsRoot
+
+Remove-ArtifactDirectory $msiIntermediateRoot

@@ -47,6 +47,8 @@ function Read-Package([string]$Path) {
 }
 $previous = Read-Package $PreviousPackage
 $current = Read-Package $CurrentPackage
+Write-Output ('Previous MSI: version={0}, language={1}, product={2}' -f $previous.ProductVersion,$previous.ProductLanguage,$previous.ProductCode)
+Write-Output ('Current MSI: version={0}, language={1}, product={2}' -f $current.ProductVersion,$current.ProductLanguage,$current.ProductCode)
 if ([version]$current.ProductVersion -le [version]$previous.ProductVersion -or
     $current.ProductCode -eq $previous.ProductCode -or $current.ProductLanguage -eq $previous.ProductLanguage) {
     throw 'Use different product codes, ascending versions and different installer languages.'
@@ -66,6 +68,13 @@ function Invoke-Msi([string]$Label, [string[]]$Arguments, [bool]$ExpectFailure =
     $log = Join-Path $root ($Label + '.log')
     $process = Start-Process msiexec.exe -ArgumentList ($Arguments + @('/qn','/norestart','/l*v',('"' + $log + '"'))) -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit(180000)) { throw "MSI $Label exceeded 3 minutes. Let runner disposal terminate it; do not overlap another transaction." }
+    if ($process.ExitCode -ne 0 -and (Test-Path -LiteralPath $log)) {
+        # Print error codes and failing action names, never MSI properties or full logs.
+        $text = [IO.File]::ReadAllText($log)
+        $codes = @([regex]::Matches($text, 'Error ([0-9]{4})') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        $actions = @([regex]::Matches($text, 'Action ended[^\r\n]*: ([A-Za-z0-9_]+)\. Return value 3\.') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+        Write-Output ('MSI diagnostics: codes={0}; actions={1}' -f ($codes -join ','),($actions -join ','))
+    }
     if ($ExpectFailure) {
         if ($process.ExitCode -ne 1603) { throw "MSI $Label expected validation rejection (1603), received $($process.ExitCode)." }
     } elseif ($process.ExitCode -ne 0) { throw "MSI $Label failed: $($process.ExitCode)." }
