@@ -40,6 +40,7 @@ useParams
 } from "react-router-dom";
 import { ToastHost } from "./Toast";
 
+const FeedbackPage = lazy(()=>import("./FeedbackPage").then(m=>({default:m.FeedbackPage})));
 const ProjectsPage = lazy(() => import("./ProjectsPage").then(module => ({ default: module.ProjectsPage })));
 const UsersPage = lazy(() => import("./UsersPage").then(module => ({ default: module.UsersPage })));
 const NotificationSettingsPage = lazy(() => import("./NotificationSettingsPage").then(module => ({ default: module.NotificationSettingsPage })));
@@ -57,10 +58,11 @@ const AiSettingsPage = lazy(() => import("./AiSettingsPage").then(module => ({ d
 const BackupsPage = lazy(() => import("./BackupsPage").then(module => ({ default: module.BackupsPage })));
 const SystemRuntimePage = lazy(() => import("./SystemRuntimePage").then((module) => ({ default: module.SystemRuntimePage })));
 
-type AdminNavIconName = "home" | "overview" | "projects" | "users" | "organizations" | "audit" | "settings";
+type AdminNavIconName = "feedback" | "home" | "overview" | "projects" | "users" | "organizations" | "audit" | "settings";
 
 function AdminNavIcon({ name }: { name: AdminNavIconName }) {
   const paths: Record<AdminNavIconName, ReactNode> = {
+    feedback: <><path d="M4 4h16v14H9l-5 3V4Z"/><path d="M8 8h8m-8 4h5"/></>,
     home: <><path d="m10 6-6 6 6 6" /><path d="M5 12h15" /></>,
     overview: <><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>,
     projects: <><path d="M4 5h6l2 3h8v11H4V5Z" /><path d="M4 9h16M8 13h8m-8 3h5" /></>,
@@ -228,7 +230,7 @@ function AdminShell({
     workbench: "operations.workbench",
     reports: "productivity.reports",
     notifications: "notifications.title",
-    overview: "admin.nav.overview", projects: "admin.nav.projects",
+    feedback: "feedback.adminTitle", overview: "admin.nav.overview", projects: "admin.nav.projects",
     users: "admin.nav.users", organizations: "admin.nav.organizations",
     audit: "admin.nav.audit", settings: "admin.nav.settings",
   };
@@ -310,6 +312,7 @@ function AdminShell({
                 <span className="nav-label">{t("admin.nav.overview")}</span>
               </NavLink>}
               <NavLink to={localizedPath(locale, "/workbench")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="overview" /></span><span className="nav-label">{t("operations.workbench")}</span></NavLink>
+              {user.permissions.includes("admin.feedback.manage")&&<NavLink to={localizedPath(locale,"/feedback")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="feedback"/></span><span className="nav-label">{t("feedback.adminTitle")}</span></NavLink>}
               <NavLink to={localizedPath(locale, "/projects")}>
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="projects" /></span>
                 <span className="nav-label">{t("admin.nav.projects")}</span>
@@ -509,7 +512,7 @@ function AdminRoot() {
       </main>
     );
   const area = location.pathname.split(`/${locale}/`)[1]?.split("/")[0] ?? "";
-  const required = ({ reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
+  const required = ({ feedback: "admin.feedback.manage", reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
   const home = me.data.permissions.includes("admin.overview.read") ? "overview" : "workbench";
   return (
     <AdminShell user={me.data} locale={locale}>
@@ -523,6 +526,7 @@ function AdminRoot() {
         <Route path="workbench" element={<WorkbenchPage locale={locale} permissions={me.data.permissions} userId={me.data.id}/>} />
         <Route path="projects" element={<ProjectsPage locale={locale} user={me.data} />} />
         <Route path="users" element={<UsersPage locale={locale} currentUserId={me.data.id} />} />
+        <Route path="feedback" element={<FeedbackPage key={me.data.id} userId={me.data.id} locale={locale}/>}/>
         <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
         <Route path="audit" element={<AuditPage key={me.data.id} locale={locale} userId={me.data.id} />} />
         <Route path="settings/announcements" element={<AnnouncementsPage locale={locale} />} />

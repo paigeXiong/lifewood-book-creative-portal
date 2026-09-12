@@ -1,3 +1,8 @@
+import { DraftRecoveryDialog } from "../components/DraftRecoveryDialog";
+import { sameUploadContent } from "../upload-reconciliation";
+import type { ReactNode } from "react";
+import { FileTransfers, type FileTransfer } from "../components/FileTransfers";
+import { createId } from "../create-id";
 import { safeLinkUrl } from "@lifewood/domain";
 import { SaveFeedback } from "../components/SaveFeedback";
 import { useDraftRecovery, focusSaveIssue } from "../useDraftRecovery";
@@ -106,7 +111,11 @@ function ReferenceImageField({
   error,
   onUpload,
   onRemove,
+  feedback,
+  selectionBlocked,
 }: {
+  selectionBlocked?: boolean;
+  feedback?: ReactNode;
   category?: ReferenceCategory;
   assets: ReferenceAsset[];
   busy: boolean;
@@ -131,6 +140,8 @@ function ReferenceImageField({
         busyCategory={busy ? category.id : undefined}
         className="character-reference-drop-card"
         showFileList={false}
+        feedback={feedback}
+        selectionBlocked={selectionBlocked}
         preview={<div className="reference-image-preview" aria-live="polite">
           {assets.length > 0 ? <>
             <ul className="reference-image-grid">
@@ -139,7 +150,7 @@ function ReferenceImageField({
                   <a href={safeLinkUrl(asset.url, true)} target="_blank" rel="noreferrer">
                     <img src={asset.url} alt={asset.fileName} width="112" height="84" loading="lazy" />
                   </a>
-                  <button type="button" disabled={busy} aria-label={t("creative.removeReferenceImage", { name: asset.fileName })} onClick={() => void onRemove(asset)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
+                  <button type="button" disabled={busy || selectionBlocked} aria-label={t("creative.removeReferenceImage", { name: asset.fileName })} onClick={() => void onRemove(asset)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button>
                   <span title={asset.fileName}>{asset.fileName}</span>
                 </li>
               ))}
@@ -243,6 +254,20 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   >("idle");
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>();
   const [uploadTarget, setUploadTarget] = useState<string>();
+  const [transfers, setTransfers] = useState<FileTransfer[]>([]);
+  const uploadBusyRef = useRef(false);
+  const attemptedTransfers = useRef(new Set<string>());
+  const uploadControllers = useRef(new Map<string, AbortController>());
+  const cancelledTransfers = useRef(new Set<string>());
+  const uploadEpoch = useRef(0);
+  useEffect(() => {
+    uploadEpoch.current += 1;
+    setTransfers([]);
+    setUploadError(undefined);
+    setUploadTarget(undefined); uploadBusyRef.current = false;
+    attemptedTransfers.current.clear(); cancelledTransfers.current.clear();
+    return () => { uploadEpoch.current += 1; uploadControllers.current.forEach(controller => controller.abort()); };
+  }, [taskId]);
   const [uploadError, setUploadError] = useState<string>();
   const [uploadErrorTarget, setUploadErrorTarget] = useState<string>();
   const autosaveTimerRef = useRef<number | undefined>(undefined);
@@ -251,6 +276,8 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
   const savedSnapshotRef = useRef<string | undefined>(undefined);
   const [navigating, setNavigating] = useState(false);
   const conflictRef = useRef(false);
+  const [recoveringInput, setRecoveringInput] = useState(false);
+  useEffect(() => { setRecoveringInput(false); }, [taskId]);
   const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
   const draftQuery = useQuery({
     queryKey: ["project", taskId],
@@ -317,6 +344,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     setSelectedCharacterId(characters.fields[0]?.id);
   }, [characters.fields, selectedCharacterId]);
 
+  const valuesFromDraft = (draft: TaskDraft) => toCreativeFormValues(draft.creative);
   const resetFromDraft = (draft: TaskDraft) => {
     form.reset(toCreativeFormValues(draft.creative));
   };
@@ -349,6 +377,8 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       return { saved, continueAfter, values };
     },
     onSuccess: async ({ saved, continueAfter, values }) => {
+      const currentValues = draftSchema.safeParse(form.getValues());
+      if (currentValues.success && JSON.stringify(currentValues.data) === JSON.stringify(values)) setRecoveringInput(false);
       queryClient.setQueryData(["project", taskId], saved);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values);
@@ -386,16 +416,18 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     return pending;
   };
 
-  const recovery = useDraftRecovery(taskId, validLocale, () => JSON.stringify(form.getValues()), latest => {
+  const recovery = useDraftRecovery(taskId, validLocale, () => JSON.stringify(form.getValues()), (latest, fields) => {
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
+    setRecoveringInput(fields.length > 0);
     queryClient.setQueryData(["project", taskId], latest);
     resetFromDraft(latest);
     savedSnapshotRef.current = JSON.stringify(form.getValues());
+    for (const field of fields) form.setValue(field.path.join(".") as never, field.local as never, { shouldDirty: true, shouldValidate: true });
     failedSaveSnapshotRef.current = undefined;
     conflictRef.current = false;
     saveCreative.reset(); setSaveState("idle");
-  });
+  }, valuesFromDraft);
   const retrySave = async () => {
     if (saveInFlightRef.current) return;
     const checked = draftSchema.safeParse(form.getValues());
@@ -410,8 +442,9 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     await runSave(checked.data, false, true);
   };
 
+  const unresolvedUploads = transfers.length > 0;
   useEffect(() => {
-    if (!form.formState.isDirty || saveCreative.isPending || uploadTarget || navigating) return;
+    if (!form.formState.isDirty || saveCreative.isPending || uploadTarget || unresolvedUploads || navigating) return;
     const checked = draftSchema.safeParse(autosaveValues);
     if (!checked.success) {
       setSaveState("invalid");
@@ -434,13 +467,14 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     form.formState.isDirty,
     saveCreative.isPending,
     uploadTarget,
+    unresolvedUploads,
     navigating,
     draftSchema,
   ]);
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (draftQuery.isPending || optionsQuery.isPending)
     return (
-      <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty} />
+      <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} />
         {t("common.loading")}
       </div>
     );
@@ -450,14 +484,14 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     !draftQuery.data ||
     !optionsQuery.data
   )
-    return <><UnsavedChangesGuard dirty={form.formState.isDirty} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
+    return <><UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
   if (draftQuery.data.status !== "draft")
     return (
       <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />
     );
-  if (stage === "style" && !isCharactersComplete(draftQuery.data.creative))
+  if (!recoveringInput && stage === "style" && !isCharactersComplete(draftQuery.data.creative))
     return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} />;
-  if (stage === "style" && !isVoicePreferencesComplete(draftQuery.data.voiceAndReferences))
+  if (!recoveringInput && stage === "style" && !isVoicePreferencesComplete(draftQuery.data.voiceAndReferences))
     return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/voice`)} />;
 
   const options = optionsQuery.data;
@@ -541,55 +575,98 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     }
     return queryClient.getQueryData<TaskDraft>(["project", taskId])!;
   };
-  const uploadReferences = async (
-    category: ReferenceCategory | undefined,
-    files: FileList | readonly File[] | null,
-    characterId?: string,
-  ) => {
-    if (!category || !files?.length || uploadTarget) return;
-    // FileList is a live view of the file input. FileDropCard clears the input
-    // after dispatching this async handler, so snapshot the selected files
-    // before the first await or the upload queue can become empty silently.
-    const selectedFiles = Array.from(files);
-    const target = characterId ? `character:${characterId}` : "style";
-    setUploadTarget(target);
-    setUploadError(undefined);
-    setUploadErrorTarget(undefined);
-    try {
-      let current = await ensureCreativeSaved();
-      const stored = characterId
-        ? (current.creative.characters.find(
-            (character) => character.id === characterId,
-          )?.referenceImages ?? [])
-        : (current.creative.styleReferenceImages ?? []);
-      const queue = selectedFiles.slice(
-        0,
-        Math.max(0, category.maxFiles - stored.length),
-      );
-      for (const file of queue) {
-        const result = await projectService.uploadAsset(
-          taskId,
-          current.version,
-          category.id,
-          file,
-          validLocale,
-          undefined,
-          characterId,
-        );
-        current = result.draft;
-        queryClient.setQueryData(["project", taskId], current);
-        form.reset(toCreativeFormValues(current.creative));
-      }
-      setSaveState("idle");
-    } catch (error) {
-      if (error instanceof ApiError && error.details.code === "project.version_conflict") conflictRef.current = true;
-      setUploadError(localizedApiError(error, t));
-      setUploadErrorTarget(target);
-      setSaveState("error");
-    } finally {
-      setUploadTarget(undefined);
-    }
+  const applyUploadedDraft = (current: TaskDraft) => {
+    queryClient.setQueryData(["project", taskId], current);
+    // Preserve text entered while the file was in flight; update only server-owned attachment lists.
+    form.getValues("characters").forEach((character, index) => {
+      const saved = current.creative.characters.find(item => item.id === character.id);
+      if (saved) form.setValue(`characters.${index}.referenceImages`, saved.referenceImages ?? [], { shouldDirty: true });
+    });
+    form.setValue("styleReferenceImages", current.creative.styleReferenceImages ?? [], { shouldDirty: true });
+    form.setValue("styleReferenceImageUrls", current.creative.styleReferenceImageUrls ?? [], { shouldDirty: true });
   };
+  const uploadReference = async (item: FileTransfer) => {
+    const epoch = uploadEpoch.current;
+    const controller = new AbortController();
+    uploadControllers.current.set(item.id, controller);
+    setTransfers(items => items.map(entry => entry.id === item.id ? { ...entry, status: "uploading", progress: 0, error: undefined } : entry));
+    try {
+      if (attemptedTransfers.current.has(item.id) && saveInFlightRef.current) await savePromiseRef.current;
+      if (epoch !== uploadEpoch.current) return;
+      // A lost response may already have changed the version; replay before saving local edits.
+      const current = attemptedTransfers.current.has(item.id)
+        ? queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!
+        : await ensureCreativeSaved();
+      if (epoch !== uploadEpoch.current || controller.signal.aborted) throw new DOMException("Cancelled", "AbortError");
+      attemptedTransfers.current.add(item.id);
+      const result = await projectService.uploadAsset(taskId, current.version, item.categoryId, item.file, validLocale, controller.signal, item.characterId, {
+        uploadId: item.id,
+        onProgress: progress => { if (epoch === uploadEpoch.current) setTransfers(items => items.map(entry => entry.id === item.id ? { ...entry, progress } : entry)); },
+      });
+      if (epoch !== uploadEpoch.current) return;
+      if (!sameUploadContent(current, result.draft)) throw new ApiError({ code: "project.version_conflict", messageKey: "errors.project.versionConflict", retryable: false });
+      applyUploadedDraft(result.draft);
+      setTransfers(items => items.filter(entry => entry.id !== item.id));
+      attemptedTransfers.current.delete(item.id);
+      if (!conflictRef.current) setSaveState("idle");
+      return true;
+    } catch (error) {
+      if (epoch !== uploadEpoch.current) return;
+      const cancelled = controller.signal.aborted;
+      setTransfers(items => items.map(entry => entry.id === item.id ? { ...entry, status: cancelled ? "cancelled" : "error", error: cancelled ? undefined : localizedApiError(error, t) } : entry));
+      if (error instanceof ApiError && error.details.code === "project.version_conflict") { conflictRef.current = true; setSaveState("error"); }
+    } finally { uploadControllers.current.delete(item.id); }
+  };
+  const runReferenceQueue = async (queue: FileTransfer[]) => {
+    if (!queue.length || uploadBusyRef.current || uploadTarget) return;
+    const epoch = uploadEpoch.current;
+    uploadBusyRef.current = true;
+    setUploadTarget(queue[0].characterId ? `character:${queue[0].characterId}` : "style");
+    if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = undefined;
+    setUploadError(undefined); setUploadErrorTarget(undefined);
+    try {
+      for (const item of queue) {
+        if (epoch !== uploadEpoch.current) break;
+        if (cancelledTransfers.current.delete(item.id)) continue;
+        if (!await uploadReference(item)) break;
+      }
+    } finally { if (epoch === uploadEpoch.current) { uploadBusyRef.current = false; setUploadTarget(undefined); } }
+  };
+  const uploadReferences = async (category: ReferenceCategory | undefined, files: FileList | readonly File[] | null, characterId?: string) => {
+    if (!category || !files?.length || uploadBusyRef.current || uploadTarget) return;
+    const stored = characterId ? form.getValues("characters").find(item => item.id === characterId)?.referenceImages ?? [] : form.getValues("styleReferenceImages");
+    const queue: FileTransfer[] = Array.from(files).slice(0, Math.max(0, category.maxFiles - stored.length))
+      .map(file => ({ id: createId(), categoryId: category.id, characterId, file, status: "queued" }));
+    setTransfers(items => [...items, ...queue]);
+    await runReferenceQueue(queue);
+  };
+  const cancelReference = async (id: string) => {
+    const controller = uploadControllers.current.get(id);
+    if (controller) { controller.abort(); return; }
+    const item = transfers.find(entry => entry.id === id);
+    if (!item || item.status === "queued") {
+      cancelledTransfers.current.add(id); setTransfers(items => items.filter(entry => entry.id !== id)); return;
+    }
+    if (uploadBusyRef.current) return;
+    const epoch = uploadEpoch.current;
+    uploadBusyRef.current = true; setUploadTarget("__reconciling__");
+    try {
+      const before = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
+      const latest = await projectService.getProject(taskId!, validLocale);
+      if (epoch !== uploadEpoch.current) return;
+      if (!sameUploadContent(before, latest)) {
+        conflictRef.current = true; setSaveState("error"); setUploadError(t("wizard.versionConflict")); return;
+      }
+      applyUploadedDraft(latest);
+      setTransfers(items => items.filter(entry => entry.id !== id));
+      setUploadError(undefined);
+    } catch (error) { if (epoch === uploadEpoch.current) setUploadError(localizedApiError(error, t)); }
+    finally { if (epoch === uploadEpoch.current) { uploadBusyRef.current = false; setUploadTarget(undefined); } }
+  };
+  const referenceFeedback = (characterId?: string) => <FileTransfers
+    items={transfers.filter(item => item.characterId === characterId)} busy={Boolean(uploadTarget) || navigating}
+    onCancel={cancelReference} onRetry={item => runReferenceQueue([item, ...transfers.filter(entry => entry.id !== item.id && entry.status === "queued")])} />;
   const removeReference = async (asset: ReferenceAsset) => {
     if (
       uploadTarget ||
@@ -679,10 +756,10 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
       setUploadTarget(undefined);
     }
   };
-  const conflict = conflictRef.current;
+  const conflict = conflictRef.current || conflictRef.current;
   const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? (conflict ? t("wizard.versionConflict") : saveCreative.error instanceof ApiError ? localizedApiError(saveCreative.error, t) : t("wizard.saveFailed")) : "";
   const navigateWithSave = async (path: string) => {
-    if (navigating || uploadTarget) return;
+    if (navigating || uploadTarget || transfers.length > 0) return;
     setNavigating(true);
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
@@ -701,11 +778,11 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     void navigateWithSave(event.currentTarget.pathname);
   };
   const continueStep = form.handleSubmit(async (values) => {
-    if (navigating || uploadTarget) return;
+    if (navigating || uploadTarget || transfers.length > 0) return;
     const checked = stepSchema.safeParse(values);
     if (!checked.success) {
       checked.error.issues.forEach((issue) =>
-        form.setError(issue.path as never, { message: issue.message }),
+        form.setError(issue.path.join(".") as never, { message: issue.message }),
       );
       const firstIssue = checked.error.issues[0];
       const first = firstIssue?.path.join(".");
@@ -716,18 +793,8 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
         setSelectedCharacterId(
           form.getValues(`characters.${firstIssue.path[1]}`).id,
         );
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() =>
-            document.querySelector<HTMLElement>(`[name="${first}"]`)?.focus(),
-          ),
-        );
-      } else if (first)
-        requestAnimationFrame(() =>
-          (first === "characters"
-            ? document.getElementById("characters-error-target")
-            : document.querySelector<HTMLElement>(`[name="${first}"]`)
-          )?.focus(),
-        );
+        requestAnimationFrame(() => { if (first) focusSaveIssue(first); });
+      } else if (first) focusSaveIssue(first);
       return;
     }
     setNavigating(true);
@@ -741,19 +808,17 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
 
   return (
     <div className="wizard-page creative-page">
-      <UnsavedChangesGuard dirty={form.formState.isDirty} />
+      <UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} />
       <div className="wizard-heading">
         <h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1>
         <SaveFeedback message={statusText} conflict={conflict} invalid={saveState === "invalid"} busy={saveCreative.isPending || recovery.loading || navigating || Boolean(uploadTarget)} error={recovery.error} onRetry={() => void retrySave()} onReload={() => void recovery.reload()} />
+        <DraftRecoveryDialog recovery={recovery} options={optionsQuery.data} />
       </div>
-      <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "characters" ? 2 : 4} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadTarget)} />
+      <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "characters" ? 2 : 4} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadTarget) || transfers.length > 0} />
       <form
         autoComplete="off"
         onSubmit={continueStep}
-        inert={
-          Boolean(uploadTarget) ||
-          navigating
-        }
+        inert={navigating || uploadTarget?.startsWith("remove:") || uploadTarget?.startsWith("delete-character:")}
         aria-busy={
           Boolean(uploadTarget) ||
           navigating
@@ -776,7 +841,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                 <button
                   className="button button-secondary"
                   type="button"
-                  disabled={characters.fields.length >= 12}
+                  disabled={characters.fields.length >= 12 || Boolean(uploadTarget)}
                   onClick={addCharacter}
                 >
                   <span aria-hidden="true">＋</span>
@@ -1062,6 +1127,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                       </Field>
                     </div>
                       <ReferenceImageField
+                      key={`${taskId}:${activeCharacter.id}`}
                       category={characterReferenceCategory}
                       assets={activeCharacter.referenceImages}
                       busy={Boolean(uploadTarget) || navigating}
@@ -1083,6 +1149,8 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                           activeCharacter.id,
                         )
                       }
+                      selectionBlocked={transfers.length > 0}
+                      feedback={referenceFeedback(activeCharacter.id)}
                       onRemove={removeReference}
                     />
                   </article>
@@ -1193,6 +1261,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                 </ChoiceRow>
               </ChoiceField>
               <ReferenceImageField
+                key={`${taskId}:style`}
                 category={styleReferenceCategory}
                 assets={selectedStyleReferenceImages}
                 busy={Boolean(uploadTarget) || navigating}
@@ -1207,6 +1276,8 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
                 onUpload={(files) =>
                   uploadReferences(styleReferenceCategory, files)
                 }
+                selectionBlocked={transfers.length > 0}
+                feedback={referenceFeedback()}
                 onRemove={removeReference}
               />
             </section>}
@@ -1220,7 +1291,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
             styleTagMap={styleTagMap}
             activeCharacter={activeCharacter}
             onNext={() => void continueStep()}
-            nextDisabled={navigating || Boolean(uploadTarget)}
+            nextDisabled={navigating || Boolean(uploadTarget) || transfers.length > 0}
           />
         </div>
         <div className="sticky-actions">
@@ -1236,7 +1307,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
             <button
               className="button button-quiet"
               type="button"
-              disabled={navigating || Boolean(uploadTarget)}
+              disabled={navigating || Boolean(uploadTarget) || transfers.length > 0}
               onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}
             >
               {t("common.backHome")}
@@ -1245,7 +1316,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
             <button
               className="button button-primary"
               type="submit"
-              disabled={navigating || Boolean(uploadTarget)}
+              disabled={navigating || Boolean(uploadTarget) || transfers.length > 0}
             >
               {t(revisionNext ? `wizard.steps.${revisionNext}` : (stage === "characters" ? "wizard.actions.toVoice" : "wizard.actions.toReferences"))}
               <span aria-hidden="true">→</span>

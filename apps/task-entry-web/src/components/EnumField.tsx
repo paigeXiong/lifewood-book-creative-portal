@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { UseFormRegisterReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import type { DisplayConfigOption } from "../legacy-options";
@@ -17,6 +17,7 @@ export function EnumField({ label, htmlFor, icon, required, error, items, regist
 }) {
   const { t } = useTranslation();
   const [search,setSearch]=useState("");
+  useEffect(() => { if (error) setSearch(""); }, [error]);
   const searchable=items.length>8 && selectedId!==undefined;
   const query=search.trim().toLocaleLowerCase();
   const matches=(item:DisplayConfigOption)=>item.label.toLocaleLowerCase().includes(query);
@@ -27,8 +28,7 @@ export function EnumField({ label, htmlFor, icon, required, error, items, regist
     <ChoiceRow id={htmlFor} className={searchable?"searchable-choices":""}>
       {choices.map((item) => <label hidden={searchable && !!query && !matches(item) && item.id!==selectedId} className="choice-chip" key={item.id} aria-disabled={item.unavailable}>
         <input {...registration} type="radio" value={item.id} disabled={item.unavailable}
-          aria-invalid={error ? true : undefined} aria-describedby={error ? `${htmlFor}-message` : undefined}
-          onFocus={(event) => event.currentTarget.parentElement?.scrollIntoView?.({ block: "nearest", inline: "nearest" })} />
+          aria-invalid={error ? true : undefined} aria-describedby={error ? `${htmlFor}-message` : undefined} />
         <span>{item.label}</span>
       </label>)}
     </ChoiceRow>

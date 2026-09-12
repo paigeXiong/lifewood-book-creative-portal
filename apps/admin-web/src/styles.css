@@ -1524,5 +1524,8 @@ td {
 .organization-member-count { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; }
 
 .organization-identity-link { display: inline-flex; max-width: 100%; vertical-align: middle; text-decoration: none; }
-.organization-wordmark { display: block; width: 216px; max-width: 100%; height: auto; aspect-ratio: 6 / 1; object-fit: contain; border-radius: 5px; }
-.organization-identity-link:hover .organization-wordmark { filter: brightness(.97); }
+.organization-wordmark { display: block; width: 144px; max-width: 100%; height: auto; aspect-ratio: 6 / 1; object-fit: contain; border-radius: 5px; }
+.organization-identity-link:hover .organization-wordmark { filter: brightness(.96); }
+.organizations-table td { padding-block: .5rem; vertical-align: middle; }
+.organization-brand-preview { margin-bottom: .25rem; }
+.organization-brand-preview .organization-wordmark { width: 100%; max-width: 360px; }

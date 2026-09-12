@@ -1,10 +1,11 @@
+import { postAuthentication } from "./auth-request";
 import {expect,test} from '@playwright/test';
 
 test('unreviewed project text never becomes embedded HTML in either portal',async({page})=>{
  test.setTimeout(90000);
  const csrf=async()=>(await(await page.request.get('/api/auth/csrf')).json()).token;
  const status=await(await page.request.get('/api/auth/status')).json();
- const auth=await page.request.post(status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
+ const auth=await postAuthentication(page.request, status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
  const account=await(await page.request.get('/api/me')).json();
  if(!account.organization){
   const createdOrganization=await page.request.post('/api/admin/organizations',{headers:{'X-CSRF-TOKEN':await csrf()},data:{name:'Injection fixture '+Date.now()}});expect(createdOrganization.ok()).toBeTruthy();

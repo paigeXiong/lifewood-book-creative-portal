@@ -1,5 +1,5 @@
 .page.profile-page { width: min(1040px, calc(100% - 32px)); max-width: 1040px; padding-top: 20px; }
-.profile-page .profile-identity { display: flex; flex-direction: column; align-items: stretch; gap: 16px; min-height: 0; padding: 0 0 20px; margin-bottom: 0; background: none; color: var(--ink); border-radius: 0; box-shadow: none; overflow: visible; }
+.profile-page .profile-identity { display: flex; flex-direction: column; align-items: stretch; gap: 16px; min-height: 0; padding: 20px; margin-bottom: 16px; background: var(--surface); color: var(--ink); border-radius: 12px; box-shadow: 0 4px 16px #173a2d05; overflow: visible; }
 .profile-page .profile-back-link { position: static; align-self: flex-start; color: var(--ink-muted); font-size: 12px; }
 .profile-page .profile-back-link:hover { color: var(--green-900); }
 .profile-page .profile-person { gap: 16px; align-items: center; }
@@ -42,6 +42,7 @@
   .profile-page .profile-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .profile-page .profile-form, .profile-page .profile-account, .profile-page .profile-preferences { grid-column: auto; grid-row: auto; }
   .profile-page .profile-surface { padding: 16px; }
+  .profile-page .profile-identity { padding: 16px; margin-bottom: 12px; }
   .profile-page .profile-fields { grid-template-columns: minmax(0, 1fr); }
   .profile-page .profile-actions .button { width: auto; min-height: 44px; }
 }

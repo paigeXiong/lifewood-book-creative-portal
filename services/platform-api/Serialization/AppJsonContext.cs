@@ -8,6 +8,13 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(FeedbackCatalog))]
+[JsonSerializable(typeof(CreateFeedbackRequest))]
+[JsonSerializable(typeof(UpdateFeedbackRequest))]
+[JsonSerializable(typeof(FeedbackItem))]
+[JsonSerializable(typeof(FeedbackPage))]
+[JsonSerializable(typeof(FeedbackDetail))]
+[JsonSerializable(typeof(FeedbackNotice))]
 [JsonSerializable(typeof(BackupManifest))]
 [JsonSerializable(typeof(BackupRecord))]
 [JsonSerializable(typeof(BackupPage))]

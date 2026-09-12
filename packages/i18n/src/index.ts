@@ -13,6 +13,7 @@ export function isSupportedLocale(
 const resources = {
   "zh-CN": {
     translation: {
+      feedback: {"entry": "问题反馈", "adminTitle": "平台反馈", "category": "反馈类型", "description": "问题描述", "placeholder": "请描述遇到的问题、操作步骤或希望改进的地方…", "screenshot": "截图（选填）", "imageHint": "支持 PNG、JPG、WebP，最多 1 MB。请遮挡截图中的密码等敏感信息。", "removeImage": "移除截图", "page": "反馈页面", "submitted": "反馈已提交", "replyHint": "管理员的回复将通过站内通知送达。", "submit": "提交反馈", "sending": "正在提交…", "retry": "重试", "retryHint": "尚未确认提交结果，重试将核对同一份反馈，不会重复提交。", "loadError": "暂时无法加载，请重试。", "search": "搜索问题、姓名或邮箱", "allStatuses": "全部状态", "empty": "暂时没有反馈", "author": "反馈人", "status": "处理状态", "createdAt": "提交时间", "view": "查看详情", "original": "原始反馈", "reply": "处理回复", "replyPlaceholder": "回复将作为站内通知发送给反馈人…", "sendReply": "保存并发送通知", "saveStatus": "保存状态", "saved": "处理结果已保存", "replyHistory": "已发送的通知", "noReplies": "尚未发送回复", "previous": "上一页", "next": "下一页", "pagination": "第 {{page}} 页 · 共 {{count}} 条", "closedAccount": "已注销账号", "refresh": "刷新", "noticeReply": "管理员回复", "errors": {"invalid": "请填写 5–4000 字的问题描述，并检查反馈类型。", "image": "请选择不超过 1 MB 的 PNG、JPG 或 WebP 图片。", "limited": "反馈提交较频繁，请稍后再试。", "conflict": "反馈已更新，请刷新详情后核对处理结果。"}},
       clientUx: {
         sendingReply: "正在发送…","allSteps": "查看全部步骤", "hideSteps": "收起步骤", "returnedStatus": "待修改或回复", "resubmit": "重新提交需求", "backTo": "返回：{{unit}}", "revisionReviewHint": "核对本轮要求和回复后重新提交。若保留原需求，可以说明原因，无需强制修改。", "requestedUnits": "本轮请处理", "returnReason": "退回原因", "openFeedback": "查看反馈", "allProjects": "全部项目", "actionRequired": "待我处理", "continueDraft": "继续填写", "handleReturn": "处理退回", "viewProgress": "查看进展", "more": "更多操作", "optionalBook": "卖点与简介（选填）", "optionalFiles": "更多资料（选填）", "recognizedFields": "已填入：{{fields}}。请核对结果。", "searchOptions": "搜索{{label}}", "noOptions": "没有匹配的选项", "selected": "已选", "manuscriptOptional": "全书或节选（选填）"},
       bookIntake: {"recognitionEndpoint": "AI 服务地址或模型不可用，请联系管理员检查接入配置。已有信息未被修改。", "basicHint": "填写品牌、项目名称、视频目标、截止日期和目标受众。", "presetImage": "{{name}}的默认角色参考图", "presetHint": "AI 生成的默认参考图。可修改设定、上传自己的参考图，或删除整个角色。", "uploadCover": "上传封面", "recognizeShort": "识别填写", "recognitionTitle": "封面识别", "recognitionHint": "上传封面、封底或书腰照片后，可将最多 6 张、合计 20 MB 的照片发送给已配置的 AI，提取书名、作者、副标题、类型、卖点和简介。只填入空白字段，请核对结果。", "recognitionDisabled": "尚未配置封面识别服务；请手动填写书籍信息。", "recognitionImages": "请选择 1–6 张已上传的封面照片，每张最多 10 MB，合计不超过 20 MB。", "recognitionFailed": "识别失败。请稍后重试或手动填写，已有信息未被修改。", "recognize": "识别并填写空白字段", "recognizing": "正在识别封面…", "recognitionDone": "已填入识别到的资料，请核对并补充。未识别的信息保留为空。", "recognitionNoChange": "没有可自动填入的新资料。已有内容已保留，您可以手动补充。", "uploadFirst": "上传封面照片", "takePhoto": "拍摄封面照片", "preparingPhoto": "正在处理并上传照片…", "photoFormat": "当前类别不接受 JPG 或 PNG 照片，请联系管理员检查文件类别配置。", "photoSize": "照片压缩后仍超过大小限制，请选择较小的照片。", "photoUnreadable": "无法读取这张照片，请将相机格式设为 JPG 后重拍，或选择 JPG、PNG 图片上传。", "photoInterrupted_camera": "拍照期间页面重新加载，尚未收到照片。请从相册重新选择照片上传。", "photoInterrupted_processing": "处理照片时页面重新加载，上传已中断。请降低拍照分辨率后重试。", "photoInterrupted_uploading": "上传时页面重新加载。请先检查封面列表，未出现时再重新上传。", "photoTimeout": "照片处理超时，请重新选择照片或降低相机分辨率后再试。", "photoUploadFailed": "照片上传失败，请重试。"},
@@ -220,7 +221,7 @@ const resources = {
         },
       },
       saveRecovery: {
-        title: "保存需要处理", retry: "重试保存", locate: "定位问题", loadLatest: "载入最新版本",
+        title: "保存需要处理", retry: "重试保存", locate: "定位问题", loadLatest: "比较最新版本",
         keptHint: "当前页面的输入已保留，请处理后再离开。", invalidHint: "点击定位问题，修正对应字段后将自动保存。",
         replaceConfirm: "载入最新版本会替换当前页面尚未保存的修改。确定继续吗？",
         changedWhileLoading: "加载期间你又修改了内容，仍要用服务器最新版本替换当前输入吗？",
@@ -620,6 +621,7 @@ const resources = {
   },
   "en-US": {
     translation: {
+      feedback: {"entry": "Report an issue", "adminTitle": "Platform feedback", "category": "Category", "description": "Description", "placeholder": "Describe the issue, the steps you took, or your suggestion…", "screenshot": "Screenshot (optional)", "imageHint": "PNG, JPG or WebP, up to 1 MB. Hide passwords and other sensitive information in your screenshot.", "removeImage": "Remove screenshot", "page": "Page", "submitted": "Feedback submitted", "replyHint": "Administrator replies will arrive in your notifications.", "submit": "Submit feedback", "sending": "Submitting…", "retry": "Retry", "retryHint": "Submission is not yet confirmed. Retrying checks the same feedback without creating a duplicate.", "loadError": "Unable to load. Please try again.", "search": "Search issue, name or email", "allStatuses": "All statuses", "empty": "No feedback yet", "author": "Submitted by", "status": "Status", "createdAt": "Submitted", "view": "View details", "original": "Original feedback", "reply": "Response", "replyPlaceholder": "Your response will be sent as an in-app notification…", "sendReply": "Save and notify", "saveStatus": "Save status", "saved": "Changes saved", "replyHistory": "Sent notifications", "noReplies": "No response sent yet", "previous": "Previous", "next": "Next", "pagination": "Page {{page}} · {{count}} total", "closedAccount": "Closed account", "refresh": "Refresh", "noticeReply": "Administrator response", "errors": {"invalid": "Enter a description of 5–4000 characters and check the category.", "image": "Choose a PNG, JPG or WebP image up to 1 MB.", "limited": "You have submitted several reports recently. Please try again later.", "conflict": "Feedback has changed. Refresh the details and check the latest result."}},
       clientUx: {
         sendingReply: "Sending…","allSteps": "View all steps", "hideSteps": "Hide steps", "returnedStatus": "Changes or reply needed", "resubmit": "Resubmit brief", "backTo": "Back to {{unit}}", "revisionReviewHint": "Review the requested changes and your replies before resubmitting. You can explain why you want to keep the original brief without changing it.", "requestedUnits": "Please address", "returnReason": "Requested change", "openFeedback": "View feedback", "allProjects": "All projects", "actionRequired": "Needs my attention", "continueDraft": "Continue draft", "handleReturn": "Address feedback", "viewProgress": "View progress", "more": "More actions", "optionalBook": "Selling point & synopsis (optional)", "optionalFiles": "More materials (optional)", "recognizedFields": "Filled in: {{fields}}. Please review.", "searchOptions": "Search {{label}}", "noOptions": "No matching options", "selected": "Selected", "manuscriptOptional": "Manuscript or excerpt (optional)"},
       bookIntake: {"recognitionEndpoint": "The AI endpoint or model is unavailable. Please ask an administrator to check the provider settings. Existing information has not changed.", "basicHint": "Set the brand, project name, video goal, deadline and target audience.", "presetImage": "Default reference portrait for {{name}}", "presetHint": "AI-generated reference portrait. Edit the preset, upload your own reference images, or delete this character.", "uploadCover": "Upload cover", "recognizeShort": "Scan & fill", "recognitionTitle": "Cover recognition", "recognitionHint": "After uploading cover, back-cover or book-jacket photos, send up to 6 photos (20 MB total) to the configured AI to extract title, author, subtitle, genre, hook and synopsis. Only blank fields are filled. Please check the results.", "recognitionDisabled": "Cover recognition is not configured. Enter the book information manually.", "recognitionImages": "Choose 1–6 uploaded cover photos, up to 10 MB each and 20 MB in total.", "recognitionFailed": "Recognition failed. Try again later or enter the information manually. Existing information has been preserved.", "recognize": "Recognize and fill blank fields", "recognizing": "Recognizing cover…", "recognitionDone": "Recognized information has been filled in. Please review and complete it. Unreadable details remain blank.", "recognitionNoChange": "No new information could be filled in. Existing content was preserved; you can complete the fields manually.", "uploadFirst": "Go to 1.2 to upload cover photos", "takePhoto": "Take a cover photo", "preparingPhoto": "Processing and uploading photo…", "photoFormat": "This category does not accept JPG or PNG photos. Ask an administrator to check its file settings.", "photoSize": "The compressed photo still exceeds the size limit. Choose a smaller photo.", "photoUnreadable": "This photo could not be read. Set the camera format to JPG and retake it, or upload a JPG or PNG image.", "photoInterrupted_camera": "The page reloaded before receiving the photo. Please select it from your gallery to upload.", "photoInterrupted_processing": "The page reloaded while processing the photo. Try a lower camera resolution.", "photoInterrupted_uploading": "The page reloaded during upload. Check your covers before uploading again.", "photoTimeout": "Photo processing timed out. Select the photo again or try a lower camera resolution.", "photoUploadFailed": "Photo upload failed. Please try again."},
@@ -839,7 +841,7 @@ const resources = {
         },
       },
       saveRecovery: {
-        title: "Saving needs attention", retry: "Retry saving", locate: "Locate issue", loadLatest: "Load latest version",
+        title: "Saving needs attention", retry: "Retry saving", locate: "Locate issue", loadLatest: "Compare latest version",
         keptHint: "Your input is still on this page. Resolve the issue before leaving.", invalidHint: "Locate and correct the field to resume automatic saving.",
         replaceConfirm: "Loading the latest version will replace your unsaved changes on this page. Continue?",
         changedWhileLoading: "You made more changes while loading. Replace your current input with the latest server version?",
@@ -1463,3 +1465,55 @@ i18n.addResourceBundle("en-US","translation",{"backups": {"check": {"recordFaile
 
 i18n.addResourceBundle("zh-CN","translation",{notifications:{openBackups:"查看备份",owners:"平台负责人",backupAudienceHint:"备份提醒仅发送给有效的平台负责人。",kinds:{backup_failed:"自动备份失败",backup_damaged:"备份损坏",backup_stale:"缺少近期备份"}}},true,true);
 i18n.addResourceBundle("en-US","translation",{notifications:{openBackups:"View backups",owners:"Platform owners",backupAudienceHint:"Backup alerts are sent only to active platform owners.",kinds:{backup_failed:"Automatic backup failed",backup_damaged:"Damaged backup",backup_stale:"No recent backup"}}},true,true);
+
+i18n.addResourceBundle("zh-CN", "translation", { fileTransfer: {
+  resolveFirst: "请先处理待上传文件", resume: "继续上传", processing: "服务器处理中…", progress: "正在上传 {{percent}}%", progressFor: "{{name}} 上传进度",
+  cancelFor: "取消上传 {{name}}", retryFor: "重试上传 {{name}}", dismissFor: "移除上传记录 {{name}}"
+}}, true, true);
+i18n.addResourceBundle("en-US", "translation", { fileTransfer: {
+  resolveFirst: "Resolve pending uploads first", resume: "Resume upload", processing: "Processing…", progress: "Uploading {{percent}}%", progressFor: "Upload progress for {{name}}",
+  cancelFor: "Cancel upload of {{name}}", retryFor: "Retry upload of {{name}}", dismissFor: "Dismiss upload of {{name}}"
+}}, true, true);
+
+// On-demand draft conflict comparison.
+i18n.addResourceBundle("zh-CN", "translation", { saveRecovery: {
+  compareTitle: "处理编辑冲突", compareHint: "选择要保留的输入，其余采用最新版本。附件保持最新。",
+  local: "本次输入", latest: "服务器最新", apply: "应用并继续编辑", copyLocal: "复制本次输入", copied: "已复制", copyFailed: "复制失败，请手动选择并复制文字。",
+  empty: "未填写", yes: "需要", no: "不需要", unavailableOption: "已停用或不可用的选项", unnamedCharacter: "未命名角色",
+  narration: "旁白配音", voices: "参考音色", preferredVoice: "首选音色", noDifferences: "填写内容一致，可直接使用最新版本继续编辑。",
+  changedAgain: "内容又有更新，已刷新比较结果，请重新确认。", notEditable: "项目已不可编辑，可复制本次输入后载入最新状态。",
+  characterChanged: "角色有新增或删除，角色列表采用最新版本；未匹配角色的输入可复制保留。"
+}}, true, true);
+i18n.addResourceBundle("en-US", "translation", { saveRecovery: {
+  compareTitle: "Resolve editing conflict", compareHint: "Choose the inputs to keep. Other fields and attachments use the latest version.",
+  local: "Your input", latest: "Latest on server", apply: "Apply and continue", copyLocal: "Copy your input", copied: "Copied", copyFailed: "Copy failed. Select and copy the text manually.",
+  empty: "Not entered", yes: "Required", no: "Not required", unavailableOption: "Retired or unavailable option", unnamedCharacter: "Unnamed character",
+  narration: "Narration", voices: "Reference voices", preferredVoice: "Preferred voice", noDifferences: "Your inputs match. Use the latest version to continue editing.",
+  changedAgain: "Content changed again. The comparison has been refreshed; please review it again.", notEditable: "This project is no longer editable. Copy your input before loading its latest status.",
+  characterChanged: "Characters were added or removed. The latest list is used; you can copy inputs for unmatched characters."
+}}, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { submissionRecovery: {
+  checking: "正在核实结果…", check: "检查提交结果", unknown: "暂时无法确认提交结果。网络恢复后，请先检查结果。", retryHint: "当前仍为草稿，资料已保留，可以重试提交。", retry: "重试提交"
+}}, true, true);
+i18n.addResourceBundle("en-US", "translation", { submissionRecovery: {
+  checking: "Checking result…", check: "Check submission result", unknown: "The submission result could not be confirmed. Check it once your connection returns.", retryHint: "The project is still a draft. Your information is retained and you can retry.", retry: "Retry submission"
+}}, true, true);
+
+i18n.addResource("zh-CN", "translation", "tasks.filters.activeCount", "筛选，已应用 {{count}} 项条件");
+i18n.addResource("en-US", "translation", "tasks.filters.activeCount", "Filters, {{count}} active condition");
+
+i18n.addResourceBundle("zh-CN", "translation", { tasks: { tabs: { all: "全部", pending: "待处理" } } }, true, true);
+i18n.addResourceBundle("en-US", "translation", { tasks: { tabs: { all: "All", pending: "Pending" } } }, true, true);
+
+i18n.addResourceBundle("zh-CN","translation",{notifications:{kinds:{feedback_reply:"平台反馈回复"}}},true,true);
+i18n.addResourceBundle("en-US","translation",{notifications:{kinds:{feedback_reply:"Platform feedback reply"}}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{feedback:{deliveryRuleHint:"反馈回复固定发送给反馈人，不能停用或静默。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{feedback:{deliveryRuleHint:"Feedback replies are always sent to the person who submitted the feedback and cannot be disabled or muted."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{feedback:{chooseImage:"选择图片",noImage:"未选择图片"}},true,true);
+i18n.addResourceBundle("en-US","translation",{feedback:{chooseImage:"Choose image",noImage:"No image selected"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{feedback:{imageHint:"支持 PNG、JPG、WebP，原图最多 10 MB，上传前自动压缩。",processingImage:"正在处理图片…",errors:{image:"请选择不超过 10 MB 的 PNG、JPG 或 WebP 图片。",imageProcessing:"无法处理这张图片，请重新选择或裁剪后再试。"}}},true,true);
+i18n.addResourceBundle("en-US","translation",{feedback:{imageHint:"PNG, JPG or WebP, up to 10 MB. Images are compressed automatically before upload.",processingImage:"Processing image…",errors:{image:"Choose a PNG, JPG or WebP image up to 10 MB.",imageProcessing:"Unable to process this image. Choose another image or crop it and try again."}}},true,true);

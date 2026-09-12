@@ -1,4 +1,5 @@
-import {SavedViews} from "@lifewood/ui/saved-views";
+import { TaskMoreActions } from "../components/TaskMoreActions";
+import { TaskEmptyIllustration } from "../components/TaskEmptyIllustration";
 import {personalWorkspaceService} from "@lifewood/api-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -160,7 +161,12 @@ export function TaskListPage() {
     const nextDirection: SortDirection = active ? (direction === "asc" ? "desc" : "asc") : (field === "updated" ? "desc" : "asc");
     return <th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
       <button className={`table-sort${active ? " active" : ""}`} type="button" title={t("tasks.sort.change", { column: label, direction: t(`tasks.sort.${nextDirection}`) })} onClick={() => changeSort(field)}>
-        <span>{label}</span><span className="table-sort-icon" aria-hidden="true">{active ? (direction === "asc" ? "↑" : "↓") : "↕"}</span>
+        <span>{label}</span>
+        <svg className="table-sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <path d="M12 4v16" />
+          {(!active || direction === "asc") && <path d="m8 8 4-4 4 4" />}
+          {(!active || direction === "desc") && <path d="m8 16 4 4 4-4" />}
+        </svg>
       </button>
     </th>;
   };
@@ -200,8 +206,8 @@ export function TaskListPage() {
           <div className="task-list-toolbar">
           <div className="task-list-navigation">
             <div className="task-attention-tabs" aria-label={t("tasks.filterLabel")}>
-              <button type="button" aria-pressed={status!=="action_required"} onClick={()=>updateFilters({status:"",page:1})}>{t("clientUx.allProjects")}</button>
-              <button type="button" aria-pressed={status==="action_required"} onClick={()=>updateFilters({status:"action_required",page:1})}>{t("clientUx.actionRequired")}</button>
+              <button type="button" aria-pressed={status!=="action_required"} onClick={()=>updateFilters({status:"",page:1})}>{t("tasks.tabs.all")}</button>
+              <button type="button" aria-pressed={status==="action_required"} onClick={()=>updateFilters({status:"action_required",page:1})}>{t("tasks.tabs.pending")}</button>
             </div>
             <span className="task-result-count" role="status">{tasks.data && t("tasks.count", { count: tasks.data.total })}</span>
 
@@ -211,7 +217,6 @@ export function TaskListPage() {
             </form>
             <div className="task-table-controls">
               <TaskFilters status={status} statuses={options.data?.taskStatuses ?? []} onApply={updateFilters} />
-          <SavedViews key={account.data?.id} userId={account.data?.id} area="tasks" filters={{q:search,status,sort,direction}} onApply={values=>setSearchParams(new URLSearchParams(values))}/>
 
             <label className="task-mobile-sort">
               <span className="sr-only">{t("tasks.listUx.sortLabel")}</span>
@@ -220,7 +225,7 @@ export function TaskListPage() {
               </select>
             </label>
               <button ref={createButtonRef} className="button button-primary task-create-button" type="button" disabled={createDraft.isPending || !canCreate} aria-describedby={organizationNotice} onClick={() => { if (canCreate) createDraft.mutate(); }}>
-                {!createDraft.isPending && <span aria-hidden="true">＋</span>}
+                {!createDraft.isPending && <span className="task-create-icon" aria-hidden="true"><span className="task-create-icon-glyph">＋</span></span>}
                 {createDraft.isPending ? t("common.creating") : t("common.createTask")}
               </button>
             </div>
@@ -246,7 +251,7 @@ export function TaskListPage() {
                 {!tasks.isPending && tasks.data?.items.length === 0 && (
                   <tr className="task-empty-row"><td colSpan={5}>
                     <div className="empty-state">
-                      <div className="empty-folio" aria-hidden="true">{emptyKind === "noAction" ? "✓" : emptyKind === "noResults" ? "⌕" : "01"}</div>
+                      <TaskEmptyIllustration kind={emptyKind} />
                       <div><h2>{t(emptyKind === "new" ? "tasks.emptyTitle" : `tasks.listUx.${emptyKind}Title`)}</h2><p>{t(emptyKind === "new" ? "tasks.emptyDescription" : `tasks.listUx.${emptyKind}Description`)}</p>
                         {filtered ? <button className="button button-secondary" type="button" onClick={clearFilters}>{t(emptyKind === "noAction" ? "clientUx.allProjects" : "tasks.listUx.clearAll")}</button> : <button className="button button-primary" type="button" disabled={createDraft.isPending || !canCreate} aria-describedby={organizationNotice} onClick={() => { if (canCreate) createDraft.mutate(); }}>{t(createDraft.isPending ? "common.creating" : "common.createTask")}</button>}
                       </div>
@@ -269,7 +274,7 @@ export function TaskListPage() {
                   <td data-label={t("tasks.columns.book")}>{authorName}</td>
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${returned ? "danger" : statusOption?.tone ?? "neutral"}`}>{returned ? t("clientUx.returnedStatus") : statusOption?.label ?? statusId}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.status === "draft" && <details className="task-more"><summary aria-label={t("clientUx.more")} data-icon-motion="pop"><span aria-hidden="true" data-icon-glyph>···</span></summary><button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle, returned }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t(returned ? "tasks.deleteReturned" : "tasks.deleteDraft")}</button></details>}</div></td>
+                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.status === "draft" && <TaskMoreActions label={t("clientUx.more")}><button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle, returned }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t(returned ? "tasks.deleteReturned" : "tasks.deleteDraft")}</button></TaskMoreActions>}</div></td>
                 </tr>;
               })}</tbody>
             </table>

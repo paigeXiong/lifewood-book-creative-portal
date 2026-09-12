@@ -1,0 +1,10 @@
+namespace Lifewood.PlatformApi.Contracts;
+public sealed record FeedbackOption(string Id, string Label);
+public sealed record FeedbackCatalog(FeedbackOption[] Categories, FeedbackOption[] Statuses, int ScreenshotMaxBytes, int ScreenshotSourceMaxBytes);
+public sealed record CreateFeedbackRequest(string Id, string Category, string Description, string PagePath, string? ScreenshotBase64 = null, string? ScreenshotType = null);
+public sealed record UpdateFeedbackRequest(int Version, string Status, string? Reply);
+public sealed record FeedbackItem(string Id, string Category, string Description, string PagePath, string Status, string CreatedAt, string UpdatedAt, int Version, string Author, string? Email, bool HasScreenshot);
+public sealed record FeedbackResponse(string Body, string Status, string CreatedAt, string Author);
+public sealed record FeedbackDetail(FeedbackItem Item, FeedbackResponse[] Responses);
+public sealed record FeedbackPage(FeedbackItem[] Items, int Total, int Page, int PageSize);
+public sealed record FeedbackNotice(string Description, string Reply, string Status);

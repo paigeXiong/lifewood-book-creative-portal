@@ -1,9 +1,9 @@
 import { safeLinkUrl } from "@lifewood/domain";
 import { RevisionNavigation, RevisionLink, ReviewSection, useRevisionPrevious } from "../revision-navigation";
-import { createId } from "../create-id";
-import { useContext, useRef, useState } from "react";
+import { useProjectSubmission } from "../useProjectSubmission";
+import { useContext, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   ApiError,
@@ -29,10 +29,6 @@ export function UpcomingStepPage() {
   const { locale, taskId } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const idempotencyKey = useRef(createId().replaceAll("-", ""));
-  const [validationIssues, setValidationIssues] = useState<
-    Array<{ field: string; code: string; messageKey?: string }>
-  >([]);
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
   const project = useQuery({
     queryKey: ["project", taskId],
@@ -49,37 +45,17 @@ export function UpcomingStepPage() {
     queryFn: () => optionService.getVoices(validLocale),
     enabled: needsVoices,
   });
-  const submit = useMutation({
-    mutationFn: async () => {
-      const validation = await projectService.validateProject(
-        taskId!,
-        project.data!.version,
-        validLocale,
-      );
-      if (!validation.valid) return { validation };
-      const submitted = await projectService.submitProject(
-        taskId!,
-        project.data!.version,
-        idempotencyKey.current,
-        validLocale,
-      );
-      return { validation, submitted };
-    },
-    onMutate: () => setValidationIssues([]),
-    onSuccess: ({ validation, submitted }) => {
-      if (!submitted) {
-        setValidationIssues(validation.fieldErrors);
-        return;
-      }
-      setValidationIssues([]);
-      queryClient.setQueryData(["project", taskId], submitted);
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["project-stats"] });
-      navigate(localizedPath(validLocale, `/tasks/${submitted.id}/submitted`), {
-        replace: true,
-      });
-    },
+  const receiptTask = useRef<string | undefined>(undefined);
+  const submit = useProjectSubmission(taskId, validLocale, project.data, submitted => {
+    receiptTask.current = submitted.id;
+    const cached = queryClient.getQueryData<typeof submitted>(["project", submitted.id]);
+    if (!cached || cached.version <= submitted.version) queryClient.setQueryData(["project", submitted.id], submitted);
+    else void queryClient.invalidateQueries({ queryKey: ["project", submitted.id] });
+    void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    void queryClient.invalidateQueries({ queryKey: ["project-stats"] });
+    navigate(localizedPath(validLocale, `/tasks/${submitted.id}/submitted`), { replace: true });
   });
+  const validationIssues = submit.validationIssues;
   if (!isSupportedLocale(locale) || !taskId) return null;
   if (project.isPending || options.isPending || (needsVoices && voices.isPending))
     return (
@@ -96,7 +72,7 @@ export function UpcomingStepPage() {
   )
     return <ScreenError error={project.error ?? options.error ?? (needsVoices ? voices.error : undefined)} onRetry={() => Promise.all([project.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])} />;
   if (project.data.status !== "draft")
-    return <Navigate replace to={localizedPath(locale, `/tasks/${taskId}`)} />;
+    return <Navigate replace to={localizedPath(locale, `/tasks/${taskId}${receiptTask.current === taskId ? "/submitted" : ""}`)} />;
   if (!allowed && (!isProjectStepComplete(project.data)))
     return (
       <Navigate
@@ -192,15 +168,16 @@ export function UpcomingStepPage() {
   return (
     <div className="wizard-page review-page">
       <h1 className="sr-only">{t("wizard.pageTitles.review")}</h1>
-      <StepProgress current={6} highestReachable={getHighestReachableStep(project.data)} />
+      <StepProgress current={6} highestReachable={getHighestReachableStep(project.data)} busy={submit.isPending} />
       {submit.isError && (
         <div className="inline-error review-error" role="alert">
-          {localizedApiError(submit.error, t)}
+          {submit.outcome === "unknown" ? t("submissionRecovery.unknown") : submit.outcome === "retry" ? t("submissionRecovery.retryHint") : localizedApiError(submit.error, t)}
           {conflict && (
             <button
               className="button button-secondary"
               type="button"
-              onClick={() => void project.refetch()}
+              disabled={submit.isPending}
+              onClick={() => void project.refetch().then(result => { if (!result.isError) submit.reset(); })}
             >
               {t("common.reload")}
             </button>
@@ -232,7 +209,7 @@ export function UpcomingStepPage() {
           </ul>
         </section>
       )}
-      <div className="review-layout">
+      <div className="review-layout" inert={submit.isPending}>
         <div className="review-main-stack">
           <ReviewSection units={["references"]} className="">
             <div className="review-section-heading">
@@ -723,6 +700,8 @@ export function UpcomingStepPage() {
       <div className="sticky-actions">
         <RevisionLink hideWhenLocked viewTransition
           className="button button-secondary"
+          aria-disabled={submit.isPending || undefined}
+          onClick={event => { if (submit.isPending) event.preventDefault(); }}
           to={localizedPath(locale, `/tasks/${taskId}/edit/${previous ?? "references"}`)}
         >
           {previous ? t("clientUx.backTo", {unit: t("wizard.steps."+previous)}) : t("wizard.actions.backReferences")}
@@ -735,7 +714,7 @@ export function UpcomingStepPage() {
             disabled={submit.isPending}
             onClick={() => submit.mutate()}
           >
-            {submit.isPending ? t("review.submitting") : t(allowed ? "clientUx.resubmit" : "review.submit")}
+            {submit.phase === "checking" ? t("submissionRecovery.checking") : submit.isPending ? t("review.submitting") : submit.outcome === "unknown" ? t("submissionRecovery.check") : submit.outcome === "retry" ? t("submissionRecovery.retry") : t(allowed ? "clientUx.resubmit" : "review.submit")}
           </button>
         </div>
       </div>

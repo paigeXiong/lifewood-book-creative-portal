@@ -296,12 +296,14 @@ export const projectService = {
       locale,
       body: JSON.stringify({ version, idempotencyKey }),
     }),
-  uploadAsset: (projectId: string, version: number, categoryId: string, file: File, locale: SupportedLocale, signal?: AbortSignal, characterId?: string) => {
+  uploadAsset: (projectId: string, version: number, categoryId: string, file: File, locale: SupportedLocale, signal?: AbortSignal, characterId?: string, options?: Pick<UploadOptions, "onProgress" | "uploadId">) => {
     const body = new FormData();
     body.append("version", String(version));
     body.append("categoryId", categoryId);
     if (characterId) body.append("characterId", characterId);
     body.append("file", file);
+    if (options?.uploadId) body.append("uploadId", options.uploadId);
+    if (options) return upload<UploadReferenceResult>(`/projects/${encodeURIComponent(projectId)}/files?categoryId=${encodeURIComponent(categoryId)}`, body, { ...options, locale, signal });
     return request<UploadReferenceResult>(`/projects/${encodeURIComponent(projectId)}/files?categoryId=${encodeURIComponent(categoryId)}`, { method: "POST", locale, body, signal });
   },
   deleteAsset: (projectId: string, fileId: string, version: number, locale: SupportedLocale) =>
@@ -342,6 +344,8 @@ export interface AdminOrganizationListQuery {
 }
 
 interface UploadOptions {
+  locale?: SupportedLocale;
+  uploadId?: string;
   signal?: AbortSignal;
   onProgress?: (percent: number) => void;
 }
@@ -364,12 +368,14 @@ async function upload<T>(path: string, body: FormData, options: UploadOptions = 
   const expectedAccount=boundAccount;
   if (options.signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
   const token = await getCsrfTokenForUpload(options.signal);
+  if (accountBlocked || expectedAccount !== boundAccount) throw new ApiError({ code: "auth.account_changed", messageKey: "accountSwitch.changed", retryable: false });
   if (options.signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${apiBaseUrl}${path}`);
     xhr.withCredentials = true;
     xhr.setRequestHeader("Accept", "application/json");
+    if (options.locale) xhr.setRequestHeader("Accept-Language", options.locale);
     xhr.setRequestHeader("X-CSRF-TOKEN", token);
     if(expectedAccount)xhr.setRequestHeader("X-LW-Account",expectedAccount);
     xhr.upload.onprogress = (event) => {
@@ -384,6 +390,10 @@ async function upload<T>(path: string, body: FormData, options: UploadOptions = 
     }
     xhr.onload = () => {
       options.signal?.removeEventListener("abort", abort);
+      if (accountBlocked || expectedAccount !== boundAccount) {
+        reject(new ApiError({ code: "auth.account_changed", messageKey: "accountSwitch.changed", retryable: false }));
+        return;
+      }
       if (xhr.status >= 200 && xhr.status < 300) {
         options.onProgress?.(100);
         if (xhr.status === 204) {
@@ -653,3 +663,18 @@ export const productivityService={
 
 export interface LoginDevice {id:string;browser:string;platform:string;current:boolean;createdAt?:string;lastSeen?:string;expiresAt:string}
 export const loginDeviceService={list:(page:number)=>request<{items:LoginDevice[];page:number;total:number}>(`/me/sessions?page=${page}`),revoke:(id:string)=>request<void>(`/me/sessions/${encodeURIComponent(id)}`,{method:"DELETE"}),revokeOthers:()=>request<void>("/me/sessions/revoke-others",{method:"POST"})};
+
+export interface FeedbackOption {id:string;label:string}
+export interface FeedbackCatalog {categories:FeedbackOption[];statuses:FeedbackOption[];screenshotMaxBytes:number;screenshotSourceMaxBytes:number}
+export interface FeedbackInput {id:string;category:string;description:string;pagePath:string;screenshotBase64?:string;screenshotType?:string}
+export interface FeedbackItem {id:string;category:string;description:string;pagePath:string;status:string;createdAt:string;updatedAt:string;version:number;author:string;email?:string;hasScreenshot:boolean}
+export interface FeedbackResponse {body:string;status:string;createdAt:string;author:string}
+export interface FeedbackDetail {item:FeedbackItem;responses:FeedbackResponse[]}
+export const feedbackService={
+ catalog:(locale:SupportedLocale)=>request<FeedbackCatalog>(`/feedback/catalog?locale=${locale}`),
+ submit:(input:FeedbackInput)=>request<void>("/feedback",{method:"POST",body:JSON.stringify(input)}),
+ list:(page:number,search:string,status:string)=>request<{items:FeedbackItem[];total:number;page:number;pageSize:number}>(`/admin/feedback?${new URLSearchParams({page:String(page),search,status})}`),
+ detail:(id:string)=>request<FeedbackDetail>(`/admin/feedback/${encodeURIComponent(id)}`),
+ update:(id:string,input:{version:number;status:string;reply?:string})=>request<void>(`/admin/feedback/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(input)}),
+ notice:(id:number)=>request<{description:string;reply:string;status:string}>(`/notifications/${id}/feedback`),
+};

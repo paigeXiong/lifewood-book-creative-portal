@@ -1,6 +1,6 @@
 import { useRef, type HTMLAttributes, type PointerEvent } from "react";
 
-export function ChoiceRow({ children, className = "", ...props }: HTMLAttributes<HTMLDivElement>) {
+export function ChoiceRow({ children, className = "", onFocus, ...props }: HTMLAttributes<HTMLDivElement>) {
   const drag = useRef<{ id: number; startX: number; scrollLeft: number; lastX: number; lastTime: number; velocity: number } | null>(null);
   const dragged = useRef(false);
 
@@ -17,6 +17,12 @@ export function ChoiceRow({ children, className = "", ...props }: HTMLAttributes
   };
 
   return <div {...props} className={`choice-row ${className}`.trim()}
+    onFocus={event => {
+      onFocus?.(event);
+      if (event.defaultPrevented) return;
+      const chip = event.target.closest<HTMLElement>(".choice-chip");
+      if (chip && event.currentTarget.contains(chip)) chip.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "instant" });
+    }}
     onPointerDown={(event) => {
       dragged.current = false;
       if (event.pointerType !== "mouse" || event.button !== 0 || event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return;

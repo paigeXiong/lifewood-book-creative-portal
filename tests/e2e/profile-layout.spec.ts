@@ -1,10 +1,11 @@
+import { postAuthentication } from "./auth-request";
 import {expect,test} from '@playwright/test';
 
 test('profile supports compact browsing and on-demand editing in both languages',async({page})=>{
  test.setTimeout(90000);
  const csrf=(await(await page.request.get('/api/auth/csrf')).json()).token;
  const status=await(await page.request.get('/api/auth/status')).json();
- const auth=await page.request.post(status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':csrf},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});
+ const auth=await postAuthentication(page.request, status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':csrf},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});
  expect(auth.ok()).toBeTruthy();
  let user=await(await page.request.get('/api/me')).json();
  let fail=false;

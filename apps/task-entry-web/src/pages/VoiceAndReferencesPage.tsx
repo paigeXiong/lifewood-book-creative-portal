@@ -1,3 +1,6 @@
+import { DraftRecoveryDialog } from "../components/DraftRecoveryDialog";
+import { sameUploadContent } from "../upload-reconciliation";
+import { FileTransfers, type FileTransfer } from "../components/FileTransfers";
 import { SaveFeedback } from "../components/SaveFeedback";
 import { useDraftRecovery, focusSaveIssue } from "../useDraftRecovery";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
@@ -32,7 +35,7 @@ import { mergeLegacyOptions } from "../legacy-options";
 import { effectiveVoiceContentLanguage } from "../voice-content-language";
 import { mergeLegacyCategories, type DisplayReferenceCategory } from "../legacy-categories";
 
-type TransferItem = { id: string; categoryId: string; file: File; status: "queued" | "uploading" | "error" | "cancelled"; error?: string };
+type TransferItem = FileTransfer;
 
 function VoiceSummary({ stage, control, voices }: { stage: "voice" | "references"; control: Control<VoiceFormValues>; voices: VoiceReference[] }) {
   const { t } = useTranslation();
@@ -61,8 +64,8 @@ function ReferencesSection({ form, categories, locale, uploadCategory, transfers
   const [assets, competitorUrls] = useWatch({ control: form.control, name: ["assets", "competitorUrls"] });
   const linksEnabled = categories.some((category) => category.allowsUrl && !category.unavailable);
   return <section className="form-panel reference-section"><div className="section-heading"><div><h2><span>5.2</span>{t("voice.sections.references")}</h2></div></div>
-    <div className="upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <FileDropCard key={category.id} inputId={`upload-${category.id}`} category={category} files={files} locale={locale} busyCategory={uploadCategory} onUpload={onUpload} onRemove={onRemoveAsset} />; })}</div>
-    {transfers.length > 0 && <ul className="transfer-list" aria-live="polite">{transfers.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status === "queued" ? t("voice.waitingUpload") : item.status === "uploading" ? t("voice.uploading") : item.error}</small>{item.status === "queued" || item.status === "uploading" ? <button type="button" onClick={() => onCancelUpload(item.id)}>{t("voice.cancelUpload")}</button> : <button type="button" disabled={Boolean(uploadCategory)} onClick={() => void onRetryUpload(item)}>{t("common.retry")}</button>}</li>)}</ul>}
+    <div className="upload-grid">{categories.map((category) => { const files = assets.filter((asset) => asset.categoryId === category.id); return <FileDropCard key={category.id} inputId={`upload-${category.id}`} category={category} files={files} locale={locale} busyCategory={uploadCategory} selectionBlocked={transfers.length > 0} feedback={<FileTransfers items={transfers.filter(item => item.categoryId === category.id)} busy={Boolean(uploadCategory)} onCancel={onCancelUpload} onRetry={onRetryUpload} />} onUpload={onUpload} onRemove={onRemoveAsset} />; })}</div>
+
     {uploadError && <div className="inline-error" role="alert">{uploadError}</div>}
     <div className="competitor-links" hidden={!linksEnabled && competitorUrls.length === 0}><div className="section-heading compact"><div><h3>{t("voice.fields.competitorLinks")}</h3><p>{t("voice.competitorHint")}</p></div><button className="button button-secondary" type="button" disabled={!linksEnabled || competitorUrls.length >= 5} onClick={() => form.setValue("competitorUrls", [...competitorUrls, ""], { shouldDirty: true })}>{t("voice.addLink")}</button></div>{competitorUrls.map((_, index) => { const error = form.formState.errors.competitorUrls?.[index]?.message; const messageId = `competitor-url-${index}-message`; return <div className="field" key={index}><label htmlFor={`competitor-url-${index}`}>{t("voice.linkNumber", { index: index + 1 })}</label><div className="inline-input"><input id={`competitor-url-${index}`} type="url" inputMode="url" spellCheck={false} autoComplete="off" readOnly={!linksEnabled} placeholder="https://example.com/…" aria-invalid={error ? true : undefined} aria-describedby={error ? messageId : undefined} {...form.register(`competitorUrls.${index}`)} /><button type="button" aria-label={t("voice.removeLink", { index: index + 1 })} onClick={() => form.setValue("competitorUrls", competitorUrls.filter((_, itemIndex) => itemIndex !== index), { shouldDirty: true })}>{t("voice.remove")}</button></div>{error && <div className="field-error" id={messageId} role="alert">{error}</div>}</div>; })}</div>
   </section>;
@@ -87,12 +90,23 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   const activeUploadRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const cancelledTransferIdsRef = useRef(new Set<string>());
   const uploadingRef = useRef(false);
+  const uploadEpoch = useRef(0);
+  useEffect(() => {
+    uploadEpoch.current += 1;
+    setTransfers([]);
+    setUploadError(undefined);
+    setUploadCategory(undefined); uploadingRef.current = false;
+    cancelledTransferIdsRef.current.clear();
+    return () => { uploadEpoch.current += 1; activeUploadRef.current?.controller.abort(); };
+  }, [taskId]);
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const saveInFlightRef = useRef(false);
   const savePromiseRef = useRef<Promise<boolean> | undefined>(undefined);
   const savedSnapshotRef = useRef<string | undefined>(undefined);
   const [navigating, setNavigating] = useState(false);
   const conflictRef = useRef(false);
+  const [recoveringInput, setRecoveringInput] = useState(false);
+  useEffect(() => { setRecoveringInput(false); }, [taskId]);
   const failedSaveSnapshotRef = useRef<string | undefined>(undefined);
   const draftSchema = useMemo(() => createVoiceDraftSchema(t), [t]);
   const stepSchema = useMemo(() => stage === "voice" ? createVoicePreferencesStepSchema(t) : createReferencesStepSchema(t), [stage, t]);
@@ -111,14 +125,13 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   const narrationEnabled = useWatch({ control: form.control, name: "narrationEnabled" });
   const voicesQuery = useQuery({ queryKey: ["voices", validLocale], queryFn: () => optionService.getVoices(validLocale), enabled: stage === "voice" && narrationEnabled === true });
 
-  const resetFromDraft = (draft: TaskDraft) => {
+  const valuesFromDraft = (draft: TaskDraft) => {
     const voice = draft.voiceAndReferences.voiceover;
     const direction = draft.voiceAndReferences.creativeDirection;
-    const { selectedVoiceIds, preferredVoiceId, removedCount } = stage === "voice" && getNarrationEnabled(voice) === true && voicesQuery.data
+    const { selectedVoiceIds, preferredVoiceId } = stage === "voice" && getNarrationEnabled(voice) === true && voicesQuery.data
       ? reconcileVoiceSelection(voice.selectedVoiceIds, voice.preferredVoiceId, voicesQuery.data!.map((item) => item.id))
-      : { selectedVoiceIds: voice.selectedVoiceIds, preferredVoiceId: voice.preferredVoiceId ?? "", removedCount: 0 };
-    setRemovedVoiceCount(removedCount);
-    form.reset({
+      : { selectedVoiceIds: voice.selectedVoiceIds, preferredVoiceId: voice.preferredVoiceId ?? "" };
+    return {
       brandId: draft.project.brandId ?? "", projectName: draft.project.projectName.trim() || draft.book.title.trim(), videoGoalId: draft.project.videoGoalId ?? "",
       deadline: draft.project.deadline ?? "", audienceIds: draft.project.audienceIds,
       narrationEnabled: getNarrationEnabled(voice) ?? null,
@@ -127,7 +140,12 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
       selectedVoiceIds, preferredVoiceId, customVoiceDescription: voice.customVoiceDescription ?? "",
       assets: draft.voiceAndReferences.assets, competitorUrls: draft.voiceAndReferences.competitorUrls,
       coreMessage: direction.coreMessage, requiredScenes: direction.requiredScenes ?? "", authorPreferences: direction.authorPreferences ?? "", closingMessage: direction.closingMessage ?? "", musicMood: direction.musicMood ?? "", avoidContent: direction.avoidContent ?? "",
-    });
+    };
+  };
+  const resetFromDraft = (draft: TaskDraft) => {
+    const values = valuesFromDraft(draft);
+    setRemovedVoiceCount(Math.max(0, draft.voiceAndReferences.voiceover.selectedVoiceIds.length - values.selectedVoiceIds.length));
+    form.reset(values);
   };
   useEffect(() => {
     const draft = draftQuery.data;
@@ -159,7 +177,9 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
       }};
       return { saved: await projectService.saveVoiceAndReferences(current.id, next, validLocale, stage === "references" && continueAfter, stage === "references"), continueAfter, values };
     },
-    onSuccess: async ({ saved, continueAfter, values }) => { queryClient.setQueryData(["project", taskId], saved); void queryClient.invalidateQueries({ queryKey: ["projects"] }); form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values); failedSaveSnapshotRef.current = undefined; setSaveState("idle"); if (continueAfter) await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "voice" ? "style" : "review"}`)); },
+    onSuccess: async ({ saved, continueAfter, values }) => { const currentValues = draftSchema.safeParse(form.getValues());
+      if (currentValues.success && JSON.stringify(currentValues.data) === JSON.stringify(values)) setRecoveringInput(false);
+      queryClient.setQueryData(["project", taskId], saved); void queryClient.invalidateQueries({ queryKey: ["projects"] }); form.reset(values, { keepValues: true }); savedSnapshotRef.current = JSON.stringify(values); failedSaveSnapshotRef.current = undefined; setSaveState("idle"); if (continueAfter) await navigate(localizedPath(validLocale, `/tasks/${saved.id}/edit/${stage === "voice" ? "style" : "review"}`)); },
     onError: (_error, variables) => {
       if (_error instanceof ApiError && _error.details.code === "project.version_conflict") conflictRef.current = true; failedSaveSnapshotRef.current = JSON.stringify(variables.values); setSaveState("error"); },
     onSettled: () => { saveInFlightRef.current = false; },
@@ -179,16 +199,24 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     return pending;
   };
 
-  const recovery = useDraftRecovery(taskId, validLocale, () => JSON.stringify(form.getValues()), latest => {
+  // The voice endpoint does not save project basics; compare only fields it can persist.
+  const recoveryValues = (values: VoiceFormValues) => {
+    if (stage === "references") return values;
+    const { brandId: _brand, projectName: _project, videoGoalId: _goal, deadline: _deadline, audienceIds: _audiences, ...voice } = values;
+    return voice;
+  };
+  const recovery = useDraftRecovery(taskId, validLocale, () => JSON.stringify(recoveryValues(form.getValues())), (latest, fields) => {
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
+    setRecoveringInput(fields.length > 0);
     queryClient.setQueryData(["project", taskId], latest);
     resetFromDraft(latest);
     savedSnapshotRef.current = JSON.stringify(form.getValues());
+    for (const field of fields) form.setValue(field.path.join(".") as never, field.local as never, { shouldDirty: true, shouldValidate: true });
     failedSaveSnapshotRef.current = undefined;
     conflictRef.current = false;
     save.reset(); setSaveState("idle");
-  });
+  }, latest => recoveryValues(valuesFromDraft(latest)));
   const retrySave = async () => {
     if (saveInFlightRef.current) return;
     const checked = draftSchema.safeParse(form.getValues());
@@ -204,7 +232,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   };
 
   useEffect(() => {
-    if (!form.formState.isDirty || save.isPending || uploadCategory || navigating) return;
+    if (!form.formState.isDirty || save.isPending || uploadCategory || transfers.length > 0 || navigating) return;
     const checked = draftSchema.safeParse(autosaveValues);
     if (!checked.success) { setSaveState("invalid"); return; }
     const snapshot = JSON.stringify(checked.data);
@@ -212,14 +240,14 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
 
     autosaveTimerRef.current = window.setTimeout(() => runSave(checked.data, false, false), 0);
     return () => { if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = undefined; };
-  }, [autosaveValues, form.formState.isDirty, save.isPending, uploadCategory, navigating, draftSchema]);
+  }, [autosaveValues, form.formState.isDirty, save.isPending, uploadCategory, transfers.length, navigating, draftSchema]);
   if (!taskId || !isSupportedLocale(locale)) return null;
-  if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty} />{t("common.loading")}</div>;
-  if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) return <><UnsavedChangesGuard dirty={form.formState.isDirty} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
+  if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} />{t("common.loading")}</div>;
+  if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) return <><UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
   if (draftQuery.data.status !== "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
-  if (!isCharactersComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} />;
-  if (stage === "references" && !isVoicePreferencesComplete(draftQuery.data.voiceAndReferences)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/voice`)} />;
-  if (stage === "references" && !isStyleComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/style`)} />;
+  if (!recoveringInput && !isCharactersComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} />;
+  if (!recoveringInput && stage === "references" && !isVoicePreferencesComplete(draftQuery.data.voiceAndReferences)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/voice`)} />;
+  if (!recoveringInput && stage === "references" && !isStyleComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/style`)} />;
 
   const options = optionsQuery.data;
   const basicUnavailable = t("wizard.unavailableOption");
@@ -237,10 +265,10 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   const emotionOptions = mergeLegacyOptions(options.voiceEmotions, [previousVoice.emotionStyleId], unavailable);
   const referenceCategories = mergeLegacyCategories(options.referenceCategories.filter((category) => !["character-reference", "style-reference"].includes(category.id)), draftQuery.data.voiceAndReferences.assets, unavailable);
   const voices = (voicesQuery.data ?? []).filter((voice) => voice.enabled);
-  const conflict = save.error instanceof ApiError && save.error.details.code === "project.version_conflict";
+  const conflict = conflictRef.current || save.error instanceof ApiError && save.error.details.code === "project.version_conflict";
   const statusText = saveState === "invalid" ? t("common.saveNeedsAttention") : saveState === "error" ? (conflict ? t("wizard.versionConflict") : save.error instanceof ApiError ? localizedApiError(save.error, t) : t("wizard.saveFailed")) : "";
   const navigateWithSave = async (path: string) => {
-    if (navigating || uploadCategory) return;
+    if (navigating || uploadCategory || transfers.length > 0) return;
     setNavigating(true);
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
@@ -273,29 +301,41 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     const audio = new Audio(voice.audioUrl); audioRef.current = audio; audio.onended = () => setPlayingVoice(undefined); void audio.play(); setPlayingVoice(voice.id);
   };
   const uploadOne = async (item: TransferItem) => {
+    const epoch = uploadEpoch.current;
     const controller = new AbortController(); activeUploadRef.current = { id: item.id, controller };
-    setTransfers((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "uploading", error: undefined } : entry));
+    setTransfers((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "uploading", progress: 0, error: undefined } : entry));
     try {
       const currentDraft = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
-      const result = await projectService.uploadAsset(taskId, currentDraft.version, item.categoryId, item.file, validLocale, controller.signal);
+      const result = await projectService.uploadAsset(taskId, currentDraft.version, item.categoryId, item.file, validLocale, controller.signal, undefined, { uploadId: item.id, onProgress: progress => {
+        if (epoch === uploadEpoch.current) setTransfers(current => current.map(entry => entry.id === item.id ? { ...entry, progress } : entry));
+      } });
+      if (epoch !== uploadEpoch.current) return;
+      if (!sameUploadContent(currentDraft, result.draft)) throw new ApiError({ code: "project.version_conflict", messageKey: "errors.project.versionConflict", retryable: false });
       queryClient.setQueryData(["project", taskId], result.draft);
       form.setValue("assets", result.draft.voiceAndReferences.assets, { shouldDirty: true, shouldValidate: true });
       setTransfers((current) => current.filter((entry) => entry.id !== item.id));
+      setUploadError(undefined);
+      return true;
     } catch (error) {
+      if (epoch !== uploadEpoch.current) return;
       const cancelled = error instanceof DOMException && error.name === "AbortError";
       const message = cancelled ? t("voice.uploadCancelled") : localizedApiError(error, t);
       setTransfers((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: cancelled ? "cancelled" : "error", error: message } : entry));
-      if (!cancelled) setUploadError(message);
+      if (!cancelled) { setUploadError(message); if (error instanceof ApiError && error.details.code === "project.version_conflict") { conflictRef.current = true; setSaveState("error"); } }
       else {
         try {
+          const before = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
           const latest = await projectService.getProject(taskId, validLocale);
+          if (epoch !== uploadEpoch.current) return;
+          if (!sameUploadContent(before, latest)) { conflictRef.current = true; setSaveState("error"); return; }
           queryClient.setQueryData(["project", taskId], latest);
           form.setValue("assets", latest.voiceAndReferences.assets, { shouldDirty: true, shouldValidate: true });
-        } catch { void queryClient.invalidateQueries({ queryKey: ["project", taskId] }); }
+        } catch { if (epoch === uploadEpoch.current) void queryClient.invalidateQueries({ queryKey: ["project", taskId] }); }
       }
     } finally { if (activeUploadRef.current?.id === item.id) activeUploadRef.current = null; }
   };
   const upload = async (category: ReferenceCategory, files: FileList | readonly File[] | null) => {
+    const epoch = uploadEpoch.current;
     if (!files?.length || uploadingRef.current) return;
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
@@ -304,30 +344,55 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     try {
     const queue = Array.from(files).slice(0, available).map((file) => ({ id: createId(), categoryId: category.id, file, status: "queued" as const }));
     if (saveInFlightRef.current && !await savePromiseRef.current) return;
+      if (epoch !== uploadEpoch.current) return;
     setTransfers((current) => [...current, ...queue]);
     for (const item of queue) {
+        if (epoch !== uploadEpoch.current) break;
       if (cancelledTransferIdsRef.current.delete(item.id)) continue;
-      await uploadOne(item);
+      if (!await uploadOne(item)) break;
     }
-    } catch (error) { setUploadError(localizedApiError(error, t)); }
-    finally { uploadingRef.current = false; setUploadCategory(undefined); }
+    } catch (error) { if (epoch === uploadEpoch.current) setUploadError(localizedApiError(error, t)); }
+    finally { if (epoch === uploadEpoch.current) { uploadingRef.current = false; setUploadCategory(undefined); } }
   };
   const retryUpload = async (item: TransferItem) => {
+    const epoch = uploadEpoch.current;
     if (uploadingRef.current) return;
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
     uploadingRef.current = true; setUploadCategory(item.categoryId);
     try {
       if (saveInFlightRef.current && !await savePromiseRef.current) return;
-      await uploadOne(item);
-    } finally { uploadingRef.current = false; setUploadCategory(undefined); }
+      const queue = [item, ...transfers.filter(entry => entry.id !== item.id && entry.status === "queued")];
+      for (const entry of queue) {
+        if (epoch !== uploadEpoch.current) break;
+        if (cancelledTransferIdsRef.current.delete(entry.id)) continue;
+        if (!await uploadOne(entry)) break;
+      }
+    } finally { if (epoch === uploadEpoch.current) { uploadingRef.current = false; setUploadCategory(undefined); } }
   };
-  const cancelUpload = (id: string) => {
-    if (activeUploadRef.current?.id === id) activeUploadRef.current.controller.abort();
-    else {
-      cancelledTransferIdsRef.current.add(id);
-      setTransfers((current) => current.filter((item) => item.id !== id));
+  const cancelUpload = async (id: string) => {
+    const controller = (activeUploadRef.current?.id === id ? activeUploadRef.current.controller : undefined);
+    if (controller) { controller.abort(); return; }
+    const item = transfers.find(entry => entry.id === id);
+    if (!item || item.status === "queued") {
+      cancelledTransferIdsRef.current.add(id); setTransfers(items => items.filter(entry => entry.id !== id)); return;
     }
+    if (uploadingRef.current) return;
+    const epoch = uploadEpoch.current;
+    uploadingRef.current = true; setUploadCategory("__reconciling__");
+    try {
+      const before = queryClient.getQueryData<TaskDraft>(["project", taskId]) ?? draftQuery.data!;
+      const latest = await projectService.getProject(taskId!, validLocale);
+      if (epoch !== uploadEpoch.current) return;
+      if (!sameUploadContent(before, latest)) {
+        conflictRef.current = true; setSaveState("error"); setUploadError(t("wizard.versionConflict")); return;
+      }
+      queryClient.setQueryData(["project", taskId], latest);
+      form.setValue("assets", latest.voiceAndReferences.assets, { shouldDirty: true, shouldValidate: true });
+      setTransfers(items => items.filter(entry => entry.id !== id));
+      setUploadError(undefined);
+    } catch (error) { if (epoch === uploadEpoch.current) setUploadError(localizedApiError(error, t)); }
+    finally { if (epoch === uploadEpoch.current) { uploadingRef.current = false; setUploadCategory(undefined); } }
   };
   const removeAsset = async (id: string) => {
     if (uploadingRef.current || !await confirm(t("voice.removeConfirm"))) return;
@@ -349,9 +414,9 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
     }
   };
   const continueStep = form.handleSubmit(async (values) => {
-    if (navigating || uploadCategory) return;
+    if (navigating || uploadCategory || transfers.length > 0) return;
     const checked = stepSchema.safeParse(values);
-    if (!checked.success) { checked.error.issues.forEach((issue) => form.setError(issue.path as never, { message: issue.message })); const first = checked.error.issues[0]?.path.join("."); if (first) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[name="${first}"]`)?.focus()); return; }
+    if (!checked.success) { checked.error.issues.forEach((issue) => form.setError(issue.path.join(".") as never, { message: issue.message })); const first = checked.error.issues[0]?.path.join("."); if (first) focusSaveIssue(first); return; }
     setNavigating(true);
     if (autosaveTimerRef.current !== undefined) window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = undefined;
@@ -362,10 +427,11 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   });
 
   return <div className={`wizard-page voice-page ${stage}-page`}>
-      <UnsavedChangesGuard dirty={form.formState.isDirty} />
-    <div className="wizard-heading"><h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1><SaveFeedback message={statusText} conflict={conflict} invalid={saveState === "invalid"} busy={save.isPending || recovery.loading || navigating || Boolean(uploadCategory)} error={recovery.error} onRetry={() => void retrySave()} onReload={() => void recovery.reload()} /></div>
+      <UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} />
+    <div className="wizard-heading"><h1 className="sr-only">{t(`wizard.pageTitles.${stage}`)}</h1><SaveFeedback message={statusText} conflict={conflict} invalid={saveState === "invalid"} busy={save.isPending || recovery.loading || navigating || Boolean(uploadCategory)} error={recovery.error} onRetry={() => void retrySave()} onReload={() => void recovery.reload()} />
+        <DraftRecoveryDialog recovery={recovery} options={optionsQuery.data} voices={voicesQuery.data} /></div>
     {stage === "voice" && narrationEnabled === true && removedVoiceCount > 0 && <div className="inline-notice" role="status">{t("voice.unavailableRemoved", { count: removedVoiceCount })}</div>}
-    <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "voice" ? 3 : 5} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadCategory)} />
+    <StepProgress onNavigate={(path) => void navigateWithSave(path)} current={stage === "voice" ? 3 : 5} highestReachable={getHighestReachableStep(draftQuery.data)} onNext={() => void continueStep()} canContinue={stepSchema.safeParse(form.getValues()).success} busy={navigating || Boolean(uploadCategory) || transfers.length > 0} />
     <form autoComplete="off" onSubmit={continueStep} inert={navigating} aria-busy={navigating}>
       <div className="voice-layout"><div className="form-stack">
         {stage === "voice" && <NarrationChoice value={narrationEnabled} error={form.formState.errors.narrationEnabled?.message} onChange={(value) => {
@@ -403,7 +469,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
                 </ChoiceField>
               </div>
             </section>
-<ReferencesSection form={form} categories={referenceCategories} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemoveAsset={removeAsset} onCancelUpload={cancelUpload} onRetryUpload={retryUpload} />
+<ReferencesSection key={taskId} form={form} categories={referenceCategories} locale={validLocale} uploadCategory={uploadCategory} transfers={transfers} uploadError={uploadError} onUpload={upload} onRemoveAsset={removeAsset} onCancelUpload={cancelUpload} onRetryUpload={retryUpload} />
 
         <section className="form-panel direction-section"><div className="section-heading"><div><h2><span>5.3</span>{t("voice.sections.direction")}</h2></div></div><div className="form-grid">
           <Field className="field-wide" label={t("voice.fields.coreMessage")} icon={<FieldIcon name="message" />} htmlFor="core-message" required error={form.formState.errors.coreMessage?.message}><textarea id="core-message" rows={3} maxLength={300} autoComplete="off" {...form.register("coreMessage")} /></Field>
@@ -414,7 +480,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
           <Field className="field-wide" label={t("voice.fields.avoidContent")} icon={<FieldIcon name="avoid" />} htmlFor="avoid-content" error={form.formState.errors.avoidContent?.message}><textarea id="avoid-content" rows={2} maxLength={200} autoComplete="off" {...form.register("avoidContent")} /></Field>
         </div></section></>}
       </div><VoiceSummary stage={stage} control={form.control} voices={voices} /></div>
-      <div className="sticky-actions"><RevisionLink hideWhenLocked className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/${revisionPrevious ?? (stage === "voice" ? "characters" : "style")}`)} onClick={guardLink}>{revisionPrevious ? t("clientUx.backTo",{unit:t("wizard.steps."+revisionPrevious)}) : t(stage === "voice" ? "wizard.actions.backCharacters" : "wizard.actions.backStyle")}</RevisionLink><div><button className="button button-quiet" type="button" disabled={navigating || Boolean(uploadCategory)} onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}>{t("common.backHome")}</button><button className="button button-primary" type="submit" disabled={navigating || Boolean(uploadCategory)}>{t(revisionNext ? `wizard.steps.${revisionNext}` : (stage === "voice" ? "wizard.actions.toStyle" : "voice.continueToReview"))}<span aria-hidden="true">→</span></button></div></div>
+      <div className="sticky-actions"><RevisionLink hideWhenLocked className="button button-secondary" to={localizedPath(validLocale, `/tasks/${taskId}/edit/${revisionPrevious ?? (stage === "voice" ? "characters" : "style")}`)} onClick={guardLink}>{revisionPrevious ? t("clientUx.backTo",{unit:t("wizard.steps."+revisionPrevious)}) : t(stage === "voice" ? "wizard.actions.backCharacters" : "wizard.actions.backStyle")}</RevisionLink><div><button className="button button-quiet" type="button" disabled={navigating || Boolean(uploadCategory) || transfers.length > 0} onClick={() => void navigateWithSave(localizedPath(validLocale, "/tasks"))}>{t("common.backHome")}</button><button className="button button-primary" type="submit" disabled={navigating || Boolean(uploadCategory) || transfers.length > 0}>{t(revisionNext ? `wizard.steps.${revisionNext}` : (stage === "voice" ? "wizard.actions.toStyle" : "voice.continueToReview"))}<span aria-hidden="true">→</span></button></div></div>
     </form>
   </div>;
 }

@@ -84,3 +84,13 @@ npm run stop:local
 - [审计增强与运行状态](./admin-audit-and-runtime.md)：可读对象、配置变化、CSV 导出和运行采样，以及隔离升级恢复验证。
 
 - [后台备份管理](./managed-backups.md)：一致性快照、负责人权限、手动与定时备份、校验、保留策略及恢复兼容性。
+
+- [客户文件上传与恢复](./file-uploads.md)：逐文件进度、取消、失败重试、避免重复文件及并发修改保护。
+
+- [草稿编辑冲突恢复](draft-recovery.md)：逐字段比较、恢复和并发保护。
+
+- [客户表单手机与键盘操作](mobile-workflow.md)：布局、焦点及浏览器验收范围。
+
+- [提交结果恢复](submission-recovery.md)：响应丢失后的状态核实、原请求重试与提交回执。
+
+- [平台反馈与站内通知回复](platform-feedback.md)

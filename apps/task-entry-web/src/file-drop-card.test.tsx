@@ -62,6 +62,8 @@ describe("file drop card", () => {
   it("opens the file picker from the whole card and from the keyboard target", () => {
     act(() => root.render(<FileDropCard inputId="sample-upload" category={category} files={[]} locale="en" onUpload={vi.fn()} onRemove={vi.fn()} />));
     const input = container.querySelector<HTMLInputElement>("input[type=file]")!;
+    expect(input.tabIndex).toBe(-1);
+    expect(container.querySelector<HTMLElement>(".upload-drop-prompt")!.tabIndex).toBe(0);
     const picker = vi.spyOn(input, "click").mockImplementation(() => undefined);
 
     act(() => container.querySelector<HTMLElement>(".upload-drop-card")!.click());
@@ -151,4 +153,31 @@ describe("file drop card", () => {
     expect(preparePhoto).toHaveBeenCalledWith(original, cover);
     expect(onUpload).toHaveBeenCalledWith(cover, [prepared]);
   });
+  it("keeps valid photos when another photo fails preparation and can retry only the failed photo", async () => {
+    const bad=new File(["bad"],"bad.heic",{type:"image/heic"}); const good=new File(["good"],"good.png",{type:"image/png"});
+    vi.mocked(preparePhoto).mockRejectedValueOnce(new Error("Conversion failed")).mockResolvedValueOnce(good).mockResolvedValueOnce(good);
+    const onUpload=vi.fn().mockResolvedValue(undefined);
+    act(()=>root.render(<FileDropCard camera inputId="cover" category={{...category,maxFiles:4}} files={[]} locale="en-US" onUpload={onUpload} onRemove={vi.fn()}/>));
+    const input=container.querySelector<HTMLInputElement>('input[type=file]')!;
+    Object.defineProperty(input,"files",{value:[bad,good]});
+    await act(async()=>input.dispatchEvent(new Event("change",{bubbles:true})));
+    expect(onUpload).toHaveBeenCalledWith(expect.anything(),[good]);
+    expect(container.querySelector(".file-transfers")!.textContent).toContain("bad.heic");
+    const retry=container.querySelector<HTMLButtonElement>(".file-transfers button")!;
+    await act(async()=>retry.click());
+    expect(preparePhoto).toHaveBeenCalledTimes(3);expect(vi.mocked(preparePhoto).mock.calls[2][0]).toBe(bad);
+    expect(container.querySelector(".file-transfers")).toBeNull();
+  });
+
+  it("does not dispatch prepared photos after leaving the upload card", async () => {
+    let finish!: (file:File)=>void;
+    vi.mocked(preparePhoto).mockImplementation(()=>new Promise(resolve=>finish=resolve));
+    const file=new File(["image"],"photo.png",{type:"image/png"});const onUpload=vi.fn();
+    act(()=>root.render(<FileDropCard camera inputId="cover" category={category} files={[]} locale="en-US" onUpload={onUpload} onRemove={vi.fn()}/>));
+    const input=container.querySelector<HTMLInputElement>('input[type=file]')!;Object.defineProperty(input,"files",{value:[file]});
+    await act(async()=>input.dispatchEvent(new Event("change",{bubbles:true})));
+    act(()=>root.render(null));
+    await act(async()=>finish(file));expect(onUpload).not.toHaveBeenCalled();
+  });
+
 });

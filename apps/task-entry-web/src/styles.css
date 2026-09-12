@@ -93,7 +93,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .empty-state { min-height: 300px; padding: 28px; display: flex; align-items: center; justify-content: center; gap: 18px; }
 .empty-state h2 { margin-bottom: 4px; font-family: var(--lw-font-editorial); }
 .empty-state p { margin: 0; color: var(--lw-text-secondary); max-width: 440px; }
-.empty-folio { width: 56px; height: 68px; border-radius: 4px 12px 12px 4px; background: var(--lw-dark-serpent); color: var(--lw-saffron); display: grid; place-items: center; font-family: var(--lw-font-editorial); font-size: 20px; }
+.task-empty-illustration { display: block; flex: 0 0 auto; width: 112px; height: 96px; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 14px auto 0; color: var(--lw-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .pagination-pages { display: flex; align-items: center; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .pagination-control { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--lw-dark-serpent); font-weight: 700; text-decoration: none; }
@@ -526,3 +526,38 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
   font-size: 14px;
 }
 .revision-refresh-error .button { flex-shrink: 0; }
+
+/* Keep per-file progress and actions inside their upload category. */
+.file-transfers > li { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.file-transfers .file-transfer-info { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.file-transfers .file-transfer-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-transfers .file-transfer-info small { overflow-wrap: anywhere; }
+.file-transfers progress { width: 100%; height: 5px; border: 0; border-radius: 4px; overflow: hidden; accent-color: var(--color-primary, #205943); }
+.file-transfers progress::-webkit-progress-bar { background: #e5eeea; }
+.file-transfers progress::-webkit-progress-value { background: #205943; }
+.file-transfers .file-transfer-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.file-transfers .file-transfer-actions button { min-height: 36px; white-space: nowrap; }
+@media (max-width: 480px) {
+  .file-transfers > li { flex-wrap: wrap; gap: 6px; }
+  .file-transfers .file-transfer-info { flex-basis: 100%; }
+  .file-transfers .file-transfer-actions { margin-left: auto; }
+}
+
+.draft-recovery-dialog { width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 20px; border: 0; border-radius: 18px; color: var(--color-text, #173d30); background: #fff; box-shadow: 0 20px 70px #173d3033; }
+.draft-recovery-dialog::backdrop { background: #173d3055; }
+.draft-recovery-dialog h2 { margin: 0; font-size: 1.15rem; }
+.draft-recovery-hint { margin: 10px 0; color: #60756c; font-size: .875rem; }
+.draft-recovery-fields { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.draft-recovery-fields fieldset { min-width: 0; margin: 12px 0; padding: 0; border: 0; }
+.draft-recovery-fields legend { max-width: 100%; padding: 0 0 6px; font-weight: 600; overflow-wrap: anywhere; }
+.draft-recovery-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.draft-recovery-choices label { min-width: 0; padding: 10px; border-radius: 10px; background: #f5f6f3; cursor: pointer; }
+.draft-recovery-choices label.is-selected { background: #e5efea; }
+.draft-recovery-choices label:focus-within { outline: 2px solid #28765c; outline-offset: -2px; }
+.draft-recovery-choices label > span { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: #536f61; }
+.draft-recovery-choices input { width: 16px; height: 16px; flex: 0 0 auto; accent-color: #1b573f; }
+.draft-recovery-value { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; margin-top: 6px; font-size: .9rem; user-select: text; }
+.draft-recovery-dialog footer, .draft-recovery-dialog footer > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.draft-recovery-dialog footer { margin-top: 14px; justify-content: space-between; }
+.draft-recovery-dialog footer .button { min-height: 40px; }
+@media (max-width: 520px) { .draft-recovery-dialog { padding: 14px; } .draft-recovery-choices { grid-template-columns: minmax(0, 1fr); } .draft-recovery-dialog footer > div { width: 100%; flex-wrap: nowrap; } .draft-recovery-dialog footer > div .button { flex: 1; min-width: 0; } }

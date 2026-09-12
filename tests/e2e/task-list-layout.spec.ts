@@ -1,10 +1,11 @@
+import { postAuthentication } from "./auth-request";
 import {expect, test} from '@playwright/test';
 
 test('task columns and toolbar stay aligned across filters and loading', async ({page}) => {
   test.setTimeout(90000);
   const csrf = (await (await page.request.get('/api/auth/csrf')).json()).token;
   const status = await (await page.request.get('/api/auth/status')).json();
-  const auth = await page.request.post(status.requiresBootstrap ? '/api/auth/bootstrap' : '/api/auth/login', {
+  const auth = await postAuthentication(page.request, status.requiresBootstrap ? '/api/auth/bootstrap' : '/api/auth/login', {
     headers: {'X-CSRF-TOKEN': csrf},
     data: status.requiresBootstrap ? {displayName:'E2E Owner', email:'owner.e2e@lifewood.test', password:'E2E-owner-password-2026', organizationName:'E2E'} : {email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}
   });

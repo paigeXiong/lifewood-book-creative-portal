@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReferenceCategory } from "@lifewood/domain";
+import { prepareFeedbackScreenshot } from "./prepare-feedback-screenshot";
 import { preparePhoto } from "./prepare-photo";
 
 const category: ReferenceCategory = { id: "cover", label: "Cover", accept: ["image/jpeg", "image/png"], maxBytes: 100, maxFiles: 6, allowsUrl: false, required: true };
@@ -119,5 +120,40 @@ describe("camera photo preparation", () => {
     const result = await preparePhoto(new File(["photo"], "camera.png"), { ...category, accept: ["image/png"] });
     expect(dimensions).toEqual([[2400, 1800], [1920, 1440]]);
     expect(result.type).toBe("image/png");
+  });
+});
+
+describe("feedback screenshot preparation", () => {
+  const limits = { sourceMaxBytes: 10_000_000, storedMaxBytes: 1_000_000 };
+  it("accepts a 10 MB screenshot and tries lossless encoding with legible dimensions", async () => {
+    sizes = [800_000];
+    const result = await prepareFeedbackScreenshot(new File([new Uint8Array(10_000_000)], "screen.png", { type: "image/png" }), limits);
+    expect(result.type).toBe("image/png");
+    expect(result.size).toBe(800_000);
+    expect(dimensions).toEqual([[3200, 2400]]);
+  });
+  it("tries high-quality JPEG before reducing screenshot dimensions", async () => {
+    sizes = [1_200_000, 950_000, 800_000];
+    const result = await prepareFeedbackScreenshot(new File([new Uint8Array(1_100_000)], "screen.png", { type: "image/png" }), limits);
+    expect(result.type).toBe("image/jpeg");
+    expect(result.name).toBe("screen.jpg");
+    expect(result.size).toBeLessThanOrEqual(limits.storedMaxBytes);
+    expect(dimensions).toEqual([[3200, 2400], [3200, 2400], [3200, 2400]]);
+    expect(vi.mocked(HTMLCanvasElement.prototype.toBlob).mock.calls.map(args => args.slice(1))).toEqual([["image/png"], ["image/jpeg", .92], ["image/jpeg", .86]]);
+  });
+  it("keeps an already-small WebP without recompression", async () => {
+    vi.mocked(Blob.prototype.slice).mockReturnValue({ arrayBuffer: async () => new Uint8Array([82,73,70,70,20,0,0,0,87,69,66,80]).buffer } as Blob);
+    const file = new File([new Uint8Array(32)], "screen.webp", { type: "image/webp" });
+    const result = await prepareFeedbackScreenshot(file, limits);
+    expect(result.type).toBe("image/webp");expect(result.size).toBe(file.size);expect(dimensions).toEqual([]);
+  });
+  it("rejects oversized and unsupported source files before decoding", async () => {
+    await expect(prepareFeedbackScreenshot(new File([new Uint8Array(10_000_001)], "screen.png", { type: "image/png" }), limits)).rejects.toThrow("invalid_source");
+    await expect(prepareFeedbackScreenshot(new File(["<svg/>"], "screen.svg", { type: "image/svg+xml" }), limits)).rejects.toThrow("invalid_source");
+    expect(dimensions).toEqual([]);
+  });
+  it("reports a corrupt large image instead of sending the oversized original", async () => {
+    unreadable = true;
+    await expect(prepareFeedbackScreenshot(new File([new Uint8Array(1_100_000)], "screen.png", { type: "image/png" }), limits)).rejects.toMatchObject({ key: "photoUnreadable" });
   });
 });

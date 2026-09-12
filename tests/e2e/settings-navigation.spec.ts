@@ -1,3 +1,4 @@
+import { postAuthentication } from "./auth-request";
 import {expect,test} from '@playwright/test';
 
 test('settings selection slides across routes and respects reduced motion',async({page})=>{
@@ -17,7 +18,7 @@ test('settings selection slides across routes and respects reduced motion',async
  });
  const csrf=async()=>(await(await page.request.get('/api/auth/csrf')).json()).token;
  const status=await(await page.request.get('/api/auth/status')).json();
- const auth=await page.request.post(status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
+ const auth=await postAuthentication(page.request, status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
  for(const locale of ['zh-CN','en-US']){
   await page.setViewportSize({width:1366,height:900});await page.goto(`/${locale}/settings/files`);
   const nav=page.locator('.settings-tabs');await expect(nav.locator('a')).toHaveCount(9);

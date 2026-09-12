@@ -1,3 +1,4 @@
+import { sameUploadContent } from "./upload-reconciliation";
 import { RevisionNavigation } from "./revision-navigation";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -415,7 +416,7 @@ describe("sequential upload queue", () => {
      Object.defineProperty(input, "files", { configurable: true, value: files });
      await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); await settle(); });
      expect(upload).toHaveBeenCalledTimes(1);
-     expect(row("first.pdf").querySelector("small")!.textContent).toBe(i18n.t("voice.uploading"));
+     expect(row("first.pdf").querySelector("small")!.textContent).toBe(i18n.t("fileTransfer.progress", { percent: 0 }));
      expect(row("cancel.pdf").querySelector("small")!.textContent).toBe(locale === "zh-CN" ? "等待上传…" : "Waiting to upload…");
      await act(async () => row("cancel.pdf").querySelector<HTMLButtonElement>("button")!.click());
      expect(row("cancel.pdf")).toBeUndefined();
@@ -426,7 +427,7 @@ describe("sequential upload queue", () => {
      expect(upload).toHaveBeenCalledTimes(2);
      expect(upload.mock.calls[1][3].name).toBe("third.pdf");
      expect(upload.mock.calls[1][1]).toBe(2);
-     expect(row("third.pdf").querySelector("small")!.textContent).toBe(i18n.t("voice.uploading"));
+     expect(row("third.pdf").querySelector("small")!.textContent).toBe(i18n.t("fileTransfer.progress", { percent: 0 }));
      const third = { ...first, id: "third", fileName: "third.pdf" };
      const finalDraft = { ...firstDraft, version: 3, book: { ...firstDraft.book, sourceAssets: [...firstDraft.book.sourceAssets, ...(stage === "project" ? [third] : [])] }, voiceAndReferences: { ...firstDraft.voiceAndReferences, assets: stage === "references" ? [first, third] : [] } };
      await act(async () => { pending[1]({ asset: third, draft: finalDraft }); await settle(); });
@@ -536,21 +537,23 @@ describe("save recovery actions", () => {
           expect(input().value).toBe("Keep my latest edit");
         }
         const read=vi.spyOn(projectService,"getProject").mockRejectedValue(new Error("offline"));
-        await act(async()=>action().click()); await confirm();
+        await act(async()=>{action().click(); await vi.advanceTimersByTimeAsync(10);});
         expect(input().value).toBe("Keep my latest edit");
         expect(c.textContent).toContain(i18n.t("saveRecovery.reloadFailed"));
         let resolve!: (draft: TaskDraft)=>void;
         read.mockImplementation(()=>new Promise(done=>{resolve=done;}));
-        await act(async()=>action().click()); await confirm();
+        await act(async()=>action().click());
         expect(input().value).toBe("Keep my latest edit");
         const latest={...draft,version:9};
         await edit("Edited while loading");
         await act(async()=>{resolve(latest); await vi.advanceTimersByTimeAsync(10);});
-        expect(document.querySelector("dialog")!.textContent).toContain(i18n.t("saveRecovery.changedWhileLoading"));
+        expect(document.querySelector("dialog")!.textContent).toContain("Edited while loading");
+        expect(document.querySelector("dialog")!.textContent).toContain(i18n.t("saveRecovery.compareTitle"));
         await act(async()=>{[...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(b=>b.textContent===i18n.t("common.cancel"))!.click(); await vi.advanceTimersByTimeAsync(10);});
         expect(input().value).toBe("Edited while loading");
-        await act(async()=>action().click()); await confirm();
-        await act(async()=>{resolve(latest); await vi.advanceTimersByTimeAsync(10);});
+        read.mockResolvedValue(latest);
+        await act(async()=>{action().click(); await vi.advanceTimersByTimeAsync(10);});
+        await act(async()=>{[...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(b=>b.textContent===i18n.t("saveRecovery.apply"))!.click(); await vi.advanceTimersByTimeAsync(10);});
         expect(input().value).toBe(stage==="project"?"Book":stage==="characters"?"Mara":"");
         expect(c.querySelector(".save-feedback")).toBeNull();
         save.mockImplementation(async (...args)=>({...args[1],version:args[1].version+1}));
@@ -562,4 +565,172 @@ describe("save recovery actions", () => {
       }
     });
   }
+});
+
+
+describe("creative per-file recovery", () => {
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    it.each(["characters", "style"] as const)(`preserves edits and replays only the failed image on %s (${locale})`, async stage => {
+      await i18n.changeLanguage(locale);
+      const draft = completeDraft();
+      const category = { id: stage === "characters" ? "character-reference" : "style-reference", label: "Images", description: "PNG", accept: ["image/png"], maxBytes: 1000000, maxFiles: 5, required: false, allowsUrl: false };
+      const catalog: FormOptions = {
+        brands: [], videoGoals: [], audiences: [], genres: [], contentLanguages: [], videoDurations: [], publishingPlatforms: [],
+        taskStatuses: [], roleTypes: [], ageRanges: [], genders: [], visualStyles: [], moodTags: [{id:"warm",label:"Warm"}], imageStyleTags: [], paceTags: [],
+        narrationTones: [], speechRates: [], voiceGenders: [], voiceAges: [], accents: [], voiceEmotions: [], voiceTags: [], sourceCategories: [], referenceCategories: [category], maxSelectedVoices: 3, workflowStatuses: [], projectPriorities: [],
+      };
+      const client = new QueryClient({ defaultOptions: { queries: {retry:false,staleTime:Infinity}, mutations: {retry:false} } });
+      client.setQueryData(["project",draft.id],draft); client.setQueryData(["form-options",locale],catalog);
+      const pending: { resolve: (value: Awaited<ReturnType<typeof projectService.uploadAsset>>) => void; reject: (error: Error) => void }[] = [];
+      const upload = vi.spyOn(projectService,"uploadAsset").mockImplementation(() => new Promise((resolve,reject) => pending.push({resolve,reject})));
+      const save = vi.spyOn(projectService,"saveCreative").mockImplementation(async (_id,payload) => ({...payload,version:payload.version+1}));
+      const host = document.createElement("div"); document.body.append(host); const root=createRoot(host);
+      const settle = async () => { for(let i=0;i<6;i++) await new Promise(resolve => setTimeout(resolve,0)); };
+      const rows = () => [...host.querySelectorAll<HTMLElement>(".file-transfers li")];
+      try {
+        await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/${draft.id}/edit/${stage}`]}><Routes><Route path="/:locale/tasks/:taskId/edit/:stage" element={<CreativeFormPage stage={stage}/>}/></Routes></MemoryRouter></QueryClientProvider>));
+        const input=host.querySelector<HTMLInputElement>('input[type="file"]')!;
+        Object.defineProperty(input,"files",{configurable:true,value:[new File(["1"],"first.png",{type:"image/png"}),new File(["2"],"second.png",{type:"image/png"})]});
+        await act(async()=>{input.dispatchEvent(new Event("change",{bubbles:true}));await settle();});
+        expect(upload).toHaveBeenCalledTimes(1); expect(host.querySelector("form[inert]")).toBeNull();
+        await act(async()=>upload.mock.calls[0][7]!.onProgress!(43));
+        expect(host.querySelector("progress")!.value).toBe(43);
+        const first={id:"first",categoryId:category.id,fileName:"first.png",contentType:"image/png",sizeBytes:1,url:"/first.png"};
+        const firstDraft=structuredClone(draft); firstDraft.version=2;
+        if(stage==="characters") firstDraft.creative.characters[0].referenceImages=[first]; else firstDraft.creative.styleReferenceImages=[first];
+        await act(async()=>{pending[0].resolve({draft:firstDraft,asset:first});await settle();});
+        expect(upload).toHaveBeenCalledTimes(2); expect(rows()).toHaveLength(1);
+        const retryKey=upload.mock.calls[1][7]!.uploadId;
+        await act(async()=>{
+          if(stage==="characters") { const name=host.querySelector<HTMLInputElement>('[id^="characterName-"]')!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(name,"Changed while uploading");name.dispatchEvent(new Event("input",{bubbles:true})); }
+          else host.querySelector<HTMLInputElement>('input[name="moodTagIds"]')!.click();
+          pending[1].reject(new Error("Lost upload response")); await settle();
+        });
+        const callsBeforeRetry=save.mock.calls.length;
+        const retry=[...rows()[0].querySelectorAll("button")].find(button=>button.textContent===i18n.t("common.retry"))!;
+        await act(async()=>{retry.click();await settle();});
+        expect(upload).toHaveBeenCalledTimes(3);
+        expect(save).toHaveBeenCalledTimes(callsBeforeRetry);
+        expect(upload.mock.calls[2][7]!.uploadId).toBe(retryKey);
+        expect(upload.mock.calls.map(call=>call[3].name)).toEqual(["first.png","second.png","second.png"]);
+        const second={...first,id:"second",fileName:"second.png",url:"/second.png"};
+        const last=structuredClone(firstDraft);last.version=5;
+        if(stage==="characters")last.creative.characters[0].referenceImages=[first,second];else last.creative.styleReferenceImages=[first,second];
+        await act(async()=>{pending[2].resolve({draft:last,asset:second});await settle();});
+        expect(rows()).toHaveLength(0);
+        if(stage==="characters")expect(host.querySelector<HTMLInputElement>('[id^="characterName-"]')!.value).toBe("Changed while uploading");
+        else expect(host.querySelector<HTMLInputElement>('input[name="moodTagIds"]')!.checked).toBe(true);
+      } finally { await act(async()=>root.unmount());host.remove();client.clear();upload.mockRestore();save.mockRestore(); }
+    });
+  }
+});
+
+
+describe("upload recovery data boundaries", () => {
+  it("accepts attachment-only changes but never rebases over another editor's text", () => {
+    const before=completeDraft();const latest=structuredClone(before);latest.version+=1;
+    latest.book.sourceAssets.push(asset("extra"));latest.creative.characters[0].referenceImages.push(asset("character-reference"));
+    expect(sameUploadContent(before,latest)).toBe(true);
+    latest.book.title="Edited elsewhere";expect(sameUploadContent(before,latest)).toBe(false);
+    latest.book.title=before.book.title;latest.creative.characters[0].name="Changed";expect(sameUploadContent(before,latest)).toBe(false);
+  });
+  for (const mode of ["unmount", "concurrent edit"] as const) it.each(["project","references","characters","style"] as const)(`protects the %s upload after ${mode}`, async stage => {
+    await i18n.changeLanguage("en-US");
+    const draft=completeDraft();const category={id:stage==="characters"?"character-reference":stage==="style"?"style-reference":"upload-test",label:"Files",description:"Images",accept:["image/png"],maxBytes:100000,maxFiles:5,required:false,allowsUrl:false};
+    const catalog:FormOptions={brands:[],videoGoals:[],audiences:[],genres:[],contentLanguages:[],videoDurations:[],publishingPlatforms:[],taskStatuses:[],roleTypes:[],ageRanges:[],genders:[],visualStyles:[],moodTags:[{id:"warm",label:"Warm"}],imageStyleTags:[],paceTags:[],narrationTones:[],speechRates:[],voiceGenders:[],voiceAges:[],accents:[],voiceEmotions:[],voiceTags:[],sourceCategories:stage==="project"?[category]:[],referenceCategories:stage!=="project"?[category]:[],maxSelectedVoices:3,workflowStatuses:[],projectPriorities:[]};
+    const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity},mutations:{retry:false}}});
+    client.setQueryData(["project",draft.id],draft);client.setQueryData(["form-options","en-US"],catalog);client.setQueryData(["voices","en-US"],[]);
+    let signal:AbortSignal|undefined;
+    let finish!: (value: Awaited<ReturnType<typeof projectService.uploadAsset>>) => void;
+    const read=vi.spyOn(projectService,"getProject");
+    const upload=vi.spyOn(projectService,"uploadAsset").mockImplementation((...args)=>new Promise((resolve,reject)=>{finish=resolve;signal=args[5];signal!.addEventListener("abort",()=>reject(new DOMException("Cancelled","AbortError")),{once:true});}));
+    const host=document.createElement("div");document.body.append(host);const root=createRoot(host);
+    try {
+      const element=stage==="project"?<ProjectFormPage/>:stage==="references"?<VoiceAndReferencesPage stage="references"/>:<CreativeFormPage stage={stage}/>;
+      await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/en-US/tasks/${draft.id}/edit/${stage}`]}><Routes><Route path="/:locale/tasks/:taskId/edit/:stage" element={element}/></Routes></MemoryRouter></QueryClientProvider>));
+      const input=host.querySelector<HTMLInputElement>(`input[type=file][id$="${category.id}"]`)!;
+      Object.defineProperty(input,"files",{value:[new File(["1"],"first.png",{type:"image/png"}),new File(["2"],"second.png",{type:"image/png"})]});
+      await act(async()=>{input.dispatchEvent(new Event("change",{bubbles:true}));for(let i=0;i<5;i++)await new Promise(resolve=>setTimeout(resolve,0));});
+      expect(upload).toHaveBeenCalledTimes(1);
+      if(mode==="unmount") {
+        await act(async()=>root.render(null));expect(signal!.aborted).toBe(true);expect(upload).toHaveBeenCalledTimes(1);
+      } else {
+        const selector=stage==="project"?"#title":stage==="characters"?'[id^="characterName-"]':stage==="references"?"#core-message":'input[name="moodTagIds"]';
+        const field=host.querySelector<HTMLInputElement|HTMLTextAreaElement>(selector)!;
+        await act(async()=>{
+          if(stage==="style")field.click();
+          else {Object.getOwnPropertyDescriptor(field.tagName==="INPUT"?HTMLInputElement.prototype:HTMLTextAreaElement.prototype,"value")!.set!.call(field,"My unsaved text");field.dispatchEvent(new Event("input",{bubbles:true}));}
+        });
+        const remote=structuredClone(draft);remote.version=3;
+        if(stage==="project")remote.book.title="Other editor";
+        else if(stage==="references")remote.voiceAndReferences.creativeDirection.coreMessage="Other editor";
+        else remote.creative.characters[0].name="Other editor";
+        read.mockResolvedValue(remote);
+        await act(async()=>{finish({draft:remote,asset:asset(category.id)});for(let i=0;i<6;i++)await new Promise(resolve=>setTimeout(resolve,0));});
+        expect(host.querySelector(".save-feedback")!.textContent).toContain(i18n.t("wizard.versionConflict"));
+        expect(client.getQueryData<TaskDraft>(["project",draft.id])!.version).toBe(draft.version);
+        if(stage!=="style")expect(field.value).toBe("My unsaved text");
+        expect(upload).toHaveBeenCalledTimes(1);
+      }
+    } finally {await act(async()=>root.unmount());host.remove();client.clear();upload.mockRestore();read.mockRestore();}
+  });
+});
+
+
+describe("recovered inputs survive prerequisite changes", () => {
+  it.each(["style", "preset-style", "voice", "references"] as const)("saves chosen %s input before redirecting to a changed prerequisite", async scenario => {
+    const stage = scenario === "preset-style" ? "style" : scenario;
+    await i18n.changeLanguage("en-US");vi.useFakeTimers();
+    const draft=completeDraft();
+    if (scenario === "preset-style") { draft.creative.characters[0].presetId = "preset-fixture"; draft.creative.characters[0].presetImageUrl = "/files/preset.png"; }
+    const catalog:FormOptions={
+      brands:[],videoGoals:[],audiences:[],genres:[],contentLanguages:[],videoDurations:[],publishingPlatforms:[],taskStatuses:[],roleTypes:[],ageRanges:[],genders:[],
+      visualStyles:[{id:"cinematic",label:"Cinematic"},{id:"illustrated",label:"Illustrated"}],moodTags:[],imageStyleTags:[],paceTags:[],narrationTones:[],speechRates:[],voiceGenders:[],voiceAges:[],accents:[],voiceEmotions:[],voiceTags:[],sourceCategories:[],referenceCategories:[],maxSelectedVoices:3,workflowStatuses:[],projectPriorities:[]
+    };
+    const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity},mutations:{retry:false}}});
+    client.setQueryData(["project",draft.id],draft);client.setQueryData(["form-options","en-US"],catalog);client.setQueryData(["voices","en-US"],[]);
+    const save=vi.spyOn(projectService,stage==="style"?"saveCreative":"saveVoiceAndReferences").mockRejectedValue(new ApiError({code:"project.version_conflict",messageKey:"errors.project.versionConflict",retryable:false}));
+    const latest=structuredClone(draft);latest.version=9;latest.project.projectName="Remote project name";
+    if(stage==="references")latest.creative.visualStyleId="";
+    else if(scenario==="preset-style") latest.voiceAndReferences.voiceover={narrationEnabled:null,selectedVoiceIds:[]};
+    else latest.creative.characters=[];
+    latest.voiceAndReferences.assets=[asset("server-file")];
+    vi.spyOn(projectService,"getProject").mockResolvedValue(latest);
+    const show=Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype,"showModal");const close=Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype,"close");
+    Object.defineProperty(HTMLDialogElement.prototype,"showModal",{configurable:true,value:function(){this.open=true;}});
+    Object.defineProperty(HTMLDialogElement.prototype,"close",{configurable:true,value:function(){this.open=false;}});
+    const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
+    try {
+      const element=stage==="style"?<CreativeFormPage stage="style"/>:<VoiceAndReferencesPage stage={stage}/>;
+      await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/en-US/tasks/${draft.id}/edit/${stage}`]}><Routes>
+        <Route path={`/:locale/tasks/:taskId/edit/${stage}`} element={element}/><Route path="*" element={<p>Prerequisite page</p>}/>
+      </Routes></MemoryRouter></QueryClientProvider>));
+      await act(async()=>{
+        if(stage==="style")c.querySelector<HTMLInputElement>('input[name="visualStyleId"][value="illustrated"]')!.click();
+        else {const input=c.querySelector<HTMLTextAreaElement>(stage==="voice"?"#pronunciation-notes":"#core-message")!;Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,"Keep this local input");input.dispatchEvent(new Event("input",{bubbles:true}));}
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      await act(async()=>{await vi.advanceTimersByTimeAsync(10);});expect(save).toHaveBeenCalledTimes(1);
+      await act(async()=>{c.querySelector<HTMLButtonElement>(".save-feedback button")!.click();await vi.advanceTimersByTimeAsync(10);});
+      const dialog=c.querySelector<HTMLDialogElement>(".draft-recovery-dialog")!;expect(dialog).not.toBeNull();
+      if(stage==="voice")expect(dialog.textContent).not.toContain("Remote project name");
+      const row=[...dialog.querySelectorAll("fieldset")].find(row=>row.textContent?.includes(stage==="style"?"Illustrated":"Keep this local input"))!;
+      await act(async()=>row.querySelector<HTMLInputElement>("input")!.click());
+      let finish!:(draft:TaskDraft)=>void;
+      save.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+      await act(async()=>{[...dialog.querySelectorAll("button")].find(b=>b.textContent===i18n.t("saveRecovery.apply"))!.click();await vi.advanceTimersByTimeAsync(10);});
+      await act(async()=>{await vi.advanceTimersByTimeAsync(10);});
+      expect(save).toHaveBeenCalledTimes(2);expect(c.textContent).not.toContain("Prerequisite page");
+      const payload=save.mock.calls.at(-1)![1];expect(payload.version).toBe(9);expect(payload.voiceAndReferences.assets).toEqual(latest.voiceAndReferences.assets);
+      if(stage==="style")expect(payload.creative.visualStyleId).toBe("illustrated");
+      else if(stage==="voice")expect(payload.voiceAndReferences.voiceover.pronunciationNotes).toBe("Keep this local input");
+      else expect(payload.voiceAndReferences.creativeDirection.coreMessage).toBe("Keep this local input");
+      await act(async()=>{finish({...payload,version:10});await vi.advanceTimersByTimeAsync(10);});
+      expect(c.textContent).toContain("Prerequisite page");
+    } finally {
+      await act(async()=>root.unmount());c.remove();client.clear();vi.restoreAllMocks();vi.useRealTimers();
+      if(show)Object.defineProperty(HTMLDialogElement.prototype,"showModal",show);else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+      if(close)Object.defineProperty(HTMLDialogElement.prototype,"close",close);else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close;
+    }
+  });
 });

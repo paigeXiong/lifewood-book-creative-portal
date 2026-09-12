@@ -1,3 +1,5 @@
+import {FeedbackButton} from "./FeedbackButton";
+import { PortalNavigation } from "./PortalNavigation";
 import {UserPresence} from "@lifewood/ui/user-presence";
 import {AccountSwitcher,AccountSessionGuard} from "@lifewood/ui/account-switcher";
 import {NotificationBell} from "@lifewood/ui/notifications";
@@ -7,7 +9,7 @@ import { useConfirm, useConfirmLink } from "../useConfirm";
 import { useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { authService } from "@lifewood/api-client";
 import { isSupportedLocale } from "@lifewood/i18n";
 import { clearUserProjectQueries } from "../projectQueryCache";
@@ -76,8 +78,13 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </span>
         </Link>
 
+        <PortalNavigation label={t("nav.tasks")}>
+          <NavLink className="portal-projects-link" to={`/${locale}/tasks`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
+            <span>{t("nav.tasks")}</span>
+          </NavLink>
+        </PortalNavigation>
         <div className="topbar-actions">
-          <NotificationBell key={`notifications-${user.id}`}/><Announcements key={user.id} userId={user.id} locale={locale} />
+          <FeedbackButton key={user.id} locale={locale}/><NotificationBell key={`notifications-${user.id}`}/><Announcements key={user.id} userId={user.id} locale={locale} />
           {canAccessAdmin ? (
             <a className="admin-entry" href={`/api/portals/admin?locale=${locale}`} aria-label={t("nav.adminCenter")} onClick={event => guardLink(event, undefined, true)}>
               <span className="admin-entry-icon" aria-hidden="true">⚙</span>

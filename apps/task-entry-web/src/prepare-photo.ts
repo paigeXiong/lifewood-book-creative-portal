@@ -13,16 +13,17 @@ async function photoStep<T>(operation: Promise<T>): Promise<T> {
   } finally { clearTimeout(timer); }
 }
 
-export async function preparePhoto(file: File, category: ReferenceCategory): Promise<File> {
+export async function preparePhoto(file: File, category: ReferenceCategory, options: { maxEdge?: number; preferLossless?: boolean } = {}): Promise<File> {
   // Upload valid JPEG/PNG originals directly when they already satisfy the category.
   // A compressed file's byte size says nothing about the RAM needed to decode it.
   // Inspect only the signature here; full file validation still happens on the server.
   if (file.size > 0 && file.size <= category.maxBytes) {
-    const header = new Uint8Array(await photoStep(file.slice(0, 8).arrayBuffer()));
+    const header = new Uint8Array(await photoStep(file.slice(0, 12).arrayBuffer()));
     const originalType = header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff ? "image/jpeg"
-      : [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => header[index] === byte) ? "image/png" : undefined;
+      : [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => header[index] === byte) ? "image/png"
+      : String.fromCharCode(...header.slice(0, 4)) === "RIFF" && String.fromCharCode(...header.slice(8, 12)) === "WEBP" ? "image/webp" : undefined;
     if (originalType && category.accept.includes(originalType)) {
-      const name = `${file.name.replace(/\.[^.]*$/, "") || "cover"}.${originalType === "image/jpeg" ? "jpg" : "png"}`;
+      const name = `${file.name.replace(/\.[^.]*$/, "") || "cover"}.${originalType === "image/jpeg" ? "jpg" : originalType === "image/webp" ? "webp" : "png"}`;
       return new File([file], name, { type: originalType, lastModified: file.lastModified });
     }
   }
@@ -41,7 +42,7 @@ export async function preparePhoto(file: File, category: ReferenceCategory): Pro
     if (typeof createImageBitmap === "function") {
       // Ask the decoder for a smaller bitmap before retaining pixels in JS.
       // Browser implementations may still allocate temporary decode buffers.
-      bitmap = await photoStep(createImageBitmap(file, { resizeWidth: 1600, resizeQuality: "high", imageOrientation: "from-image" })
+      bitmap = await photoStep(createImageBitmap(file, { ...(options.preferLossless ? {} : { resizeWidth: 1600, resizeQuality: "high" as const }), imageOrientation: "from-image" })
         .then(result => { if (finished) result.close(); return result; })
         .catch(() => { throw new PhotoError("photoUnreadable"); }));
     } else {
@@ -61,16 +62,23 @@ export async function preparePhoto(file: File, category: ReferenceCategory): Pro
     const output = canvas;
     const context = canvas.getContext("2d");
     if (!context) throw new PhotoError("photoUnreadable");
-    let scale = Math.min(1, 2400 / Math.max(width, height));
+    let scale = Math.min(1, (options.maxEdge ?? 2400) / Math.max(width, height));
     for (let attempt = 0; attempt < 6; attempt++) {
       canvas.width = Math.max(1, Math.round(width * scale));
       canvas.height = Math.max(1, Math.round(height * scale));
       context.fillStyle = "#fff";
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(pixels, 0, 0, canvas.width, canvas.height);
+      // Screenshots often compress losslessly; keep text edges before trying JPEG.
+      if (options.preferLossless && category.accept.includes("image/png")) {
+        const lossless = await photoStep(new Promise<Blob | null>(resolve => output.toBlob(resolve, "image/png")));
+        if (lossless?.type === "image/png" && lossless.size > 0 && lossless.size <= targetBytes) {
+          return new File([lossless], `${file.name.replace(/\.[^.]*$/, "") || "screenshot"}.png`, { type: "image/png" });
+        }
+      }
       // JPEG quality can preserve small printed text before reducing dimensions.
       // PNG ignores quality, so only resizing can reduce its encoded size.
-      for (const quality of type === "image/jpeg" ? [.88, .76, .64, .52] : [1]) {
+      for (const quality of type === "image/jpeg" ? (options.preferLossless ? [.92, .86, .8, .72] : [.88, .76, .64, .52]) : [1]) {
         const blob = await photoStep(new Promise<Blob | null>(resolve => output.toBlob(resolve, type, quality)));
         if (!blob || blob.type !== type || blob.size === 0) throw new PhotoError("photoUnreadable");
         if (blob.size <= targetBytes && blob.size <= category.maxBytes) {

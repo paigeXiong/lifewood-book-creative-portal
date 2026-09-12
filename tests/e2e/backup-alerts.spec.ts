@@ -1,8 +1,9 @@
+import { postAuthentication } from "./auth-request";
 import {expect,test} from '@playwright/test';
 test('backup alerts have localized owner rules and open backup management',async({page})=>{
  const csrf=async()=>(await(await page.request.get('/api/auth/csrf')).json()).token;
  const status=await(await page.request.get('/api/auth/status')).json();
- const auth=await page.request.post(status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
+ const auth=await postAuthentication(page.request, status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
  let language='zh-CN';
  await page.route(/\/api\/notifications(?:\?|$)/,route=>route.fulfill({json:{items:[{id:990001,kind:'backup_failed',projectId:'',projectTitle:'',actor:'',createdAt:'2026-09-11T00:00:00Z',read:false,archived:false,state:'pending',targetId:'',title:language==='zh-CN'?'自动备份失败，请检查备份状态':'Automatic backup failed. Check backup status.',level:'action'}],nextCursor:null,watermark:990001,unread:1}}));
  await page.route('**/api/notifications/990001/target?*',route=>route.fulfill({json:{path:new URL(route.request().url()).searchParams.get('admin')==='true'?`/${language}/settings/backups`:`/api/portals/backups?locale=${language}`}}));

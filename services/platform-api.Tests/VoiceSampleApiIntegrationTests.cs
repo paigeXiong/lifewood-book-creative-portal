@@ -14,7 +14,7 @@ using Xunit;
 
 namespace Lifewood.PlatformApi.Tests;
 
-public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
+public sealed partial class VoiceSampleApiIntegrationTests : IAsyncLifetime
 {
     private const string VoiceId = "warm-storyteller";
     private const string OrphanUploadId = "11111111111111111111111111111111";
@@ -1008,6 +1008,60 @@ public sealed class VoiceSampleApiIntegrationTests : IAsyncLifetime
         Assert.False(Directory.Exists(tombstoneRoot) && Directory.EnumerateDirectories(tombstoneRoot, "*", SearchOption.AllDirectories).Any());
         using var missing = await ownerClient.GetAsync($"/api/projects/{id}");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("book-cover")]
+    [InlineData("style-reference")]
+    public async Task RetryingTheSameUploadReturnsTheStoredFileWithoutChangingTheDraft(string category)
+    {
+        await BootstrapOwner();
+        var csrf = await GetCsrf(ownerClient);
+        using var create = await Send(ownerClient, HttpMethod.Post, "/api/projects", csrf, JsonContent.Create(new { }));
+        create.EnsureSuccessStatusCode();
+        var original = JsonNode.Parse(await create.Content.ReadAsStringAsync())!;
+        var id = original["id"]!.GetValue<string>();
+        var version = original["version"]!.GetValue<int>();
+        var key = Guid.NewGuid().ToString();
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        MultipartFormDataContent Body(string name = "photo.png", string? uploadKey = null)
+        {
+            var body = ReferenceRequest(png, name, "image/png", version, category);
+            body.Add(new StringContent(uploadKey ?? key), "uploadId");
+            return body;
+        }
+        using var firstBody = Body();
+        using var secondBody = Body();
+        // Both requests carry the original version, as after a lost response or a double click.
+        var responses = await Task.WhenAll(
+            Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files?categoryId={category}", csrf, firstBody),
+            Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files?categoryId={category}", csrf, secondBody));
+        using var first = responses[0]; using var second = responses[1];
+        first.EnsureSuccessStatusCode(); second.EnsureSuccessStatusCode();
+        var a = JsonNode.Parse(await first.Content.ReadAsStringAsync())!;
+        var b = JsonNode.Parse(await second.Content.ReadAsStringAsync())!;
+        Assert.Equal(a["asset"]!["id"]!.GetValue<string>(), b["asset"]!["id"]!.GetValue<string>());
+        Assert.Equal(version + 1, b["draft"]!["version"]!.GetValue<int>());
+        var assets = category == "book-cover" ? b["draft"]!["book"]!["sourceAssets"]!.AsArray() : b["draft"]!["creative"]!["styleReferenceImages"]!.AsArray();
+        Assert.Single(assets);
+        using var download = await ownerClient.GetAsync(a["asset"]!["url"]!.GetValue<string>());
+        Assert.Equal(png, await download.Content.ReadAsByteArrayAsync());
+        using var changedBody = Body("different.png");
+        using var changed = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files?categoryId={category}", csrf, changedBody);
+        Assert.Equal(HttpStatusCode.Conflict, changed.StatusCode);
+        var differentBytes = (byte[])png.Clone(); differentBytes[^1] ^= 1;
+        using var differentBody = ReferenceRequest(differentBytes, "photo.png", "image/png", version, category);
+        differentBody.Add(new StringContent(key), "uploadId");
+        using var different = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files?categoryId={category}", csrf, differentBody);
+        Assert.Equal(HttpStatusCode.Conflict, different.StatusCode);
+        using var invalidBody = Body(uploadKey: "../../file");
+        using var invalid = await Send(ownerClient, HttpMethod.Post, $"/api/projects/{id}/files?categoryId={category}", csrf, invalidBody);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var other = await CreateCustomerClient(csrf);
+        var otherCsrf = await GetCsrf(other);
+        using var forbiddenBody = Body();
+        using var forbidden = await Send(other, HttpMethod.Post, $"/api/projects/{id}/files?categoryId={category}", otherCsrf, forbiddenBody);
+        Assert.Equal(HttpStatusCode.NotFound, forbidden.StatusCode);
     }
 
     [Fact]

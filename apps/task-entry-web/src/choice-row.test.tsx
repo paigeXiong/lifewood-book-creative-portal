@@ -38,4 +38,14 @@ describe("scrolling choices", () => {
       expect(input.checked).toBe(true);
     } finally { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); }
   });
+  it("reveals the full focused checkbox label and preserves consumer focus handlers", () => {
+    const container=document.createElement("div");document.body.append(container);const root=createRoot(container);const onFocus=vi.fn();
+    try {
+      act(()=>root.render(<ChoiceRow onFocus={onFocus}><label className="choice-chip"><input type="checkbox"/><span>Long option</span></label></ChoiceRow>));
+      const chip=container.querySelector<HTMLElement>("label")!;chip.scrollIntoView=vi.fn();
+      act(()=>container.querySelector("input")!.focus());
+      expect(onFocus).toHaveBeenCalledOnce();expect(chip.scrollIntoView).toHaveBeenCalledWith({block:"nearest",inline:"nearest",behavior:"instant"});
+    } finally {act(()=>root.unmount());container.remove();}
+  });
+
 });

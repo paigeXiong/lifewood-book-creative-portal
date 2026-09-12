@@ -1,10 +1,10 @@
 import {LoginSessions} from "@lifewood/ui/login-sessions";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
-import { useConfirm, useConfirmLink } from "../useConfirm";
+import { useConfirm } from "../useConfirm";
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { authService, localizedApiError } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { SupportedLocale } from "@lifewood/domain";
@@ -15,7 +15,6 @@ const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((modul
 export function ProfilePage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const guardLink = useConfirmLink();
   const { locale } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -85,7 +84,6 @@ export function ProfilePage() {
     <div className="page profile-page">
       <UnsavedChangesGuard dirty={dirty} />
       <header className="profile-identity">
-        <Link className="profile-back-link" to={`/${locale}/tasks`} onClick={guardLink}>← {t("profile.backToProjects")}</Link>
         <div className="profile-person">
           <button ref={avatarButtonRef} className="profile-portrait" type="button" aria-label={t("profile.changeAvatar")} onClick={() => setAvatarOpen(true)}>
             <img src={user.avatarUrl || "/api/me/avatar"} alt="" width="104" height="104" />

@@ -1,3 +1,5 @@
+import { FileTransfers, type FileTransfer } from "./FileTransfers";
+import { createId } from "../create-id";
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReferenceAsset, ReferenceCategory } from "@lifewood/domain";
@@ -28,6 +30,7 @@ export function FileDropCard({
   showFileList = true,
   camera = false,
   feedback,
+  selectionBlocked = false,
   onUpload,
   onRemove,
 }: {
@@ -42,6 +45,7 @@ export function FileDropCard({
   showFileList?: boolean;
   camera?: boolean;
   feedback?: ReactNode;
+  selectionBlocked?: boolean;
   onUpload: (category: ReferenceCategory, files: FileList | readonly File[] | null) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
@@ -54,6 +58,13 @@ export function FileDropCard({
   const [dragging, setDragging] = useState(false);
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string>();
+  const [failedPhotos, setFailedPhotos] = useState<FileTransfer[]>([]);
+  const preparationEpoch = useRef(0);
+  useEffect(() => {
+    preparationEpoch.current += 1;
+    setFailedPhotos([]); setPreparingPhoto(false); setPhotoError(undefined);
+    return () => { preparationEpoch.current += 1; };
+  }, [inputId]);
   const [interrupted, setInterrupted] = useState(() => camera ? interruptedPhotoAttempt(inputId) : undefined);
   useEffect(() => {
     const input = cameraRef.current;
@@ -62,11 +73,12 @@ export function FileDropCard({
     return () => input?.removeEventListener("cancel", cancel);
   }, [inputId, camera]);
   const atLimit = files.length >= category.maxFiles;
-  const disabled = preparingPhoto || Boolean(busyCategory) || Boolean(category.unavailable) || atLimit;
+  const disabled = selectionBlocked || preparingPhoto || Boolean(busyCategory) || Boolean(category.unavailable) || atLimit;
   const uploading = busyCategory === category.id;
   const uploadFiles = async (selectedFiles: FileList | readonly File[] | null) => {
     if (!selectedFiles?.length) { if (camera) markPhotoAttempt(inputId); return; }
     if (!camera) { await onUpload(category, selectedFiles); return; }
+    const epoch = preparationEpoch.current;
     setPhotoError(undefined);
     setInterrupted(undefined);
     markPhotoAttempt(inputId, "processing");
@@ -74,13 +86,20 @@ export function FileDropCard({
     try {
       const prepared: File[] = [];
       for (const file of Array.from(selectedFiles).slice(0, Math.max(0, category.maxFiles - files.length))) {
-        prepared.push(await preparePhoto(file, category));
+        try {
+          prepared.push(await preparePhoto(file, category));
+        } catch (error) {
+          if (epoch !== preparationEpoch.current) return;
+          setFailedPhotos(items => [...items, { id: createId(), categoryId: category.id, file, status: "error", error: t(`bookIntake.${error instanceof PhotoError ? error.key : "photoUploadFailed"}`) }]);
+        }
+        if (epoch !== preparationEpoch.current) return;
       }
+      setPreparingPhoto(false);
       markPhotoAttempt(inputId, "uploading");
-      await onUpload(category, prepared);
+      if (prepared.length && epoch === preparationEpoch.current) await onUpload(category, prepared);
     }
-    catch (error) { setPhotoError(t(`bookIntake.${error instanceof PhotoError ? error.key : "photoUploadFailed"}`)); }
-    finally { markPhotoAttempt(inputId); setPreparingPhoto(false); }
+    catch (error) { if (epoch === preparationEpoch.current) setPhotoError(t(`bookIntake.${error instanceof PhotoError ? error.key : "photoUploadFailed"}`)); }
+    finally { if (epoch === preparationEpoch.current) { markPhotoAttempt(inputId); setPreparingPhoto(false); } }
   };
 
   const openPicker = () => {
@@ -129,6 +148,8 @@ export function FileDropCard({
       ? t("bookIntake.preparingPhoto")
     : uploading
       ? t("voice.uploading")
+      : selectionBlocked
+        ? t("fileTransfer.resolveFirst")
       : category.unavailable
         ? t("uploadZone.unavailable")
         : atLimit
@@ -164,6 +185,7 @@ export function FileDropCard({
       autoComplete="off"
       className="visually-hidden"
       type="file"
+      tabIndex={-1}
       aria-label={label}
       aria-required={required}
       multiple={category.maxFiles > 1}
@@ -194,8 +216,11 @@ export function FileDropCard({
     {showFileList && files.length > 0 && <ul className="uploaded-files">{files.map((asset) => <li key={asset.id}>
       <span title={asset.fileName}>{asset.fileName}</span>
       <small>{formatBytes(asset.sizeBytes, locale)}</small>
-      <button type="button" aria-label={t("sourceFiles.removeFile", { fileName: asset.fileName })} disabled={Boolean(busyCategory)} onClick={() => void onRemove(asset.id)}>{t("voice.remove")}</button>
+      <button type="button" aria-label={t("sourceFiles.removeFile", { fileName: asset.fileName })} disabled={Boolean(busyCategory) || selectionBlocked} onClick={() => void onRemove(asset.id)}>{t("voice.remove")}</button>
     </li>)}</ul>}
+    <FileTransfers items={failedPhotos} busy={disabled}
+      onCancel={id => setFailedPhotos(items => items.filter(item => item.id !== id))}
+      onRetry={async item => { setFailedPhotos(items => items.filter(entry => entry.id !== item.id)); await uploadFiles([item.file]); }} />
     {feedback}
   </div>;
 }

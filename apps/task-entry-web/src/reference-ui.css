@@ -190,7 +190,7 @@ body {
 .table-sort { width: 100%; min-height: 44px; padding: 0 1rem; border: 0; display: flex; align-items: center; justify-content: flex-start; gap: .45rem; background: transparent; color: inherit; font-weight: 750; text-align: left; }
 .table-sort:hover { background: #d2e1d8; color: var(--green-900); }
 .table-sort.active { background: #cbded3; color: var(--green-900); }
-.table-sort-icon { width: 1rem; flex: 0 0 auto; color: #5d7a6c; font-size: .85rem; font-weight: 800; line-height: 1; }
+.table-sort-icon { display: block; width: 16px; height: 16px; flex: 0 0 16px; color: #5d7a6c; }
 .table-sort.active .table-sort-icon { color: var(--green-900); }
 .reference-table-panel .task-table td { height: 68px; padding: .75rem 1rem; border-bottom-color: var(--reference-border); font-size: .88rem; }
 .reference-table-panel .task-table tbody tr:hover { background: #fafcfa; }

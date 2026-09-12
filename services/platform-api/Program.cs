@@ -214,6 +214,8 @@ users.Initialize();
 builder.Services.AddSingleton(users);
 var personalWorkspace=new PersonalWorkspaceRepository(databaseConnection);
 personalWorkspace.Initialize();builder.Services.AddSingleton(personalWorkspace);
+var feedback=new FeedbackRepository(databaseConnection);
+feedback.Initialize();builder.Services.AddSingleton(feedback);
 
 var presence = new UserPresenceRepository(databaseConnection);
 presence.Initialize();
@@ -501,6 +503,7 @@ if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
 var api = app.MapGroup("/api");
 api.MapBackups(CurrentUser);
+api.MapFeedback(CurrentUser);
 api.MapGet("/portals/{portal}", (string portal, string? locale, HttpContext context, RuntimeSettingsStore settings) => {
     if (portal is not ("customer" or "admin" or "profile" or "backups")) return Results.NotFound();
     var language = locale == "en-US" ? "en-US" : "zh-CN";
@@ -1923,6 +1926,31 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     if (!categoryId.Equals(requestedCategoryId, StringComparison.Ordinal) || file is null || file.Length <= 0)
         return Error(context, 400, "validation.failed", "errors.validation.failed", "The file or category is invalid.", false);
     var contentType = NormalizeContentType(file.ContentType, file.FileName);
+    var uploadId = form["uploadId"].ToString();
+    if (uploadId.Length > 0 && !Guid.TryParse(uploadId, out _))
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "The upload identifier is invalid.", false);
+    var fileId = uploadId.Length == 0 ? Guid.NewGuid().ToString("N")
+        : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{user.Id}:{id}:{Guid.Parse(uploadId):N}")))[..32].ToLowerInvariant();
+    var existing = (project.Book.SourceAssets ?? []).Concat(project.Creative.StyleReferenceImages ?? [])
+        .Concat(project.Creative.Characters.SelectMany(character => character.ReferenceImages ?? []))
+        .Concat(project.VoiceAndReferences.Assets).FirstOrDefault(asset => asset.Id == fileId);
+    if (existing is not null)
+    {
+        var sameCharacter = categoryId != "character-reference" || project.Creative.Characters.Any(character => character.Id == characterId && (character.ReferenceImages ?? []).Any(asset => asset.Id == fileId));
+        if (existing.CategoryId != categoryId || existing.FileName != SanitizeFileName(file.FileName) || existing.SizeBytes != file.Length || existing.ContentType != contentType || !sameCharacter)
+            return Error(context, 409, "validation.failed", "errors.validation.failed", "The upload identifier was already used for another file.", false);
+        var storedPath = Path.Combine(dataDirectory, "uploads", user.Id, id, $"{existing.Id}_{existing.FileName}");
+        if (!File.Exists(storedPath))
+            return Error(context, 409, "validation.file", "errors.validation.fileContent", "The stored upload is unavailable.", false);
+        await using var originalFile = File.OpenRead(storedPath);
+        await using var replayFile = file.OpenReadStream();
+        var originalHash = await System.Security.Cryptography.SHA256.HashDataAsync(originalFile, context.RequestAborted);
+        var replayHash = await System.Security.Cryptography.SHA256.HashDataAsync(replayFile, context.RequestAborted);
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(originalHash, replayHash))
+            return Error(context, 409, "validation.file", "errors.validation.fileContent", "The upload identifier was already used for different contents.", false);
+        // Replay before the version and capacity checks: the first response may have been lost.
+        return Results.Ok(new UploadReferenceResultDto(project, existing));
+    }
     if (project.Version != version) return Error(context, 409, "project.version_conflict", "errors.project.versionConflict", "This application changed elsewhere. Reload before uploading.", false, currentVersion: project.Version);
     var target = definition.Scope == FileCategoryScopes.Source ? "source" : categoryId switch
     {
@@ -1959,7 +1987,6 @@ api.MapPost("/projects/{id}/files", async (string id, HttpContext context, Proje
     if (reservation is null)
         return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached. Contact an administrator.", true);
 
-    var fileId = Guid.NewGuid().ToString("N");
     var safeName = SanitizeFileName(file.FileName);
     var folder = Path.Combine(dataDirectory, "uploads", user.Id, id);
     Directory.CreateDirectory(folder);

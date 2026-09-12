@@ -1,10 +1,11 @@
+import { postAuthentication } from "./auth-request";
 import {expect,test} from "@playwright/test";
 
 test("audit context, exports and runtime health work in both languages",async({page})=>{
  test.setTimeout(120000);
  const token=(await(await page.request.get("/api/auth/csrf")).json()).token;
  const status=await(await page.request.get("/api/auth/status")).json();
- const auth=await page.request.post(status.requiresBootstrap?"/api/auth/bootstrap":"/api/auth/login",{headers:{"X-CSRF-TOKEN":token},data:status.requiresBootstrap?{displayName:"E2E Owner",email:"owner.e2e@lifewood.test",password:"E2E-owner-password-2026",organizationName:"E2E"}:{email:"owner.e2e@lifewood.test",password:"E2E-owner-password-2026",rememberMe:false}});
+ const auth=await postAuthentication(page.request, status.requiresBootstrap?"/api/auth/bootstrap":"/api/auth/login",{headers:{"X-CSRF-TOKEN":token},data:status.requiresBootstrap?{displayName:"E2E Owner",email:"owner.e2e@lifewood.test",password:"E2E-owner-password-2026",organizationName:"E2E"}:{email:"owner.e2e@lifewood.test",password:"E2E-owner-password-2026",rememberMe:false}});
  expect(auth.ok()).toBeTruthy();
  const csrf=(await(await page.request.get("/api/auth/csrf")).json()).token;
  const organizationName="Audit Tools Organization "+Date.now();

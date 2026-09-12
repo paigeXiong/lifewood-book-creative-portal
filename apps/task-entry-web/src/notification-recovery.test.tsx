@@ -75,4 +75,24 @@ for (const locale of ["zh-CN", "en-US"] as const) {
       expect(host.querySelector("dialog")).toBeNull();
     } finally { await act(async () => root.unmount()); host.remove(); }
   });
+  it(`does not treat a file picker cancellation as closing its containing modal (${locale})`, async () => {
+    await i18n.changeLanguage(locale);
+    const closeModal = vi.fn();
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<NoticeModal title={i18n.t("feedback.entry")} onClose={closeModal}><textarea defaultValue="Keep this feedback"/><input type="file"/></NoticeModal>));
+      const dialog = host.querySelector("dialog")!;
+      const file = host.querySelector("input")!;
+      const fileCancel = new Event("cancel", { bubbles: true });
+      await act(async () => file.dispatchEvent(fileCancel));
+      expect(closeModal).not.toHaveBeenCalled();
+      expect(dialog.open).toBe(true);
+      expect(host.querySelector("textarea")!.value).toBe("Keep this feedback");
+      const dialogCancel = new Event("cancel", { cancelable: true });
+      await act(async () => dialog.dispatchEvent(dialogCancel));
+      expect(dialogCancel.defaultPrevented).toBe(true);
+      expect(closeModal).toHaveBeenCalledTimes(1);
+    } finally { await act(async () => root.unmount()); host.remove(); }
+  });
+
 }
