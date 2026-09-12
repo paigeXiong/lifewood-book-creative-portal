@@ -57,12 +57,21 @@ jobs:
           $current = @(Get-ChildItem artifacts/lifecycle-current/en-US -Filter '*.msi')
           if ($previous.Count -ne 1 -or $current.Count -ne 1) { throw 'Expected exactly one MSI per test language.' }
           ./scripts/test-msi-lifecycle.ps1 -PreviousPackage $previous[0].FullName -CurrentPackage $current[0].FullName
-      - name: Retain only the sanitized lifecycle report
+      - name: Publish sanitized lifecycle results in the job summary
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer-lifecycle
-          # Do not upload private-state.json, databases, backups, or verbose MSI logs.
-          path: artifacts/installer-lifecycle/*/result.json
-          if-no-files-found: ignore
-          retention-days: 7
+        shell: powershell
+        run: |
+          # Use the job log and summary, not artifact storage. Never read private fixture files.
+          '## Windows installer lifecycle' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          $reports = @(Get-ChildItem artifacts/installer-lifecycle/*/result.json -File -ErrorAction SilentlyContinue)
+          if ($reports.Count -eq 0) {
+            'No lifecycle report was produced. Check the preceding failed step.' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          }
+          foreach ($file in $reports) {
+            $report = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+            $status = if ($report.passed) { 'Passed' } else { 'Failed' }
+            "Result: **$status**" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            "Versions: $($report.previousVersion) -> $($report.currentVersion); languages: $($report.previousLanguage) -> $($report.currentLanguage)." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            foreach ($check in $report.checks) { "- $check" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 }
+            "Scope: $($report.scope)" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            $report | Select-Object passed,previousVersion,currentVersion,previousLanguage,currentLanguage,checks,scope | ConvertTo-Json -Depth 5 -Compress | Write-Output
