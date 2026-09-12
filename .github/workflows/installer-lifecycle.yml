@@ -75,3 +75,4 @@ jobs:
             foreach ($check in $report.checks) { "- $check" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8 }
             "Scope: $($report.scope)" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
             $report | Select-Object passed,previousVersion,currentVersion,previousLanguage,currentLanguage,checks,scope | ConvertTo-Json -Depth 5 -Compress | Write-Output
+          }
