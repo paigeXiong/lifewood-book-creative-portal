@@ -94,3 +94,7 @@ npm run stop:local
 - [提交结果恢复](submission-recovery.md)：响应丢失后的状态核实、原请求重试与提交回执。
 
 - [平台反馈与站内通知回复](platform-feedback.md)
+
+- [成品交付恢复与客户进展](./delivery-recovery.md)：上传结果核对、原文件重试、客户进展与下载入口。
+
+- [Windows 安装与升级验证](./installer-lifecycle.md)：备份目录权限、真实服务 CI 演练及本机验证边界。

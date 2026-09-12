@@ -26,7 +26,7 @@
   <String Id="MissingDataPathTitle" Value="Production-data directory required" />
   <String Id="MissingDataPathMessage" Value="Choose or enter a production-data directory before continuing." />
   <String Id="MissingUpgradeDataPathMessage" Value="The existing installation was detected, but its production-data location could not be verified. Setup stopped without changing the installation or its data. Restore the Lifewood registry configuration or contact an administrator before upgrading." />
-  <String Id="UnsafeDataPathMessage" Value="The production-data directory is unsafe. Choose a dedicated local directory that is not a drive root, system or program directory, user-profile root, network share, symbolic link, junction, or unrelated non-empty directory." />
+  <String Id="UnsafeDataPathMessage" Value="The data or backup directory is unsafe, or service permissions could not be set. Existing backups must retain platform-only permissions. Choose a dedicated local directory that is not a drive root, system or program directory, user-profile root, network share, symbolic link, junction, or unrelated non-empty directory." />
   <String Id="BackButton" Value="&amp;Back" />
   <String Id="NextButton" Value="&amp;Next" />
   <String Id="CancelButton" Value="Cancel" />

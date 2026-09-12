@@ -46,6 +46,8 @@ jobs:
           if-no-files-found: ignore
       - run: dotnet test services/platform-api.Tests/Lifewood.PlatformApi.Tests.csproj --configuration Release --nologo
       - run: npm run test:ops
+      - name: Verify installer business fixtures across a process restart
+        run: node scripts/test-installer-fixture.mjs
       - run: dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-ci
       - shell: powershell
         run: ./scripts/test-aot-publish.ps1 -PublishDirectory artifacts/aot-ci

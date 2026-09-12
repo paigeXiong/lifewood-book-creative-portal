@@ -131,6 +131,13 @@
                   Impersonate="no"
                   Return="check"
                   HideTarget="yes" />
+    <CustomAction Id="PrepareBackupDirectory"
+                  BinaryRef="InstallerActions"
+                  DllEntry="PrepareBackupDirectory"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"
+                  HideTarget="yes" />
     <CustomAction Id="NormalizePort"
                   BinaryRef="InstallerActions"
                   DllEntry="NormalizePort"
@@ -141,9 +148,15 @@
                  Before="ValidateDataDirectory"
                  Sequence="execute"
                  Condition="NOT REMOVE~=&quot;ALL&quot;" />
+    <SetProperty Id="PrepareBackupDirectory"
+                 Value="[DATAFOLDER]&#x9;[UNSAFEDATAPATHMESSAGE]&#x9;[INSTALLFOLDER]&#x9;[WindowsFolder]&#x9;[ProgramFiles64Folder]&#x9;[ProgramFilesFolder]&#x9;[%USERPROFILE]"
+                 Before="PrepareBackupDirectory"
+                 Sequence="execute"
+                 Condition="NOT REMOVE~=&quot;ALL&quot;" />
     <InstallExecuteSequence>
       <Custom Action="NormalizePort" After="AppSearch" Condition="PORT" />
-      <Custom Action="ValidateDataDirectory" Before="CreateFolders" Condition="NOT REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="ValidateDataDirectory" Before="PrepareBackupDirectory" Condition="NOT REMOVE~=&quot;ALL&quot;" />
+      <Custom Action="PrepareBackupDirectory" Before="CreateFolders" Condition="NOT REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
     <InstallUISequence>
       <Custom Action="NormalizePort" After="AppSearch" Condition="PORT" />

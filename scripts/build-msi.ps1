@@ -105,6 +105,8 @@ if ($LASTEXITCODE -ne 0) { throw "Native installer action publish failed." }
 if (-not (Test-Path -LiteralPath (Join-Path $installerActionsRoot "Lifewood.InstallerActions.dll"))) { throw "Native installer action library is missing." }
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-data-path.ps1") -LibraryPath (Join-Path $installerActionsRoot "Lifewood.InstallerActions.dll")
 if ($LASTEXITCODE -ne 0) { throw "Installer data-path validation test failed." }
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-backup-path.ps1") -LibraryPath (Join-Path $installerActionsRoot "Lifewood.InstallerActions.dll")
+if ($LASTEXITCODE -ne 0) { throw "Installer backup permission test failed." }
 
 & dotnet build $projectPath -c Release -p:PayloadDir=$payloadRoot -p:InstallerActionsDir=$installerActionsRoot -p:ProductVersion=$Version -p:OutputPath=$outputRoot
 if ($LASTEXITCODE -ne 0) { throw "MSI build failed." }

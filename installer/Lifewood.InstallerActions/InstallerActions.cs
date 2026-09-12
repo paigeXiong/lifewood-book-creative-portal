@@ -3,6 +3,10 @@ using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Security.Cryptography;
+using System.Buffers.Binary;
 
 namespace Lifewood.InstallerActions;
 
@@ -16,13 +20,14 @@ public static class InstallerActions
     [UnmanagedCallersOnly(EntryPoint = "ValidateDataDirectory", CallConvs = [typeof(CallConvStdcall)])]
     public static uint ValidateDataDirectory(uint sessionHandle)
     {
-        string message = "The production-data directory is unsafe. Choose a dedicated local directory.";
+        string message = "The data or backup directory is unsafe or its service permissions could not be set. Choose dedicated local directories.";
         try
         {
             var parts = GetProperty(sessionHandle, "CustomActionData").Split('\t');
             if (parts.Length < 7) throw new InvalidOperationException("CustomActionData is incomplete.");
             message = parts[1];
-            if (DataDirectoryValidator.IsSafe(parts[0], parts[2], parts[3], parts[4], parts[5], parts[6]))
+            if (DataDirectoryValidator.IsSafe(parts[0], parts[2], parts[3], parts[4], parts[5], parts[6]) &&
+                DataDirectoryValidator.IsSafe(BackupDirectoryPath(parts[0]), parts[2], parts[3], parts[4], parts[5], parts[6], backupStorage: true))
                 return ErrorSuccess;
         }
         catch (Exception exception)
@@ -32,6 +37,142 @@ public static class InstallerActions
 
         ShowError(sessionHandle, message);
         return ErrorInstallFailure;
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "PrepareBackupDirectory", CallConvs = [typeof(CallConvStdcall)])]
+    public static uint PrepareBackupDirectory(uint sessionHandle)
+    {
+        var message = "The backup directory is unsafe or its service permissions could not be set.";
+        try
+        {
+            var parts = GetProperty(sessionHandle, "CustomActionData").Split('\t');
+            if (parts.Length < 7) throw new InvalidOperationException("CustomActionData is incomplete.");
+            message = parts[1];
+            if (PrepareValidatedBackup(parts[0], parts[2], parts[3], parts[4], parts[5], parts[6])) return ErrorSuccess;
+        }
+        catch (Exception exception) { message += $" ({exception.GetType().Name})"; }
+        ShowError(sessionHandle, message);
+        return ErrorInstallFailure;
+    }
+
+    private static string BackupDirectoryPath(string dataDirectory) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataDirectory)) + ".backups";
+
+    internal static SecurityIdentifier BackupServiceSid()
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        // Windows service SIDs use SHA-1 of the uppercase UTF-16 service name.
+        // Derive it before InstallServices, without depending on account lookup.
+        var digest = SHA1.HashData(Encoding.Unicode.GetBytes("LIFEWOODBOOKCREATIVEPORTAL"));
+        var serviceSid = "S-1-5-80";
+        for (var index = 0; index < 5; index++) serviceSid += "-" + BinaryPrimitives.ReadUInt32LittleEndian(digest.AsSpan(index * 4, 4)).ToString(CultureInfo.InvariantCulture);
+        return new SecurityIdentifier(serviceSid);
+    }
+
+    private static DirectorySecurity BackupPermissions()
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        var permissions = new DirectorySecurity();
+        permissions.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+        permissions.SetAccessRuleProtection(true, false);
+        foreach (var identity in new[] {
+            BackupServiceSid(),
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null)
+        }) permissions.AddAccessRule(new FileSystemAccessRule(identity, FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        return permissions;
+    }
+
+    private static bool PrepareValidatedBackup(string data, string install, string windows, string program64, string program32, string profile)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        if (!DataDirectoryValidator.IsSafe(data, install, windows, program64, program32, profile)) return false;
+        var backup = BackupDirectoryPath(data);
+        if (!DataDirectoryValidator.IsSafe(backup, install, windows, program64, program32, profile, backupStorage: true)) return false;
+        var permissions = BackupPermissions();
+        using var guards = new StoragePathGuards(backup, permissions);
+        // Recheck while every path component is held against rename/delete. Existing archive
+        // trees with foreign owners or ACEs are refused, not recursively rewritten by SYSTEM.
+        if (!DataDirectoryValidator.IsSafe(data, install, windows, program64, program32, profile) ||
+            !DataDirectoryValidator.IsSafe(backup, install, windows, program64, program32, profile, backupStorage: true)) return false;
+        FileSystemAclExtensions.SetAccessControl(new DirectoryInfo(backup), permissions);
+        return true;
+    }
+
+    private sealed class StoragePathGuards : IDisposable
+    {
+        private readonly List<SafeFileHandle> handles = [];
+        public StoragePathGuards(string target, DirectorySecurity permissions)
+        {
+            try
+            {
+                var root = Path.GetPathRoot(target)!;
+                var paths = new List<string> { root };
+                var current = root;
+                foreach (var part in Path.GetRelativePath(root, target).Split(Path.DirectorySeparatorChar))
+                {
+                    current = Path.Combine(current, part);
+                    paths.Add(current);
+                }
+                foreach (var path in paths)
+                {
+                    if (!Directory.Exists(path)) CreatePrivateDirectory(path, permissions);
+                    // OPEN_REPARSE_POINT inspects the link itself. Omitting FILE_SHARE_DELETE
+                    // prevents replacement of this component while descendant paths are used.
+                    var handle = OpenStorageDirectory(path, 0x00020080, 3, nint.Zero, 3, 0x02200000, nint.Zero);
+                    if (handle.IsInvalid) { handle.Dispose(); throw new IOException("Cannot lock the backup path."); }
+                    handles.Add(handle);
+                    if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Backup path contains a reparse point.");
+                }
+            }
+            catch { Dispose(); throw; }
+        }
+        public void Dispose() { for (var index = handles.Count - 1; index >= 0; index--) handles[index].Dispose(); handles.Clear(); }
+    }
+
+    private static void CreatePrivateDirectory(string path, DirectorySecurity permissions)
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        var bytes = permissions.GetSecurityDescriptorBinaryForm();
+        var pointer = Marshal.AllocHGlobal(bytes.Length);
+        try
+        {
+            Marshal.Copy(bytes, 0, pointer, bytes.Length);
+            var attributes = new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(), Descriptor = pointer };
+            // CreateDirectoryW applies the descriptor atomically and never changes an existing
+            // directory's ACL. A raced existing directory is opened and checked before any write.
+            if (!CreateStorageDirectory(path, ref attributes) && Marshal.GetLastWin32Error() != 183)
+                throw new IOException("Cannot create the private backup directory.");
+        }
+        finally { Marshal.FreeHGlobal(pointer); }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes { public int Length; public nint Descriptor; public int InheritHandle; }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateDirectoryW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateStorageDirectory(string path, ref SecurityAttributes attributes);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateFileW")]
+    private static extern SafeFileHandle OpenStorageDirectory(string path, uint access, uint share, nint security, uint creation, uint flags, nint template);
+
+    // Build-time fixture: validate both paths before exercising real permissions.
+    [UnmanagedCallersOnly(EntryPoint = "PrepareBackupDirectoryPath", CallConvs = [typeof(CallConvStdcall)])]
+    public static int PrepareBackupDirectoryPath(nint dataDirectory, nint installDirectory, nint windowsDirectory,
+        nint programFiles64, nint programFiles32, nint userProfile)
+    {
+        try
+        {
+            var data = Marshal.PtrToStringUni(dataDirectory) ?? "";
+            var install = Marshal.PtrToStringUni(installDirectory) ?? "";
+            var windows = Marshal.PtrToStringUni(windowsDirectory) ?? "";
+            var program64 = Marshal.PtrToStringUni(programFiles64) ?? "";
+            var program32 = Marshal.PtrToStringUni(programFiles32) ?? "";
+            var profile = Marshal.PtrToStringUni(userProfile) ?? "";
+            return PrepareValidatedBackup(data, install, windows, program64, program32, profile) ? 1 : 0;
+        }
+        catch { return 0; }
     }
 
     [UnmanagedCallersOnly(EntryPoint = "NormalizePort", CallConvs = [typeof(CallConvStdcall)])]
@@ -141,7 +282,8 @@ internal static class DataDirectoryValidator
         string windowsDirectory,
         string programFiles64,
         string programFiles32,
-        string userProfile)
+        string userProfile,
+        bool backupStorage = false)
     {
         if (string.IsNullOrWhiteSpace(candidate) || candidate.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || candidate.Any(character => character < ' ')) return false;
         if (!Path.IsPathFullyQualified(candidate)) return false;
@@ -175,12 +317,63 @@ internal static class DataDirectoryValidator
         {
             try
             {
-                if (Directory.EnumerateFileSystemEntries(fullPath).Any() &&
+                if (backupStorage)
+                {
+                    if (Directory.EnumerateFileSystemEntries(fullPath).Any(path =>
+                        !Path.GetFileName(path).StartsWith("backup-", StringComparison.Ordinal) &&
+                        !Path.GetFileName(path).StartsWith(".backup-", StringComparison.Ordinal))) return false;
+                    if (HasReparseDescendant(fullPath) || !HasPrivateBackupPermissions(fullPath)) return false;
+                }
+                else if (Directory.EnumerateFileSystemEntries(fullPath).Any() &&
                     !LooksLikeSqliteDatabase(Path.Combine(fullPath, "platform.db"))) return false;
             }
             catch { return false; }
         }
         return true;
+    }
+
+    private static bool HasPrivateBackupPermissions(string path)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        // Do not inherit or rewrite an unrelated owner's archive tree during elevation.
+        // Existing platform-created archives already have these three private identities.
+        var allowed = new HashSet<string>(StringComparer.Ordinal) {
+            InstallerActions.BackupServiceSid().Value, "S-1-5-18", "S-1-5-32-544"
+        };
+        var pending = new Stack<string>();
+        pending.Push(path);
+        while (pending.TryPop(out var entry))
+        {
+            var attributes = File.GetAttributes(entry);
+            if ((attributes & FileAttributes.ReparsePoint) != 0) return false;
+            var directory = (attributes & FileAttributes.Directory) != 0;
+            FileSystemSecurity security = directory
+                ? FileSystemAclExtensions.GetAccessControl(new DirectoryInfo(entry))
+                : FileSystemAclExtensions.GetAccessControl(new FileInfo(entry));
+            if (security.GetOwner(typeof(SecurityIdentifier)) is not {} owner || !allowed.Contains(owner.Value)) return false;
+            var rights = new Dictionary<string, FileSystemRights>();
+            foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+            {
+                var identity = rule.IdentityReference.Value;
+                if (rule.AccessControlType != AccessControlType.Allow || !allowed.Contains(identity)) return false;
+                if ((rule.PropagationFlags & PropagationFlags.InheritOnly) != 0) continue;
+                rights[identity] = rights.GetValueOrDefault(identity) | rule.FileSystemRights;
+            }
+            foreach (var identity in allowed) if ((rights.GetValueOrDefault(identity) & FileSystemRights.FullControl) != FileSystemRights.FullControl) return false;
+            if (directory) foreach (var child in Directory.EnumerateFileSystemEntries(entry)) pending.Push(child);
+        }
+        return true;
+    }
+
+    private static bool HasReparseDescendant(string path)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(path))
+        {
+            var attributes = File.GetAttributes(entry);
+            if ((attributes & FileAttributes.ReparsePoint) != 0) return true;
+            if ((attributes & FileAttributes.Directory) != 0 && HasReparseDescendant(entry)) return true;
+        }
+        return false;
     }
 
     private static bool IsAmbiguousWindowsSegment(string segment)

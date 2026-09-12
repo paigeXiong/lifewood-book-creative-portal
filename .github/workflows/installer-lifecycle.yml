@@ -1,0 +1,59 @@
+name: Windows installer lifecycle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['installer/**', 'scripts/*installer*', 'scripts/*msi*', '.github/workflows/installer-lifecycle.yml']
+  pull_request:
+    paths: ['installer/**', 'scripts/*installer*', 'scripts/*msi*', '.github/workflows/installer-lifecycle.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  windows-service:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: npm ci
+      - run: npm run build:web
+      - run: npm run build:admin
+      - name: Build two test versions of this commit
+        shell: powershell
+        run: |
+          # Same source, different MSI versions: this tests Windows Installer transactions,
+          # not database migration compatibility with an older release.
+          $version = [version](Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version.Build -ge 65535) { throw 'No next MSI patch version available.' }
+          $next = '{0}.{1}.{2}' -f $version.Major,$version.Minor,($version.Build + 1)
+          ./scripts/build-msi.ps1 -Version $version.ToString() -OutputDirectory artifacts/lifecycle-previous -SkipFrontendBuild
+          if ($LASTEXITCODE -ne 0) { throw 'Previous test MSI build failed.' }
+          ./scripts/build-msi.ps1 -Version $next -OutputDirectory artifacts/lifecycle-current -SkipFrontendBuild
+          if ($LASTEXITCODE -ne 0) { throw 'Current test MSI build failed.' }
+      - name: Exercise real service install, cross-language upgrade and reinstall
+        shell: powershell
+        env:
+          LIFEWOOD_ALLOW_DESTRUCTIVE_INSTALLER_TEST: '1'
+        run: |
+          $previous = @(Get-ChildItem artifacts/lifecycle-previous/zh-CN -Filter '*.msi')
+          $current = @(Get-ChildItem artifacts/lifecycle-current/en-US -Filter '*.msi')
+          if ($previous.Count -ne 1 -or $current.Count -ne 1) { throw 'Expected exactly one MSI per test language.' }
+          ./scripts/test-msi-lifecycle.ps1 -PreviousPackage $previous[0].FullName -CurrentPackage $current[0].FullName
+      - name: Retain only the sanitized lifecycle report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-lifecycle
+          # Do not upload private-state.json, databases, backups, or verbose MSI logs.
+          path: artifacts/installer-lifecycle/*/result.json
+          if-no-files-found: ignore
+          retention-days: 7
