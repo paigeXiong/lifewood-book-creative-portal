@@ -1,6 +1,7 @@
+import { useDeliveryUpload } from "./useDeliveryUpload";
 import {ProjectAction} from "./ProjectAction";
 import { useConfirm } from "./useConfirm";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { adminService, localizedApiError } from "@lifewood/api-client";
@@ -23,25 +24,16 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [fileInvalid, setFileInvalid] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const uploadControllerRef = useRef<AbortController | undefined>(undefined);
-  useEffect(() => () => uploadControllerRef.current?.abort(), [projectId]);
   const deliveries = useQuery({ queryKey: ["admin-deliveries", projectId], queryFn: () => adminService.listDeliveries(projectId) });
-  const publish = useMutation({
-    mutationFn: ({ file, note, controller }: { file: File; note: string; controller: AbortController }) => adminService.publishFinalDelivery(projectId, file, note, { signal: controller.signal, onProgress: setUploadProgress }),
-    onSuccess: async () => {
-      setOpen(false);
-      showAdminToast(t("admin.feedback.deliveryPublished"));
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin-deliveries", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-project", projectId] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin-workbench"] }),
-      ]);
-    },
-    onSettled: (_data, _error, variables) => {
-      if (uploadControllerRef.current === variables.controller) uploadControllerRef.current = undefined;
-    },
+  const publish = useDeliveryUpload(projectId, () => {
+    setOpen(false);
+    showAdminToast(t("admin.feedback.deliveryPublished"));
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["admin-deliveries", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["admin-project", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["admin-projects"] }),
+      queryClient.invalidateQueries({ queryKey: ["admin-workbench"] }),
+    ]);
   });
   const revoke = useMutation({
     mutationFn: (deliveryId: string) => adminService.revokeFinalDelivery(projectId, deliveryId),
@@ -58,21 +50,19 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (publish.frozen) { void publish.run(); return; }
     const data = new FormData(event.currentTarget);
     const file = data.get("file");
     if (file instanceof File && file.size > 0) {
       const invalid = file.size > 500_000_000 || (Boolean(file.type) && !["video/mp4", "video/quicktime"].includes(file.type));
       setFileInvalid(invalid);
       if (invalid) return;
-      const controller = new AbortController();
-      setUploadProgress(0);
-      uploadControllerRef.current = controller;
-      publish.mutate({ file, note: String(data.get("note") ?? "").trim(), controller });
+      void publish.run(file, String(data.get("note") ?? "").trim());
     }
   };
 
   return <>
-    <ProjectAction slot="delivery"><button type="button" className="primary" disabled={!canPublish || publish.isPending} title={!canPublish ? t("admin.delivery.draftHint") : undefined} onClick={() => { publish.reset(); setFileInvalid(false); setOpen(true); }}>{t("admin.delivery.upload")}</button></ProjectAction>
+    <ProjectAction slot="delivery"><button type="button" className="primary" disabled={!canPublish || publish.isPending} title={!canPublish ? t("admin.delivery.draftHint") : undefined} onClick={() => { setFileInvalid(false); setOpen(true); }}>{t("admin.delivery.upload")}</button></ProjectAction>
     {(Boolean(deliveries.data?.length) || deliveries.isError || revoke.isError) && <section className="detail-section delivery-admin">
     <h3>{t("admin.delivery.title")}</h3>
     {deliveries.isError && <div className="message error" role="alert">{localizedApiError(deliveries.error, t)}</div>}
@@ -93,12 +83,14 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
     </section>}
     {open && canPublish && <ModalFrame labelledBy="delivery-dialog-title" busy={publish.isPending} onClose={() => setOpen(false)}><div className="modal-title"><h2 id="delivery-dialog-title">{t("admin.delivery.dialogTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={publish.isPending} onClick={() => setOpen(false)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div><form onSubmit={submit} aria-busy={publish.isPending}>
       <div className="delivery-warning"><strong>{t("admin.delivery.immediateTitle")}</strong><p>{t("admin.delivery.immediateBody")}</p></div>
-      <label><span>{t("admin.delivery.file")}</span><input name="file" type="file" accept=".mp4,.mov,video/mp4,video/quicktime" required /><small>{t("admin.delivery.fileHint")}</small></label>
-      <label><span>{t("admin.delivery.note")}</span><textarea name="note" rows={3} maxLength={2000} placeholder={t("admin.delivery.notePlaceholder")} /></label>
+      <label><span>{t("admin.delivery.file")}</span><input disabled={publish.frozen} name="file" type="file" accept=".mp4,.mov,video/mp4,video/quicktime" required /><small>{t("admin.delivery.fileHint")}</small></label>
+      <label><span>{t("admin.delivery.note")}</span><textarea disabled={publish.frozen} name="note" rows={3} maxLength={2000} placeholder={t("admin.delivery.notePlaceholder")} /></label>
+      {publish.frozen && <p className="delivery-attempt">{publish.fileName}{publish.note && <small>{publish.note}</small>}</p>}
       {fileInvalid && <div className="message error" role="alert">{t("errors.delivery.file")}</div>}
-      {publish.isPending && <div className="upload-progress"><span>{t("admin.delivery.progress", { percent: uploadProgress })}</span><button type="button" onClick={() => { uploadControllerRef.current?.abort(); setOpen(false); }}>{t("admin.delivery.cancelUpload")}</button><progress value={uploadProgress} max={100} aria-label={t("admin.delivery.progress", { percent: uploadProgress })} /></div>}
-      {publish.isError && publish.error instanceof DOMException && publish.error.name === "AbortError" ? null : publish.isError && <div className="message error" role="alert">{localizedApiError(publish.error, t)}</div>}
-      <div className="modal-actions"><button type="button" disabled={publish.isPending} onClick={() => setOpen(false)}>{t("common.cancel")}</button><button className="primary" disabled={publish.isPending}>{t(publish.isPending ? "admin.delivery.publishing" : "admin.delivery.publish")}</button></div>
+      {publish.isPending && <div className="upload-progress" role="status"><span>{t(publish.phase === "checking" ? "deliveryRecovery.checking" : publish.progress === 100 ? "deliveryRecovery.processing" : "admin.delivery.progress", { percent: publish.progress })}</span>{publish.phase === "uploading" && <button type="button" onClick={publish.cancel}>{t("admin.delivery.cancelUpload")}</button>}<progress value={publish.progress} max={100} aria-label={t("admin.delivery.progress", { percent: publish.progress })} /></div>}
+      {publish.outcome !== "idle" && <div className="message" role="status">{t(`deliveryRecovery.${publish.outcome}`)}</div>}
+      {Boolean(publish.error) && !(publish.error instanceof DOMException && publish.error.name === "AbortError") && <div className="message error" role="alert">{localizedApiError(publish.error, t)}</div>}
+      <div className="modal-actions"><button type="button" disabled={publish.isPending} onClick={() => setOpen(false)}>{t("common.close")}</button>{publish.frozen && publish.outcome !== "unknown" && !publish.isPending && <button type="button" onClick={publish.reset}>{t("deliveryRecovery.chooseAgain")}</button>}{publish.outcome !== "revoked" && publish.outcome !== "error" && <button className="primary" disabled={publish.isPending}>{t(publish.isPending ? "admin.delivery.publishing" : publish.outcome === "unknown" ? "deliveryRecovery.check" : publish.frozen ? "deliveryRecovery.retryAction" : "admin.delivery.publish")}</button>}</div>
     </form></ModalFrame>}
   </>;
 }

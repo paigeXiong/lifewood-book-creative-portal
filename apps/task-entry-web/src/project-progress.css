@@ -1,0 +1,15 @@
+.project-progress-summary{display:grid;grid-template-columns:minmax(220px,.85fr) minmax(0,1.5fr);gap:16px;margin-bottom:20px;padding:20px;border-radius:14px;background:var(--lw-white,#fff)}
+.project-progress-state{display:flex;flex-wrap:wrap;align-content:center;align-items:center;gap:10px;min-width:0}
+.project-progress-label{font-size:14px;color:var(--lw-text-muted)}
+.project-progress-state p{flex-basis:100%;margin:0;color:var(--lw-text-secondary);font-size:14px;line-height:1.6}
+.project-progress-state>a{display:inline-flex;align-items:center;gap:8px;margin-top:2px;font-size:14px;padding:6px 0}
+.project-progress-summary .customer-delivery{margin:0;padding:16px;background:#f3f7f4;border:0;box-shadow:none;min-width:0}
+.project-progress-summary .customer-delivery h2{font-size:14px;margin-bottom:8px}
+.project-progress-summary .customer-delivery h2>span{display:none}
+.project-progress-summary .customer-delivery strong{font-size:14px}
+.project-progress-summary .customer-delivery p,.project-progress-summary .customer-delivery small{font-size:12px}
+.project-progress-summary .customer-delivery li{gap:12px;padding:10px 0;background:transparent}
+.project-progress-summary .customer-delivery li strong{white-space:normal;overflow-wrap:anywhere}
+.project-progress-summary .customer-delivery li .button{min-height:44px;font-size:14px}
+#submitted-materials{scroll-margin-top:90px}
+@media(max-width:700px){.project-progress-summary{grid-template-columns:1fr;padding:16px;gap:14px}.project-progress-summary .customer-delivery{padding:14px}.project-progress-state{gap:8px}.project-progress-summary .customer-delivery li .button{width:100%}}

@@ -500,10 +500,12 @@ export const adminService = {
   addNote: (id: string, body: string) =>
     request(`/admin/projects/${encodeURIComponent(id)}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
   listDeliveries: (id: string) => request<FinalDelivery[]>(`/admin/projects/${encodeURIComponent(id)}/deliveries`),
+  getDeliveryUpload: (id: string, uploadId: string) => request<{ recorded: boolean; delivery?: FinalDelivery }>(`/admin/projects/${encodeURIComponent(id)}/deliveries/uploads/${encodeURIComponent(uploadId)}`),
   publishFinalDelivery: (id: string, file: File, note: string, options?: UploadOptions) => {
     const body = new FormData();
     body.append("file", file);
     body.append("note", note);
+    if (options?.uploadId) body.append("uploadId", options.uploadId);
     return upload<FinalDelivery>(`/admin/projects/${encodeURIComponent(id)}/deliveries`, body, options);
   },
   revokeFinalDelivery: (projectId: string, deliveryId: string) =>

@@ -27,6 +27,7 @@ internal sealed class DeliveryRepository(string connectionString)
             """;
         command.ExecuteNonQuery();
         if (!HasColumn(connection, "project_deliveries", "revoked_at")) Execute(connection, "ALTER TABLE project_deliveries ADD COLUMN revoked_at TEXT NULL;");
+        if (!HasColumn(connection, "project_deliveries", "content_sha256")) Execute(connection, "ALTER TABLE project_deliveries ADD COLUMN content_sha256 TEXT NULL;");
         Execute(connection, """
             UPDATE project_deliveries AS older
             SET revoked_at = older.published_at
@@ -101,7 +102,22 @@ internal sealed class DeliveryRepository(string connectionString)
         return reader.Read() ? Read(reader) : null;
     }
 
-    public AdminWriteResult Publish(string deliveryId, string projectId, string uploaderUserId, string fileName, string contentType, long sizeBytes, string? note, out FinalDeliveryDto? delivery, string? accessActorId = null)
+    public (FinalDeliveryDto Delivery, string? Hash)? FindUpload(string projectId, string deliveryId, string uploaderId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, project_id, file_name, content_type, size_bytes, note, published_at, revoked_at, content_sha256
+            FROM project_deliveries WHERE project_id = $project AND id = $id AND uploader_user_id = $uploader;
+            """;
+        command.Parameters.AddWithValue("$project", projectId);
+        command.Parameters.AddWithValue("$id", deliveryId);
+        command.Parameters.AddWithValue("$uploader", uploaderId);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? (Read(reader), reader.IsDBNull(8) ? null : reader.GetString(8)) : null;
+    }
+
+    public AdminWriteResult Publish(string deliveryId, string projectId, string uploaderUserId, string fileName, string contentType, long sizeBytes, string? note, out FinalDeliveryDto? delivery, string? accessActorId = null, string? contentHash = null)
     {
         delivery = null;
         var normalizedNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
@@ -134,9 +150,10 @@ internal sealed class DeliveryRepository(string connectionString)
         using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
-            INSERT INTO project_deliveries(id, project_id, uploader_user_id, file_name, content_type, size_bytes, note, published_at)
-            VALUES ($id, $projectId, $uploaderId, $fileName, $contentType, $sizeBytes, $note, $publishedAt);
+            INSERT INTO project_deliveries(id, project_id, uploader_user_id, file_name, content_type, size_bytes, note, published_at, content_sha256)
+            VALUES ($id, $projectId, $uploaderId, $fileName, $contentType, $sizeBytes, $note, $publishedAt, $hash);
             """;
+        insert.Parameters.AddWithValue("$hash", (object?)contentHash ?? DBNull.Value);
         insert.Parameters.AddWithValue("$id", deliveryId);
         insert.Parameters.AddWithValue("$projectId", projectId);
         insert.Parameters.AddWithValue("$uploaderId", uploaderUserId);

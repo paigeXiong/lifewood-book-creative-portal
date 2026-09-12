@@ -9,3 +9,5 @@ public sealed record FinalDeliveryDto(
     string? Note,
     DateTimeOffset PublishedAt,
     DateTimeOffset? RevokedAt = null);
+
+public sealed record DeliveryUploadStatusDto(bool Recorded, FinalDeliveryDto? Delivery);

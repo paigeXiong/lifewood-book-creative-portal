@@ -1,3 +1,4 @@
+import "../project-progress.css";
 import { safeLinkUrl } from "@lifewood/domain";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +19,8 @@ export function TaskDetailPage() {
     queryKey: ["project", taskId, validLocale],
     queryFn: () => projectService.getProject(taskId!, validLocale),
     enabled: Boolean(taskId),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
   const options = useQuery({
     queryKey: ["form-options", validLocale],
@@ -103,11 +106,18 @@ export function TaskDetailPage() {
           <h1>{task.data.project.projectName}</h1>
           <p>{task.data.book.title}</p>
         </div>
-        <span className={`status-badge status-${status?.tone ?? "neutral"}`}>
-          {status?.label ?? statusId}
-        </span>
+
       </header>
-      <div className="detail-layout">
+      <section className="project-progress-summary" aria-label={t("projectProgress.title")}>
+        <div className="project-progress-state">
+          <span className="project-progress-label">{t("projectProgress.title")}</span>
+          <span className={`status-badge status-${status?.tone ?? "neutral"}`}>{status?.label ?? t("uiDensity.unavailableOption")}</span>
+          <p>{t(`projectProgress.${statusId === "completed" ? "completed" : statusId === "closed" ? "closed" : statusId === "in_production" ? "production" : "waiting"}`)}</p>
+          <a className="button button-quiet" href="#submitted-materials">{t("projectProgress.viewMaterials")}<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg></a>
+        </div>
+        <FinalDeliverySection projectId={task.data.id} locale={validLocale} />
+      </section>
+      <div className="detail-layout" id="submitted-materials">
         <aside className="detail-cover">
           {bookCover && (
             <img
@@ -142,7 +152,6 @@ export function TaskDetailPage() {
           </dl>
         </aside>
         <div className="detail-sections">
-          <FinalDeliverySection projectId={task.data.id} locale={validLocale} />
           <section className="form-panel">
             <h2>
               <span>01</span>

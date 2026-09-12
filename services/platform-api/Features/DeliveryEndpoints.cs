@@ -13,6 +13,7 @@ internal static class DeliveryEndpoints
 
     public static RouteGroupBuilder MapDeliveryEndpoints(this RouteGroupBuilder api, string dataDirectory)
     {
+        var uploadLocks = new AsyncKeyedLock();
         api.MapGet("/admin/projects/{id}/deliveries", (string id, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
         {
             var user = CurrentUser(context);
@@ -23,6 +24,20 @@ internal static class DeliveryEndpoints
                 : Results.Ok(deliveries.ListForAdmin(id));
         });
 
+        api.MapGet("/admin/projects/{id}/deliveries/uploads/{uploadId}", async (string id, string uploadId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries) =>
+        {
+            var user = CurrentUser(context);
+            if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
+            if (!Can(user, "admin.projects.deliver")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Delivery permission is required.");
+            if (!Guid.TryParse(uploadId, out var key)) return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid upload identifier.");
+            await using var gate = await uploadLocks.AcquireAsync(id, context.RequestAborted);
+            if (admin.GetProject(id, user.Id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            user = CurrentUser(context);
+            if (user is null || !Can(user, "admin.projects.deliver")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Delivery permission is required.");
+            var saved = deliveries.FindUpload(id, UploadKey(user.Id, id, key), user.Id);
+            return Results.Ok(new DeliveryUploadStatusDto(saved is not null, saved?.Delivery));
+        });
+
         api.MapPost("/admin/projects/{id}/deliveries", async (string id, HttpContext context, AdminRepository admin, DeliveryRepository deliveries, StorageQuota storageQuota) =>
         {
             var user = CurrentUser(context);
@@ -31,6 +46,13 @@ internal static class DeliveryEndpoints
             if (admin.GetProject(id, user.Id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
             if (!context.Request.HasFormContentType) return Error(context, 400, "validation.failed", "errors.validation.failed", "A multipart form is required.");
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            await using var gate = await uploadLocks.AcquireAsync(id, context.RequestAborted);
+            user = CurrentUser(context);
+            if (user is null || !Can(user, "admin.projects.deliver")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Delivery permission is required.");
+            if (admin.GetProject(id, user.Id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            var uploadId = form["uploadId"].ToString();
+            if (uploadId.Length > 0 && !Guid.TryParse(uploadId, out _)) return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid upload identifier.");
+            var deliveryId = uploadId.Length == 0 ? Guid.NewGuid().ToString("N") : UploadKey(user.Id, id, Guid.Parse(uploadId));
             var file = form.Files.GetFile("file");
             var note = form["note"].ToString();
             if (file is null || file.Length <= 0 || file.Length > MaxDeliveryBytes) return Error(context, 400, "delivery.file", "errors.delivery.file", "Choose an MP4 or MOV file up to 500 MB.");
@@ -39,11 +61,24 @@ internal static class DeliveryEndpoints
                 return Error(context, 400, "delivery.file", "errors.delivery.file", "Choose an MP4 or MOV file up to 500 MB.");
             if (note.Trim().Length > 2000) return Error(context, 400, "delivery.note", "errors.delivery.note", "The delivery note is too long.");
 
+            var safeName = SanitizeFileName(file.FileName);
+            string contentHash;
+            await using (var input = file.OpenReadStream())
+                contentHash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(input, context.RequestAborted));
+            var previous = deliveries.FindUpload(id, deliveryId, user.Id);
+            if (previous is not null)
+            {
+                var saved = previous.Value.Delivery;
+                if (saved.FileName != safeName || saved.ContentType != contentType || saved.SizeBytes != file.Length || (saved.Note ?? "") != note.Trim() || previous.Value.Hash != contentHash)
+                    return Error(context, 409, "delivery.upload_conflict", "deliveryRecovery.conflict", "The upload identifier was used for different content.");
+                context.Items[AuditActionCatalog.TargetIdItemKey] = saved.Id;
+                return Results.Ok(saved);
+            }
+
             await using var reservation = await storageQuota.TryReserveAsync(file.Length, context.RequestAborted);
             if (reservation is null) return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached. Contact an administrator.");
 
-            var deliveryId = Guid.NewGuid().ToString("N");
-            var safeName = SanitizeFileName(file.FileName);
+            var uploaderId = user.Id;
             var folder = Path.Combine(dataDirectory, "deliveries", id);
             Directory.CreateDirectory(folder);
             var path = Path.Combine(folder, $"{deliveryId}_{safeName}");
@@ -71,9 +106,15 @@ internal static class DeliveryEndpoints
             }
             try
             {
+                user = CurrentUser(context);
+                if (user is null || !Can(user, "admin.projects.deliver") || admin.GetProject(id, user.Id) is null)
+                {
+                    File.Delete(temporary);
+                    return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Delivery permission is required.");
+                }
                 CreatePendingMarker(pendingMarker);
                 File.Move(temporary, path);
-                var result = deliveries.Publish(deliveryId, id, user.Id, safeName, contentType, file.Length, note, out var delivery, user.Id);
+                var result = deliveries.Publish(deliveryId, id, user.Id, safeName, contentType, file.Length, note, out var delivery, user.Id, contentHash);
                 if (result.Outcome == AdminWriteOutcome.Saved)
                 {
                     try { File.Delete(pendingMarker); }
@@ -98,18 +139,24 @@ internal static class DeliveryEndpoints
             catch
             {
                 if (File.Exists(temporary)) File.Delete(temporary);
-                if (File.Exists(path)) File.Delete(path);
-                if (File.Exists(pendingMarker)) File.Delete(pendingMarker);
+                if (deliveries.FindUpload(id, deliveryId, uploaderId) is null)
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                    if (File.Exists(pendingMarker)) File.Delete(pendingMarker);
+                }
                 throw;
             }
         }).DisableAntiforgery();
 
-        api.MapDelete("/admin/projects/{id}/deliveries/{deliveryId}", (string id, string deliveryId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries, ILoggerFactory loggerFactory) =>
+        api.MapDelete("/admin/projects/{id}/deliveries/{deliveryId}", async (string id, string deliveryId, HttpContext context, AdminRepository admin, DeliveryRepository deliveries, ILoggerFactory loggerFactory) =>
         {
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
             if (!Can(user, "admin.projects.deliver")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.");
             if (admin.GetProject(id, user.Id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            await using var gate = await uploadLocks.AcquireAsync(id, context.RequestAborted);
+            user = CurrentUser(context);
+            if (user is null || !Can(user, "admin.projects.deliver")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Delivery permission is required.");
             var result = deliveries.Revoke(id, deliveryId, user.Id);
             if (result.Outcome != AdminWriteOutcome.Saved)
                 return Error(context, 404, "delivery.not_found", "admin.delivery.notFound", "The delivery was not found.");
@@ -184,6 +231,9 @@ internal static class DeliveryEndpoints
             ? null
             : context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
     }
+
+    private static string UploadKey(string userId, string projectId, Guid key) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{userId}:{projectId}:{key:N}")))[..32].ToLowerInvariant();
 
     private static bool Can(CurrentUserDto user, string permission) => user.Permissions.Contains(permission, StringComparer.Ordinal);
 
