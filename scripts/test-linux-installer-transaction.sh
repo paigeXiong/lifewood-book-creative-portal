@@ -14,7 +14,8 @@ config_dir="/etc/lifewood-book-portal"
 unit_file="/etc/systemd/system/$service_name.service"
 configure_command="/usr/local/sbin/lifewood-portal-configure"
 
-for target in "$install_dir" "$config_dir" "$unit_file" "$configure_command"; do
+coordination_dir="/var/lib/lifewood-book-portal-coordination"
+for target in "$install_dir" "$config_dir" "$unit_file" "$configure_command" "$coordination_dir"; do
   [[ ! -e "$target" ]] || { printf 'Refusing to run over an existing installation: %s\n' "$target" >&2; exit 2; }
 done
 ! id "$service_user" >/dev/null 2>&1 || { printf 'Refusing to reuse an existing service account.\n' >&2; exit 2; }
@@ -30,8 +31,8 @@ output_log="$test_root/installer.log"
 
 cleanup() {
   set +e
-  case "$data_dir" in /var/lib/lifewood-installer-transaction.*) rm -rf -- "$data_dir" ;; esac
-  rm -rf -- "$install_dir" "$config_dir"
+  case "$data_dir" in /var/lib/lifewood-installer-transaction.*) rm -rf -- "$data_dir" "${data_dir}.backups" "${data_dir}.backups-original" ;; esac
+  rm -rf -- "$install_dir" "$config_dir" "$coordination_dir"
   rm -f -- "$unit_file" "$configure_command"
   id "$service_user" >/dev/null 2>&1 && userdel "$service_user"
   getent group "$service_user" >/dev/null 2>&1 && groupdel "$service_user"
@@ -172,4 +173,23 @@ cmp -s "$snapshot_dir/configure" "$configure_command"
   exit 1
 }
 
+runuser -u "$service_user" -- test -x "$install_dir/server/Lifewood.BookPortal.Server"
+runuser -u "$service_user" -- touch "${data_dir}.backups/permission-check"
+[[ "$(stat -c '%a' "${data_dir}.backups")" == 700 ]]
+# Unsafe existing backup permissions must fail without rewriting the directory.
+chmod 0755 "${data_dir}.backups"
+if env PATH="$test_path" FAKE_INSTALLER_DATA_DIR="$data_dir" FAKE_SYSTEMCTL_STATE_DIR="$state_dir" \
+  bash "$payload_root/linux/install.sh" --non-interactive --lang zh-CN >"$output_log" 2>&1; then exit 1; fi
+grep -Fq '备份目录不安全' "$output_log"
+[[ "$(stat -c '%a' "${data_dir}.backups")" == 755 ]]
+chmod 0700 "${data_dir}.backups"
+# A link must be rejected and the original backup must survive unchanged.
+mv -- "${data_dir}.backups" "${data_dir}.backups-original"
+ln -s -- "${data_dir}.backups-original" "${data_dir}.backups"
+if env PATH="$test_path" FAKE_INSTALLER_DATA_DIR="$data_dir" FAKE_SYSTEMCTL_STATE_DIR="$state_dir" \
+  bash "$payload_root/linux/install.sh" --non-interactive --lang en-US >"$output_log" 2>&1; then exit 1; fi
+grep -Fq 'The backup directory is unsafe' "$output_log"
+[[ -f "${data_dir}.backups-original/permission-check" ]]
+rm -- "${data_dir}.backups"
+mv -- "${data_dir}.backups-original" "${data_dir}.backups"
 printf 'Linux installer transaction test passed.\n'

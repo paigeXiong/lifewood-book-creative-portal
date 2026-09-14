@@ -93,7 +93,7 @@ jobs:
         run: sudo apt-get install -y clang zlib1g-dev
       - run: npm ci
       - name: Validate Linux scripts
-        run: bash -n linux/install.sh scripts/build-linux-release.sh scripts/test-linux-installer.sh scripts/test-linux-installer-transaction.sh scripts/test-linux-release.sh
+        run: bash -n linux/install.sh scripts/build-linux-release.sh scripts/test-linux-installer.sh scripts/test-linux-installer-transaction.sh scripts/test-linux-installer-lifecycle.sh scripts/test-linux-release.sh
       - name: Test Linux installer safety checks
         run: bash scripts/test-linux-installer.sh
       - name: Test failed first-install rollback and retry
@@ -125,3 +125,10 @@ jobs:
           getent group lifewood-portal >/dev/null && sudo groupdel lifewood-portal || true
       - name: Smoke-test packaged Linux service
         run: bash scripts/test-linux-release.sh "$(find artifacts/release -maxdepth 1 -name 'lifewood-book-creative-portal-${{ matrix.runtime }}-*.tar.gz' -print -quit)"
+      - name: Exercise real systemd installation and failed-upgrade rollback
+        shell: bash
+        run: |
+          archive="$(find artifacts/release -maxdepth 1 -name 'lifewood-book-creative-portal-${{ matrix.runtime }}-*.tar.gz' -print -quit)"
+          sudo env CI=true GITHUB_ACTIONS=true RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" LIFEWOOD_ALLOW_DESTRUCTIVE_INSTALLER_TEST=1 \
+            bash scripts/test-linux-installer-lifecycle.sh "$archive" "$(command -v node)"

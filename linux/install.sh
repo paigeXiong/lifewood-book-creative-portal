@@ -116,6 +116,8 @@ translate_error_zh() {
     "The install utility is required.") printf '%s' "安装需要 install 命令" ;;
     "curl is required for the startup health check.") printf '%s' "启动健康检查需要 curl" ;;
     "runuser is required to verify production-data permissions.") printf '%s' "生产数据权限检查需要 runuser" ;;
+    "The backup parent must be a root-owned directory without group or other write access: "*) printf '备份父路径必须由 root 所有，且组与其他用户不可写：%s' "${english##*: }" ;;
+    "The backup directory is unsafe or inaccessible: "*) printf '备份目录不安全或服务账号无法访问：%s' "${english##*: }" ;;
     "GNU stat is required for safe ownership validation.") printf '%s' "所有者安全检查需要 GNU stat" ;;
     "Linux server executable is missing from the release payload.") printf '%s' "发布包缺少 Linux 服务端程序" ;;
     "Customer frontend is missing from the release payload.") printf '%s' "发布包缺少客户门户" ;;
@@ -404,6 +406,27 @@ if [[ -z "$existing_data_dir" ]]; then
 elif ! runuser -u "$service_user" -- test -r "$data_dir/platform.db" || ! runuser -u "$service_user" -- test -w "$data_dir"; then
   fail "The service account cannot read and write the recorded production data directory: $data_dir"
 fi
+# The service cannot create a sibling under /var/lib. Only create the leaf
+# under trusted, non-writable ancestors; never recursively change existing data.
+backup_dir="${data_dir}.backups"
+backup_parent="$(dirname -- "$backup_dir")"
+while :; do
+  [[ -d "$backup_parent" && ! -L "$backup_parent" && "$(stat -c '%u' "$backup_parent")" == 0 ]] ||
+    fail "The backup parent must be a root-owned directory without group or other write access: $backup_parent"
+  parent_mode="$(stat -c '%a' "$backup_parent")"
+  (( (8#$parent_mode & 0022) == 0 )) ||
+    fail "The backup parent must be a root-owned directory without group or other write access: $backup_parent"
+  [[ "$backup_parent" != / ]] || break
+  backup_parent="$(dirname -- "$backup_parent")"
+done
+if [[ ! -e "$backup_dir" && ! -L "$backup_dir" ]]; then
+  (umask 077; mkdir -- "$backup_dir")
+  chown "$service_user:$service_user" "$backup_dir"
+fi
+[[ -d "$backup_dir" && ! -L "$backup_dir" && "$(stat -c '%U' "$backup_dir")" == "$service_user" && "$(stat -c '%a' "$backup_dir")" == 700 ]] ||
+  fail "The backup directory is unsafe or inaccessible: $backup_dir"
+runuser -u "$service_user" -- test -w "$backup_dir" && runuser -u "$service_user" -- test -x "$backup_dir" ||
+  fail "The backup directory is unsafe or inaccessible: $backup_dir"
 install -d -m 0755 -o root -g root "$config_dir"
 install -d -m 0750 -o "$service_user" -g "$service_user" "$coordination_dir"
 
@@ -536,6 +559,7 @@ if ! $configure_only; then
   cp -a -- "$payload_root/server/." "$stage_dir/server/"
   chmod 0755 "$stage_dir/server/Lifewood.BookPortal.Server"
   chown -R root:root "$stage_dir"
+  chmod 0755 "$stage_dir"
 fi
 
 transaction_active=true
