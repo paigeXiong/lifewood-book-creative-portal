@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import {expect,test} from "@playwright/test";
 
@@ -14,7 +15,7 @@ test("platform feedback is submitted and answered through notifications in both 
   const ownerCsrf={"X-CSRF-TOKEN":(await(await owner.request.get("/api/auth/csrf")).json()).token};
   const created=await owner.request.post("/api/admin/users",{headers:ownerCsrf,data:{displayName:"Feedback fixture",email,password,role:"customer",organizationId:me.organization?.id}});expect(created.ok()).toBeTruthy();
   expect((await postAuthentication(page.request, "/api/auth/login",{headers:await csrf(),data:{email,password,rememberMe:false}})).ok()).toBeTruthy();
-  await page.setViewportSize({width:390,height:844});await page.goto(`http://127.0.0.1:5193/${locale}/profile`);
+  await page.setViewportSize({width:390,height:844});await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/profile`);
   await page.getByRole("button",{name:zh?"问题反馈":"Report an issue",exact:true}).click();
   const dialog=page.getByRole("dialog",{name:zh?"问题反馈":"Report an issue",exact:true});
   const description=`Feedback ${locale} ${Date.now()} <img src=x onerror=alert(1)>`;
@@ -48,7 +49,7 @@ test("platform feedback is submitted and answered through notifications in both 
   if(zh){await expect(dialog.getByRole("alert")).toBeVisible();await page.unroute("**/api/feedback");await dialog.getByRole("button",{name:"重试",exact:true}).click();}
   await expect(dialog.getByText(zh?"反馈已提交":"Feedback submitted",{exact:true})).toBeVisible();
   await dialog.getByRole("button",{name:zh?"关闭":"Close",exact:true}).last().click();
-  await admin.goto(`http://127.0.0.1:5194/${locale}/feedback`);
+  await gotoInAccountLocale(admin, `http://127.0.0.1:5194/${locale}/feedback`);
   await admin.getByRole("searchbox").fill(description.slice(0,30));
   const row=admin.getByRole("row").filter({hasText:description});await expect(row).toBeVisible();
   await row.getByRole("button",{name:zh?"查看详情":"View details",exact:true}).click();
@@ -74,7 +75,7 @@ test("platform feedback is submitted and answered through notifications in both 
   }
   await review.getByRole("button",{name:zh?"保存并发送通知":"Save and notify",exact:true}).click();await expect(review).toBeHidden();
   await expect.poll(async()=>{const feed=await(await page.request.get("http://127.0.0.1:5193/api/notifications?kind=feedback_reply")).json();return feed.items.length;},{timeout:20000}).toBe(1);
-  await page.goto(`http://127.0.0.1:5193/${locale}/notifications`);
+  await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/notifications`);
   await page.locator('.notification-row-actions button').first().click();
   await expect(page.locator('.feedback-notice-content').getByText(reply,{exact:true})).toBeVisible();
   await expect(page.locator('.feedback-notice-content').getByText(description,{exact:true})).toBeVisible();

@@ -477,3 +477,14 @@ export interface RestoreOverview { available: boolean; current?: RestoreState; u
 
 export interface RestoreHistoryItem { id: string; startedAt: string; updatedAt: string; backupCreatedAt?: string; actorName?: string; status: string; errorCode?: string; safetyBackup?: BackupRecord; }
 export interface RestoreHistoryPage { items: RestoreHistoryItem[]; page: number; pageSize: number; total: number; incomplete: boolean; statuses: {value: string; messageKey: string}[]; }
+
+export interface DashboardProject { id: string; projectName: string; bookTitle: string; taskNumber?: string; status: string; workflowStatus: string; updatedAt: string }
+export interface DashboardDay { date: string; submissions: number; resubmissions: number; deliveries: number; projects: number }
+export interface CustomerDashboard {
+  month: string; timeZone: string; historyCompleteFrom: string; generatedAt: string;
+  counts: { total: number; actionRequired: number; active: number; downloadable: number };
+  statuses: Array<{ id: string; count: number }>;
+  days: DashboardDay[];
+  activities: PagedResult<{ id: string; kind: "submission" | "resubmission" | "delivery"; occurredAt: string; project: DashboardProject }>;
+  recentProjects: DashboardProject[];
+}

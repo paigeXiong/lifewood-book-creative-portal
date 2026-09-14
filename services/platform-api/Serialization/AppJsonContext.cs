@@ -8,6 +8,7 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(CustomerDashboardDto))]
 [JsonSerializable(typeof(DeliveryUploadStatusDto))]
 [JsonSerializable(typeof(FeedbackCatalog))]
 [JsonSerializable(typeof(CreateFeedbackRequest))]

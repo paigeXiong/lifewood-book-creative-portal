@@ -172,7 +172,7 @@ internal static class FormOptionCatalog
             SourceCategories:
             [
                 Category("book-cover", en ? "Book cover" : "图书封面", en ? "JPG or PNG; up to 6 cover photos" : "JPG 或 PNG；最多 6 张封面照片", ["image/jpeg", "image/png"], 10_000_000, 6, required: true),
-                Category("manuscript", en ? "Manuscript or excerpt (optional)" : "全书或节选（可选）", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 200_000_000, 1),
+                Category("manuscript", en ? "Book text" : "书籍正文", en ? "Full book or selected chapters · Optional · PDF, DOCX, or TXT" : "可上传全书或部分章节，选填。支持 PDF、DOCX、TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 200_000_000, 1),
                 Category("supplemental-images", en ? "Optional images / phone photos" : "补充图片 / 手机照片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 8)
             ],
             ReferenceCategories:
@@ -181,7 +181,7 @@ internal static class FormOptionCatalog
                 Category("style-reference", en ? "Visual style reference images" : "风格参考图", en ? "JPG, PNG, or WebP; up to 6 images" : "JPG、PNG 或 WebP；最多 6 张", ["image/jpeg", "image/png", "image/webp"], 20_000_000, 6),
                 Category("sample-video", en ? "Example video" : "示例视频", en ? "MP4 or MOV" : "MP4 或 MOV", ["video/mp4", "video/quicktime"], 500_000_000, 3),
                 Category("sample-image", en ? "Example images" : "示例图片", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),
-                Category("moodboard", en ? "Moodboard" : "情绪板", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),
+                Category("moodboard", en ? "Visual inspiration board" : "风格参考拼图", en ? "JPG or PNG" : "JPG 或 PNG", ["image/jpeg", "image/png"], 20_000_000, 10),
                 Category("competitor", en ? "Competitive examples / links" : "竞品示例 / 链接", en ? "PDF or image; links are also supported" : "PDF 或图片；也支持链接", ["application/pdf", "image/jpeg", "image/png"], 20_000_000, 5, true),
                 Category("scene-notes", en ? "Scene notes" : "场景说明", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 10_000_000, 5),
                 Category("dos-donts", en ? "Do / Don't notes" : "注意事项", en ? "PDF, DOCX, or TXT" : "PDF、DOCX 或 TXT", ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"], 10_000_000, 5)

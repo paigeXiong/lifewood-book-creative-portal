@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import {expect,test} from '@playwright/test';
 
@@ -25,7 +26,7 @@ test('unreviewed project text never becomes embedded HTML in either portal',asyn
  await page.addInitScript(()=>{(window as any).__injected=0;});
  for(const locale of ['zh-CN','en-US']){
   for(const [portal,url] of [['customer',`http://127.0.0.1:5193/${locale}/tasks/${draft.id}`],['admin',`http://127.0.0.1:5194/${locale}/projects?project=${draft.id}`]]){
-   await page.goto(url);
+   await gotoInAccountLocale(page, url);
    await expect(page.locator('#main-content')).toContainText(payload);
    await expect(page.locator('a[href="https://example.test/reference"]')).toHaveCount(1);
    await expect(page.locator('[data-injection-probe]')).toHaveCount(0);

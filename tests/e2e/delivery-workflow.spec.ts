@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { postAuthentication } from "./auth-request";
@@ -37,9 +38,9 @@ test("customer submission, requested changes and final delivery recover safely i
       }
 
   await page.setViewportSize({width:zh?1366:390,height:900});
-  await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/review`);
+  await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/review`);
   await page.locator(".sticky-actions button.button-primary").click();await expect(page).toHaveURL(new RegExp(`/tasks/${draft.id}/submitted$`));
-  await admin.goto(`/${locale}/projects?project=${draft.id}`);
+  await gotoInAccountLocale(admin, `/${locale}/projects?project=${draft.id}`);
   await admin.locator('[data-project-action="returns"] button').click();
   const returns=await(await owner.request.get(`/api/admin/projects/${draft.id}/revisions`,{headers:{"Accept-Language":locale}})).json();
   const returnDialog=admin.getByRole("dialog");
@@ -47,11 +48,11 @@ test("customer submission, requested changes and final delivery recover safely i
   await returnDialog.getByRole("checkbox",{name:new RegExp(styleLabel)}).check();
   await returnDialog.locator("textarea").fill("Please choose the other visual style.");
   await returnDialog.locator("footer button.primary").click();await expect(returnDialog).not.toBeVisible();
-  await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}`);await expect(page).toHaveURL(new RegExp(`/edit/style$`));
+  await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}`);await expect(page).toHaveURL(new RegExp(`/edit/style$`));
   const alternate=options.visualStyles.find((v:{id:string})=>v.id!==draft.creative.visualStyleId);expect(alternate).toBeTruthy();
   await page.locator("label").filter({has:page.locator(`input[name="visualStyleId"][value="${alternate.id}"]`)}).click();
   await expect.poll(async()=>(await(await page.request.get(`/api/projects/${draft.id}`)).json()).creative.visualStyleId).toBe(alternate.id);
-  await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/review`);await page.locator(".sticky-actions button.button-primary").click();await expect(page).toHaveURL(new RegExp(`/tasks/${draft.id}/submitted$`));
+  await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/review`);await page.locator(".sticky-actions button.button-primary").click();await expect(page).toHaveURL(new RegExp(`/tasks/${draft.id}/submitted$`));
   const history=await(await owner.request.get(`/api/admin/projects/${draft.id}/revisions`,{headers:{"Accept-Language":locale}})).json();expect(history.rounds[0].submittedAt).toBeTruthy();expect(JSON.parse(history.rounds[0].afterSnapshot).creative.visualStyleId).toBe(alternate.id);
   await admin.reload();await admin.locator('[data-project-action="delivery"] button').click();
   const dialog=admin.getByRole("dialog");const bytes=video();await dialog.locator('input[name="file"]').setInputFiles({name:"final.mp4",mimeType:"video/mp4",buffer:bytes});await dialog.locator('textarea[name="note"]').fill("Final delivery <b>plain text</b>");
@@ -61,7 +62,7 @@ test("customer submission, requested changes and final delivery recover safely i
   await dialog.locator('button.primary').click();await expect(dialog.getByRole("button",{name:zh?"检查发布结果":"Check publication result"})).toBeVisible();expect(posts).toBe(1);
   checksAllowed=true;await dialog.getByRole("button",{name:zh?"检查发布结果":"Check publication result"}).click();await expect(dialog).not.toBeVisible();expect(posts).toBe(1);
   await admin.unroute(postUrl);await admin.unroute(`**/api/admin/projects/${draft.id}/deliveries/uploads/*`);
-  await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}`);
+  await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}`);
   const summary=page.locator(".project-progress-summary");await expect(summary).toBeVisible();await expect(summary.locator(".customer-delivery.ready")).toBeVisible();await expect(summary.locator("b")).toHaveCount(0);
   const downloadLink=summary.locator('a[href*="/deliveries/"]');const fileUrl=await downloadLink.getAttribute("href");
   const downloadEvent=page.waitForEvent("download");await downloadLink.click();const download=await downloadEvent;expect(await readFile((await download.path())!)).toEqual(bytes);

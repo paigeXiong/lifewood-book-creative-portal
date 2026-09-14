@@ -23,6 +23,7 @@ import type {
   RuntimeHealth,
   PagedResult,
   ProjectStats,
+  CustomerDashboard,
   ProjectValidationResult,
   SupportedLocale,
   TaskDraft,
@@ -127,24 +128,43 @@ function clearCsrfToken() {
   csrfRequest = undefined;
 }
 
-async function getCsrfToken(): Promise<string> {
+async function getCsrfToken(signal?: AbortSignal | null): Promise<string> {
+  signal?.throwIfAborted();
   if (csrfToken) return csrfToken;
-  csrfRequest ??= (async () => {
-    const response = await fetchResponse(`${apiBaseUrl}/auth/csrf`, { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" });
-    if (!response.ok) throw new ApiError({ code: "auth.csrf", messageKey: "errors.auth.csrf", fallbackMessage: "The secure session could not be initialized.", retryable: true });
-    const payload = await readJson<{ token?: unknown }>(response);
-    if (typeof payload.token !== "string" || !payload.token) {
-      throw new ApiError({ code: "network.invalidResponse", messageKey: "errors.network.invalidResponse", fallbackMessage: "The server returned an invalid response.", retryable: true });
-    }
-    csrfToken = payload.token;
-    return csrfToken;
-  })();
-  try { return await csrfRequest; }
-  finally { csrfRequest = undefined; }
+  let pending = csrfRequest;
+  if (!pending) {
+    pending = (async () => {
+      const response = await fetchResponse(`${apiBaseUrl}/auth/csrf`, { credentials: "include", headers: { Accept: "application/json" }, cache: "no-store" });
+      if (!response.ok) throw new ApiError({ code: "auth.csrf", messageKey: "errors.auth.csrf", fallbackMessage: "The secure session could not be initialized.", retryable: true });
+      const payload = await readJson<{ token?: unknown }>(response);
+      if (typeof payload.token !== "string" || !payload.token) {
+        throw new ApiError({ code: "network.invalidResponse", messageKey: "errors.network.invalidResponse", fallbackMessage: "The server returned an invalid response.", retryable: true });
+      }
+      // A cancelled/cleared lookup must not overwrite a newer token.
+      if (csrfRequest === pending) csrfToken = payload.token;
+      return payload.token;
+    })();
+    csrfRequest = pending;
+  }
+  let abort: (() => void) | undefined;
+  try {
+    if (!signal) return await pending;
+    return await new Promise<string>((resolve, reject) => {
+      abort = () => reject(new DOMException("Request cancelled", "AbortError"));
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) { abort(); return; }
+      pending.then(resolve, reject);
+    });
+  } finally {
+    if (abort) signal?.removeEventListener("abort", abort);
+    // Detach only this lookup; other consumers may still finish awaiting it.
+    if (csrfRequest === pending) csrfRequest = undefined;
+  }
 }
 
 async function request<T>(path: string, options: RequestOptions = {}, retryCsrf = true): Promise<T> {
   if (accountBlocked && !path.startsWith("/auth/")) throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
+  options.signal?.throwIfAborted();
   const requestAccount = boundAccount;
   const headers = new Headers(options.headers);
   if (boundAccount && !["/auth/login", "/auth/bootstrap", "/auth/status"].includes(path)) headers.set("X-LW-Account", boundAccount);
@@ -157,9 +177,10 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
   }
   const method = (options.method ?? "GET").toUpperCase();
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    headers.set("X-CSRF-TOKEN", await getCsrfToken());
+    headers.set("X-CSRF-TOKEN", await getCsrfToken(options.signal));
   }
 
+  options.signal?.throwIfAborted();
   const response = await fetchResponse(`${apiBaseUrl}${path}`, {
     ...options,
     headers,
@@ -260,6 +281,8 @@ export const projectService = {
     return request<PagedResult<TaskSummary>>(`/projects?${query}`, { locale });
   },
   getStats: () => request<ProjectStats>("/projects/stats"),
+  getDashboard: (params: { month: string; timeZone: string; day: number; page: number }, signal?: AbortSignal) =>
+    request<CustomerDashboard>(`/projects/dashboard?${new URLSearchParams({ month: params.month, timeZone: params.timeZone, day: String(params.day), page: String(params.page) })}`, { signal }),
   createDraft: (locale: SupportedLocale) =>
     request<TaskDraft>("/projects", { method: "POST", locale, body: "{}" }),
   getProject: (projectId: string, locale: SupportedLocale) =>
@@ -351,17 +374,9 @@ interface UploadOptions {
 }
 
 function getCsrfTokenForUpload(signal?: AbortSignal): Promise<string> {
-  if (!signal) return getCsrfToken();
-  if (signal.aborted) return Promise.reject(new DOMException("Upload cancelled", "AbortError"));
-  return new Promise<string>((resolve, reject) => {
-    const abort = () => reject(new DOMException("Upload cancelled", "AbortError"));
-    signal.addEventListener("abort", abort, { once: true });
-    void getCsrfToken().then(
-      (token) => { signal.removeEventListener("abort", abort); resolve(token); },
-      (error) => { signal.removeEventListener("abort", abort); reject(error); },
-    );
-  });
+  return getCsrfToken(signal);
 }
+
 
 async function upload<T>(path: string, body: FormData, options: UploadOptions = {}, retryCsrf = true): Promise<T> {
   if(accountBlocked)throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
@@ -674,7 +689,15 @@ export interface FeedbackResponse {body:string;status:string;createdAt:string;au
 export interface FeedbackDetail {item:FeedbackItem;responses:FeedbackResponse[]}
 export const feedbackService={
  catalog:(locale:SupportedLocale)=>request<FeedbackCatalog>(`/feedback/catalog?locale=${locale}`),
- submit:(input:FeedbackInput)=>request<void>("/feedback",{method:"POST",body:JSON.stringify(input)}),
+ submit:async(input:FeedbackInput)=>{
+  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
+  try {
+   await Promise.race([
+    request<void>("/feedback",{method:"POST",body:JSON.stringify(input),signal:controller.signal}),
+    new Promise<never>((_,reject)=>{timer=setTimeout(()=>{reject(new ApiError({code:"feedback.timeout",messageKey:"feedback.timeout",retryable:true}));controller.abort();},30_000);}),
+   ]);
+  } finally {clearTimeout(timer);}
+ },
  list:(page:number,search:string,status:string)=>request<{items:FeedbackItem[];total:number;page:number;pageSize:number}>(`/admin/feedback?${new URLSearchParams({page:String(page),search,status})}`),
  detail:(id:string)=>request<FeedbackDetail>(`/admin/feedback/${encodeURIComponent(id)}`),
  update:(id:string,input:{version:number;status:string;reply?:string})=>request<void>(`/admin/feedback/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(input)}),

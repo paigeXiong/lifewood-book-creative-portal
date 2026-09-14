@@ -42,6 +42,9 @@ internal sealed class AdminRepository(string connectionString)
             CREATE INDEX IF NOT EXISTS ix_projects_assignee ON projects(assignee_user_id);
             CREATE INDEX IF NOT EXISTS ix_projects_status ON projects(status);
             CREATE INDEX IF NOT EXISTS ix_projects_priority ON projects(priority);
+            CREATE INDEX IF NOT EXISTS ix_projects_admin_list ON projects(
+                COALESCE(workflow_updated_at, updated_at) DESC, id, status, owner_id, workflow_status, priority,
+                assignee_user_id, task_number, json_extract(project_json, '$.projectName'), json_extract(book_json, '$.title'));
             """);
         Execute(connection, """
             UPDATE projects
@@ -206,7 +209,7 @@ internal sealed class AdminRepository(string connectionString)
               AND ($search = '' OR p.task_number LIKE '%' || $search || '%' COLLATE NOCASE OR u.display_name LIKE '%' || $search || '%' COLLATE NOCASE OR u.email LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.project_json, '$.projectName') LIKE '%' || $search || '%' COLLATE NOCASE OR json_extract(p.book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE)
             """;
         using var count = connection.CreateCommand();
-        count.CommandText = $"SELECT COUNT(*) FROM projects p JOIN users u ON u.id = p.owner_id {where};";
+        count.CommandText = $"SELECT COUNT(*) FROM projects p INDEXED BY ix_projects_admin_list JOIN users u ON u.id = p.owner_id {where};";
         AddProjectFilters(count, workflowStatus, priority, search);
         count.Parameters.AddWithValue("$actor", (object?)actorId ?? DBNull.Value);
         var total = Convert.ToInt32(count.ExecuteScalar());
@@ -214,8 +217,8 @@ internal sealed class AdminRepository(string connectionString)
         command.CommandText = $"""
             SELECT p.id, p.task_number, p.status, p.workflow_status, p.priority, p.owner_id, u.display_name, u.email,
                    p.assignee_user_id, a.display_name, p.project_json, p.book_json, p.created_at, COALESCE(p.workflow_updated_at, p.updated_at)
-            FROM projects p JOIN users u ON u.id = p.owner_id LEFT JOIN users a ON a.id = p.assignee_user_id
-            {where} ORDER BY COALESCE(p.workflow_updated_at, p.updated_at) DESC LIMIT $pageSize OFFSET $offset;
+            FROM projects p INDEXED BY ix_projects_admin_list JOIN users u ON u.id = p.owner_id LEFT JOIN users a ON a.id = p.assignee_user_id
+            {where} ORDER BY COALESCE(p.workflow_updated_at, p.updated_at) DESC, p.id ASC LIMIT $pageSize OFFSET $offset;
             """;
         AddProjectFilters(command, workflowStatus, priority, search);
         command.Parameters.AddWithValue("$actor", (object?)actorId ?? DBNull.Value);

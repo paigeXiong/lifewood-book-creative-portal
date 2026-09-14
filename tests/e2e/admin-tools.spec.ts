@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import {expect,test} from "@playwright/test";
 
@@ -14,7 +15,7 @@ test("audit context, exports and runtime health work in both languages",async({p
  const rule=rules.items[0];const saved=await page.request.put("/api/admin/notifications/rules",{headers:{"X-CSRF-TOKEN":csrf},data:{...rule,enabled:!rule.enabled}});expect(saved.ok()).toBeTruthy();
  for(const locale of ["zh-CN","en-US"]){
   await page.setViewportSize({width:1366,height:900});
-  await page.goto(`/${locale}/audit?action=notification.config`);
+  await gotoInAccountLocale(page, `/${locale}/audit?action=notification.config`);
   await page.locator(".audit-detail-button").first().click();
   const dialog=page.getByRole("dialog");await expect(dialog).toBeVisible();
   await expect(dialog.locator(".audit-changes")).toContainText(locale==="zh-CN"?"启用":"Enabled");
@@ -22,14 +23,14 @@ test("audit context, exports and runtime health work in both languages",async({p
   await page.screenshot({path:`artifacts/audit-details-${locale}.png`});
   await dialog.getByRole("button",{name:locale==="zh-CN"?"关闭":"Close",exact:true}).click();
   const download=page.waitForEvent("download");await page.getByRole("button",{name:locale==="zh-CN"?"导出 CSV":"Export CSV",exact:true}).click();expect((await download).suggestedFilename()).toBe("audit.csv");
-  await page.goto(`/${locale}/audit`);
+  await gotoInAccountLocale(page, `/${locale}/audit`);
   await page.getByRole("link",{name:organizationName,exact:true}).click();await expect(page).toHaveURL(new RegExp("organization="+organization.id));
-  await page.goto(`/${locale}/organizations`);
+  await gotoInAccountLocale(page, `/${locale}/organizations`);
   const wordmark=page.getByRole("img",{name:organizationName,exact:true});await expect(wordmark).toBeVisible();
   await expect.poll(()=>wordmark.evaluate((image:HTMLImageElement)=>image.complete&&image.naturalWidth===600&&image.naturalHeight===100)).toBeTruthy();
   await page.screenshot({path:`artifacts/organization-wordmarks-${locale}.png`});
   await page.getByRole("link",{name:organizationName,exact:true}).click();await expect(page).toHaveURL(new RegExp("organization="+organization.id));
-  await page.goto(`/${locale}/settings/runtime`);
+  await gotoInAccountLocale(page, `/${locale}/settings/runtime`);
   await expect(page.locator(".runtime-health-grid")).toBeVisible();
   await expect(page.locator(".runtime-listener")).toHaveCount(2);
   await expect(page.locator("#runtime-customer-port")).toHaveValue("5193");
@@ -58,7 +59,7 @@ test("audit context, exports and runtime health work in both languages",async({p
   await expect(page.locator(".runtime-health")).not.toContainText("runtimeHealth.");
   await page.screenshot({path:`artifacts/runtime-health-${locale}.png`});
   for(const route of ["audit","settings/runtime"]){
-   await page.setViewportSize({width:390,height:844});await page.goto(`/${locale}/${route}`);
+   await page.setViewportSize({width:390,height:844});await gotoInAccountLocale(page, `/${locale}/${route}`);
    await expect(page.locator(route==="audit"?".audit-readable-table":".runtime-health-grid")).toBeVisible();
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
    if(route==="settings/runtime"){

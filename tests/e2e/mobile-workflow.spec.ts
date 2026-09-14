@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import { expect, test } from "@playwright/test";
 
@@ -24,7 +25,7 @@ test("customer wizard keeps mobile controls reachable in both languages", async 
   const voice=await page.request.put(`/api/projects/${draft.id}/voice-and-references`,{headers:await headers(),data:{version:draft.version,voiceAndReferences:draft.voiceAndReferences}});expect(voice.ok()).toBeTruthy();
   for(const locale of ["zh-CN","en-US"]) for(const width of [320,768]) for(const stage of ["project","characters","voice","style","references"]){
     await page.setViewportSize({width,height:width===320?740:480});
-    await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/${stage}`);
+    await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/${stage}`);
     const footer=page.locator(".wizard-page .sticky-actions");await expect(footer).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/edit/${stage}$`));
     const layout=await page.evaluate(()=>({width:document.documentElement.scrollWidth, viewport:innerWidth, overflow:[...document.querySelectorAll("body *")].filter(node=>node.getBoundingClientRect().right>innerWidth+1&&getComputedStyle(node).visibility!=="hidden").slice(0,12).map(node=>({tag:node.tagName,cls:node.className,right:node.getBoundingClientRect().right}))}));

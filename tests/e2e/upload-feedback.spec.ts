@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import { expect, test } from "@playwright/test";
 
@@ -48,7 +49,7 @@ test("customer uploads retain files and edits through a lost response in both la
     });
     try {
       await page.setViewportSize({width:locale==="en-US"?390:1366,height:900});
-      await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/${stage}`);
+      await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/${stage}`);
       const input=category?page.locator(`input[type=file][id$="${category}"]`):page.locator('.upload-drop-card input[type=file]').first();
       await expect(input).toBeAttached();
       await input.setInputFiles(["first.png","second.png","third.png"].map(name=>({name,mimeType:"image/png",buffer:png})));

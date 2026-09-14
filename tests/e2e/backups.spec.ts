@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import {expect,test} from '@playwright/test';
 import {mkdir,writeFile,unlink} from 'node:fs/promises';
@@ -9,7 +10,7 @@ test('backup management works in both languages',async({page})=>{
  const status=await(await page.request.get('/api/auth/status')).json();
  const auth=await postAuthentication(page.request, status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
  for(const locale of ['zh-CN','en-US']){
-  await page.setViewportSize({width:1366,height:900});await page.goto(`/${locale}/settings/backups`);
+  await page.setViewportSize({width:1366,height:900});await gotoInAccountLocale(page, `/${locale}/settings/backups`);
   await expect(page.locator('.backup-surface')).toBeVisible();
   await expect(page.locator('.backup-surface')).not.toContainText('backups.');
   await page.getByRole('button',{name:locale==='zh-CN'?'备份策略':'Backup policy',exact:true}).click();

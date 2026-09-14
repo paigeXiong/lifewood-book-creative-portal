@@ -96,3 +96,37 @@ for (const locale of ["zh-CN", "en-US"] as const) {
   });
 
 }
+
+for (const locale of ["zh-CN", "en-US"] as const) {
+  it(`keeps reply history reachable at the modal keyboard boundary (${locale})`, async () => {
+    await i18n.changeLanguage(locale);
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(function(this: HTMLElement) {
+      return (this.hidden ? [] : [{}]) as unknown as DOMRectList;
+    });
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<NoticeModal title="Feedback" onClose={() => {}}>
+        <form><button type="submit">Save</button></form>
+        <details><summary>Reply history</summary><p>Reply</p></details>
+        <button disabled>Unavailable</button><button hidden>Hidden</button>
+      </NoticeModal>));
+      const closeButton = host.querySelector<HTMLButtonElement>("header button")!;
+      const save = host.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      const history = host.querySelector<HTMLElement>("summary")!;
+      // jsdom does not implement the native summary tabIndex default.
+      Object.defineProperty(history, "tabIndex", {value: 0});
+      save.focus();
+      const advance = new KeyboardEvent("keydown", {key: "Tab", bubbles: true, cancelable: true});
+      await act(async () => save.dispatchEvent(advance));
+      // Native Tab must still be allowed to reach the history after the form.
+      expect(advance.defaultPrevented).toBe(false);
+      history.focus();
+      const wrap = new KeyboardEvent("keydown", {key: "Tab", bubbles: true, cancelable: true});
+      await act(async () => history.dispatchEvent(wrap));
+      expect(wrap.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(closeButton);
+      await act(async () => closeButton.dispatchEvent(new KeyboardEvent("keydown", {key: "Tab", shiftKey: true, bubbles: true, cancelable: true})));
+      expect(document.activeElement).toBe(history);
+    } finally { await act(async () => root.unmount()); host.remove(); }
+  });
+}

@@ -41,6 +41,8 @@ npm run stop:local
 
 ## 设计研究与参考
 
+- [原始需求图片与文档核对（2026-09-14）](./requirements-image-audit-2026-09-14.md)：15 张原图覆盖矩阵、四处未细化项与主文档冲突；不自动扩大开发范围。
+
 - [生产协作与客户审阅：需求批注](./production-workflow-annotations.md)：原图歧义、当前讨论方向及开发前待确认事项（2026-09-04，暂不开发）。
 
 - [设计调研](./design-research.md)：主流官方设计体系、需求图结论和最终参考权重。
@@ -98,3 +100,7 @@ npm run stop:local
 - [成品交付恢复与客户进展](./delivery-recovery.md)：上传结果核对、原文件重试、客户进展与下载入口。
 
 - [Windows 安装与升级验证](./installer-lifecycle.md)：备份目录权限、真实服务 CI 演练及本机验证边界。
+
+## 客户数据概览
+
+- [客户数据概览的功能、数据口径与验证](./customer-dashboard.md)

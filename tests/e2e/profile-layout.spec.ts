@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import {expect,test} from '@playwright/test';
 
@@ -15,8 +16,9 @@ test('profile supports compact browsing and on-demand editing in both languages'
    user={...user,...route.request().postDataJSON()};await route.fulfill({json:user});
  });
  for(const locale of ['zh-CN','en-US']){
+  user={...user,locale};
   await page.setViewportSize({width:1366,height:900});
-  await page.goto(`http://127.0.0.1:5193/${locale}/profile`);
+  await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/profile`);
   const edit=page.locator('.profile-edit-button');
   await expect(edit).toBeVisible();
   await expect(page.locator('#profile-display-name')).toHaveCount(0);

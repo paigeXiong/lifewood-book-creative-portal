@@ -1,3 +1,4 @@
+import { canRetainQueryData, RefreshNotice } from "../components/RefreshNotice";
 import "../project-progress.css";
 import { safeLinkUrl } from "@lifewood/domain";
 import { useMemo } from "react";
@@ -9,7 +10,19 @@ import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { getNarrationEnabled } from "@lifewood/domain";
 import { FinalDeliverySection } from "../components/FinalDeliverySection";
 import { ReferenceLinks } from "../components/ReferenceLinks";
+import { ProjectCoverImage } from "../components/ProjectCoverImage";
 import { ScreenError } from "../components/ScreenError";
+
+const detailGroups = [
+  {id:"project",key:"taskDetail.project",path:"M4 7h16v13H4zM8 7V4h8v3M4 12h16M10 12v3h4v-3"},
+  {id:"book",key:"taskDetail.book",path:"M4 4h13a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3V4Zm0 13a3 3 0 0 1 3-3h13M8 4v10"},
+  {id:"creative",key:"taskDetail.creative",path:"M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 1-3.7 1.5 1.5 0 0 1 1-2.7h1a4 4 0 0 0 4-4C21 6.4 17 3 12 3ZM8 8h.01M13 7h.01M17 10h.01M7 13h.01"},
+  {id:"voice",key:"taskDetail.voice",path:"M9 6a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0V6ZM5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"},
+  {id:"direction",key:"taskDetail.direction",path:"M4 4h16v13H9l-5 4V4ZM8 8h8M8 12h5"},
+] as const;
+function DetailGroupIcon({path}:{path:string}) {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path}/></svg>;
+}
 
 export function TaskDetailPage() {
   const { t } = useTranslation();
@@ -49,7 +62,7 @@ export function TaskDetailPage() {
         {t("common.loading")}
       </div>
     );
-  if (task.isError || options.isError || (needsVoices && voices.isError) || !task.data)
+  if ((task.isError && (!task.data || !canRetainQueryData(task.error))) || (options.isError && (!options.data || !canRetainQueryData(options.error))) || (needsVoices && voices.isError && (!voices.data || !canRetainQueryData(voices.error))) || !task.data)
     return <ScreenError error={task.error ?? options.error ?? (needsVoices ? voices.error : undefined)} onRetry={() => Promise.all([task.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])} />;
   if (task.data.status === "draft")
     return (
@@ -94,15 +107,16 @@ export function TaskDetailPage() {
   });
   return (
     <div className="page detail-page">
+      <RefreshNotice error={task.error ?? options.error ?? (needsVoices ? voices.error : null)} onRetry={() => Promise.all([task.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])}/>
       <header className="detail-header">
         <Link
-          className="button button-secondary"
+          className="button button-quiet detail-back"
           to={localizedPath(validLocale, "/tasks")}
         >
-          {t("common.back")}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m11 5-7 7 7 7M4 12h16"/></svg>{t("common.back")}
         </Link>
         <div>
-          <span className="folio-kicker">{t("taskDetail.title")}</span>
+          <span className="folio-kicker sr-only">{t("taskDetail.title")}</span>
           <h1>{task.data.project.projectName}</h1>
           <p>{task.data.book.title}</p>
         </div>
@@ -119,15 +133,10 @@ export function TaskDetailPage() {
       </section>
       <div className="detail-layout" id="submitted-materials">
         <aside className="detail-cover">
-          {bookCover && (
-            <img
-              className="detail-cover-image"
-              src={bookCover.url}
-              alt={t("sourceFiles.coverAlt", { title: task.data.book.title })}
-              width="360"
-              height="280"
-            />
-          )}
+          {bookCover && <a className="detail-cover-preview" href={safeLinkUrl(bookCover.url,true)} target="_blank" rel="noreferrer" aria-label={t("taskDetail.previewCover")}>
+            <ProjectCoverImage className="detail-cover-image" coverUrl={bookCover.url} coverAlt={t("sourceFiles.coverAlt",{title:task.data.book.title})} placeholderAlt={t("taskDetail.previewCover")} width={200} height={144}/>
+            <span>{t("taskDetail.previewCover")}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M14 4h6v6M20 4 10 14M10 4H4v16h16v-6"/></svg></span>
+          </a>}
           <dl>
             {task.data.taskNumber && <div>
               <dt>{t("taskDetail.taskNumber")}</dt>
@@ -150,13 +159,13 @@ export function TaskDetailPage() {
               </dd>
             </div>
           </dl>
+          <nav className="detail-contents" aria-label={t("taskDetail.contents")}>
+            {detailGroups.map(group=><a key={group.id} href={`#details-${group.id}`}><DetailGroupIcon path={group.path}/><span>{t(group.key)}</span></a>)}
+          </nav>
         </aside>
         <div className="detail-sections">
-          <section className="form-panel">
-            <h2>
-              <span>01</span>
-              {t("taskDetail.project")}
-            </h2>
+          <section className="form-panel detail-section" id="details-project" tabIndex={-1} aria-labelledby="details-project-title">
+            <h2 id="details-project-title"><DetailGroupIcon path={detailGroups[0].path}/>{t("taskDetail.project")}</h2>
             <dl className="data-grid">
               <div>
                 <dt>{t("wizard.fields.clientName")}</dt>
@@ -218,11 +227,8 @@ export function TaskDetailPage() {
               </div>
             </dl>
           </section>
-          <section className="form-panel">
-            <h2>
-              <span>02</span>
-              {t("taskDetail.book")}
-            </h2>
+          <section className="form-panel detail-section" id="details-book" tabIndex={-1} aria-labelledby="details-book-title">
+            <h2 id="details-book-title"><DetailGroupIcon path={detailGroups[1].path}/>{t("taskDetail.book")}</h2>
             <dl className="data-grid">
               <div>
                 <dt>{t("wizard.fields.bookTitle")}</dt>
@@ -294,11 +300,8 @@ export function TaskDetailPage() {
               </div>
             </dl>
           </section>
-          <section className="form-panel">
-            <h2>
-              <span>03</span>
-              {t("taskDetail.creative")}
-            </h2>
+          <section className="form-panel detail-section" id="details-creative" tabIndex={-1} aria-labelledby="details-creative-title">
+            <h2 id="details-creative-title"><DetailGroupIcon path={detailGroups[2].path}/>{t("taskDetail.creative")}</h2>
             <dl className="data-grid">
               <div>
                 <dt>{t("creative.fields.visualStyle")}</dt>
@@ -386,11 +389,8 @@ export function TaskDetailPage() {
               ))}
             </dl>
           </section>
-          <section className="form-panel">
-            <h2>
-              <span>04</span>
-              {t("taskDetail.voice")}
-            </h2>
+          <section className="form-panel detail-section" id="details-voice" tabIndex={-1} aria-labelledby="details-voice-title">
+            <h2 id="details-voice-title"><DetailGroupIcon path={detailGroups[3].path}/>{t("taskDetail.voice")}</h2>
             <dl className="data-grid">
               <div className="data-wide">
                 <dt>{t("voice.narration.question")}</dt>
@@ -529,11 +529,8 @@ export function TaskDetailPage() {
               </div>
             </dl>
           </section>
-          <section className="form-panel">
-            <h2>
-              <span>05</span>
-              {t("taskDetail.direction")}
-            </h2>
+          <section className="form-panel detail-section" id="details-direction" tabIndex={-1} aria-labelledby="details-direction-title">
+            <h2 id="details-direction-title"><DetailGroupIcon path={detailGroups[4].path}/>{t("taskDetail.direction")}</h2>
             <dl className="data-grid">
               <div className="data-wide">
                 <dt>{t("voice.fields.coreMessage")}</dt>

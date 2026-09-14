@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import { expect, test } from "@playwright/test";
 
@@ -49,7 +50,7 @@ test("submission recovery distinguishes committed, unknown, and retryable result
       await page.route(readPattern,async route=>{if(sent&&!allowCheck)await route.abort("failed");else await route.continue();});
       try {
         await page.setViewportSize({width:locale==="en-US"?390:1366,height:900});
-        await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/review`);
+        await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/review`);
         const action=page.locator(".sticky-actions button.button-primary");await expect(action).toBeVisible();await action.click();
         if(scenario==="unknown"){
           await expect(action).toHaveText(locale==="zh-CN"?"检查提交结果":"Check submission result");expect(posts).toHaveLength(1);

@@ -1,3 +1,4 @@
+import { canRetainQueryData } from "../components/RefreshNotice";
 import {LoginSessions} from "@lifewood/ui/login-sessions";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { useConfirm } from "../useConfirm";
@@ -70,7 +71,7 @@ export function ProfilePage() {
 
 
   if (!isSupportedLocale(locale)) return null;
-  if (userQuery.isError) return <div className="screen-status" role="alert">{localizedApiError(userQuery.error, t)} <button className="button button-secondary" onClick={() => void userQuery.refetch()}>{t("common.retry")}</button></div>;
+  if (userQuery.isError && (!user || !canRetainQueryData(userQuery.error))) return <div className="screen-status" role="alert">{localizedApiError(userQuery.error, t)} <button className="button button-secondary" onClick={() => void userQuery.refetch()}>{t("common.retry")}</button></div>;
   if (userQuery.isPending || !user) return <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={dirty} />{t("common.loading")}</div>;
   const role = user.roles[0] ?? "member";
   const roleLabel = t(`profile.roles.${role}`, { defaultValue: t("profile.roles.member") });

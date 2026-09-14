@@ -53,6 +53,23 @@ internal sealed class FileCategoryRepository(string connectionString)
                 WHERE scope='source' AND id='manuscript'
                   AND NOT EXISTS (SELECT 1 FROM file_category_migrations WHERE id='optional-manuscript-v1');
                 INSERT OR IGNORE INTO file_category_migrations(id) VALUES('optional-manuscript-v1');
+                UPDATE file_categories SET
+                  description_zh_cn=CASE WHEN label_zh_cn IN ('全书或节选','全书或节选（可选）','全书或节选（选填）') AND description_zh_cn='PDF、DOCX 或 TXT' AND required=0 THEN '可上传全书或部分章节，选填。支持 PDF、DOCX、TXT' ELSE description_zh_cn END,
+                  description_en_us=CASE WHEN label_en_us IN ('Manuscript or excerpt','Manuscript or excerpt (optional)') AND description_en_us='PDF, DOCX, or TXT' AND required=0 THEN 'Full book or selected chapters · Optional · PDF, DOCX, or TXT' ELSE description_en_us END,
+                  label_zh_cn=CASE WHEN label_zh_cn IN ('全书或节选','全书或节选（可选）','全书或节选（选填）') THEN '书籍正文' ELSE label_zh_cn END,
+                  label_en_us=CASE WHEN label_en_us IN ('Manuscript or excerpt','Manuscript or excerpt (optional)') THEN 'Book text' ELSE label_en_us END,
+                  updated_at=$now
+                WHERE scope='source' AND id='manuscript' AND is_removed=0
+                  AND (label_zh_cn IN ('全书或节选','全书或节选（可选）','全书或节选（选填）') OR label_en_us IN ('Manuscript or excerpt','Manuscript or excerpt (optional)'))
+                  AND NOT EXISTS (SELECT 1 FROM file_category_migrations WHERE id='plain-file-labels-v1');
+                UPDATE file_categories SET
+                  label_zh_cn=CASE WHEN label_zh_cn='情绪板' THEN '风格参考拼图' ELSE label_zh_cn END,
+                  label_en_us=CASE WHEN label_en_us='Moodboard' THEN 'Visual inspiration board' ELSE label_en_us END,
+                  updated_at=$now
+                WHERE scope='reference' AND id='moodboard' AND is_removed=0
+                  AND (label_zh_cn='情绪板' OR label_en_us='Moodboard')
+                  AND NOT EXISTS (SELECT 1 FROM file_category_migrations WHERE id='plain-file-labels-v1');
+                INSERT OR IGNORE INTO file_category_migrations(id) VALUES('plain-file-labels-v1');
                 """;
             migration.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
             migration.ExecuteNonQuery();

@@ -48,6 +48,17 @@ export function TaskListPage() {
   const search = searchParams.get("q")?.trim() ?? "";
   const status = searchParams.get("status") ?? "";
   const [searchDraft, setSearchDraft] = useState(search);
+  const [composingSearch, setComposingSearch] = useState(false);
+  useEffect(() => {
+    if (composingSearch || searchDraft.trim() === search) return;
+    const timer = setTimeout(() => setSearchParams(current => {
+      const next = new URLSearchParams(current);
+      searchDraft.trim() ? next.set("q", searchDraft.trim()) : next.delete("q");
+      next.delete("page");
+      return next;
+    }, { replace: true }), 300);
+    return () => clearTimeout(timer);
+  }, [searchDraft, search, composingSearch, setSearchParams]);
   useEffect(() => setSearchDraft(search), [search]);
   const parsedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
   const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
@@ -212,8 +223,8 @@ export function TaskListPage() {
             <span className="task-result-count" role="status">{tasks.data && t("tasks.count", { count: tasks.data.total })}</span>
 
           </div>
-            <form className="task-search" role="search" aria-label={t("tasks.searchLabel")} onSubmit={event => { event.preventDefault(); updateFilters({ q: searchDraft.trim(), page: 1 }); }}>
-              <input type="search" aria-label={t("tasks.searchLabel")} placeholder={t("tasks.searchPlaceholder")} value={searchDraft} onChange={event => setSearchDraft(event.target.value)} />
+            <form className="task-search" role="search" aria-label={t("tasks.searchLabel")} onSubmit={event => { event.preventDefault(); if (!composingSearch) updateFilters({ q: searchDraft.trim(), page: 1 }); }}>
+              <input type="search" aria-label={t("tasks.searchLabel")} placeholder={t("tasks.searchPlaceholder")} value={searchDraft} onCompositionStart={() => setComposingSearch(true)} onCompositionEnd={event => { setComposingSearch(false); setSearchDraft(event.currentTarget.value); }} onChange={event => { setSearchDraft(event.target.value); if (!event.target.value.trim() && !composingSearch) updateFilters({ q: "", page: 1 }); }} />
             </form>
             <div className="task-table-controls">
               <TaskFilters status={status} statuses={options.data?.taskStatuses ?? []} onApply={updateFilters} />

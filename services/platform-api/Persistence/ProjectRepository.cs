@@ -189,6 +189,19 @@ internal sealed class ProjectRepository(string connectionString)
             migration.ExecuteNonQuery();
         }
 
+        using (var index = connection.CreateCommand())
+        {
+            index.Transaction = transaction;
+            // Dashboard counts need only these fields, without loading each project's JSON payload.
+            index.CommandText = """
+                CREATE INDEX IF NOT EXISTS ix_projects_owner_status_workflow ON projects(owner_id, status, workflow_status);
+                CREATE INDEX IF NOT EXISTS ix_projects_owner_search ON projects(
+                    owner_id, updated_at DESC, id, status, workflow_status,
+                    json_extract(project_json, '$.projectName'), json_extract(book_json, '$.title'), json_extract(book_json, '$.authorName'));
+                """;
+            index.ExecuteNonQuery();
+        }
+
         UpgradeLegacyCharacterPresets(connection, transaction);
         transaction.Commit();
         new RevisionStore(connectionString).Initialize();
@@ -247,15 +260,20 @@ internal sealed class ProjectRepository(string connectionString)
                    json_extract(book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE OR
                    json_extract(book_json, '$.authorName') LIKE '%' || $search || '%' COLLATE NOCASE)
             """;
+        // Substring search scans a compact expression index instead of every full JSON record.
+        // Keep the existing update-order index for ordinary, unfiltered browsing.
+        var hasSearch = !string.IsNullOrWhiteSpace(search);
+        var source = hasSearch ? "projects INDEXED BY ix_projects_owner_search" : "projects INDEXED BY ix_projects_owner_updated";
+        var countSource = hasSearch ? source : "projects INDEXED BY ix_projects_owner_status_workflow";
         using var countCommand = connection.CreateCommand();
-        countCommand.CommandText = $"SELECT COUNT(*) FROM projects {where};";
+        countCommand.CommandText = $"SELECT COUNT(*) FROM {countSource} {where};";
         AddListParameters(countCommand, ownerId, status, search);
         var total = Convert.ToInt32(countCommand.ExecuteScalar());
 
         using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, task_number, status, version, project_json, book_json, creative_json, voice_json, created_at, updated_at, workflow_status
-            FROM projects
+            SELECT id, task_number, status, version, project_json, book_json, created_at, updated_at, workflow_status
+            FROM {source}
             {where}
             ORDER BY {sortExpression} {direction}, id ASC
             LIMIT $pageSize OFFSET $offset;
@@ -264,11 +282,11 @@ internal sealed class ProjectRepository(string connectionString)
         command.Parameters.AddWithValue("$pageSize", pageSize);
         command.Parameters.AddWithValue("$offset", (long)(page - 1) * pageSize);
 
-        var rows = new List<TaskDraftDto>();
+        var rows = new List<ProjectSummaryDto>();
         using var reader = command.ExecuteReader();
-        while (reader.Read()) rows.Add(ReadDraft(reader));
+        while (reader.Read()) rows.Add(ReadSummary(reader));
 
-        return new PagedProjectsDto(rows.Select(ToSummary).ToArray(), page, pageSize, total);
+        return new PagedProjectsDto(rows.ToArray(), page, pageSize, total);
     }
 
     public ProjectStatsDto GetStats(string ownerId)
@@ -723,14 +741,22 @@ internal sealed class ProjectRepository(string connectionString)
         return false;
     }
 
-    private static ProjectSummaryDto ToSummary(TaskDraftDto task) => new(
-        task.Id, task.TaskNumber, task.Version,
-        string.IsNullOrWhiteSpace(task.Project.ProjectName) ? "—" : task.Project.ProjectName,
-        string.IsNullOrWhiteSpace(task.Project.ClientName) ? "—" : task.Project.ClientName,
-        string.IsNullOrWhiteSpace(task.Book.Title) ? "—" : task.Book.Title,
-        string.IsNullOrWhiteSpace(task.Book.AuthorName) ? "—" : task.Book.AuthorName,
-        task.Book.SourceAssets?.FirstOrDefault(asset => asset.CategoryId == "book-cover")?.Url,
-        task.Status, task.CreatedAt, task.UpdatedAt, task.WorkflowStatus);
+    private static ProjectSummaryDto ReadSummary(SqliteDataReader reader)
+    {
+        var project = JsonSerializer.Deserialize(reader.GetString(4), AppJsonContext.Default.ProjectInfoDto)
+            ?? throw new InvalidDataException("Project JSON is invalid.");
+        var book = DeserializeBook(reader.GetString(5));
+        return new ProjectSummaryDto(
+            reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetInt32(3),
+            string.IsNullOrWhiteSpace(project.ProjectName) ? "—" : project.ProjectName,
+            string.IsNullOrWhiteSpace(project.ClientName) ? "—" : project.ClientName,
+            string.IsNullOrWhiteSpace(book.Title) ? "—" : book.Title,
+            string.IsNullOrWhiteSpace(book.AuthorName) ? "—" : book.AuthorName,
+            book.SourceAssets?.FirstOrDefault(asset => asset.CategoryId == "book-cover")?.Url,
+            reader.GetString(2), DateTimeOffset.Parse(reader.GetString(6)), DateTimeOffset.Parse(reader.GetString(7)),
+            reader.IsDBNull(8) ? null : reader.GetString(8));
+    }
+
 }
 
 internal enum SaveOutcome { Saved, NotFound, NotEditable, VersionConflict }

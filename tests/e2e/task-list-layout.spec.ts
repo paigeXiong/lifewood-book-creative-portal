@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import {expect, test} from '@playwright/test';
 
@@ -27,7 +28,7 @@ test('task columns and toolbar stay aligned across filters and loading', async (
   }));
   for (const locale of ['zh-CN','en-US']) {
     await page.setViewportSize({width:1440,height:900});
-    await page.goto(`http://127.0.0.1:5193/${locale}/tasks`);
+    await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks`);
     await expect(page.locator('.task-table tbody tr')).toHaveCount(10);
     const before = await geometry();
     await page.locator('.task-attention-tabs button').nth(1).click();

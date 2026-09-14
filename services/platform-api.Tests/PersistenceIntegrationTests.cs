@@ -13,6 +13,47 @@ public sealed class PersistenceIntegrationTests : IDisposable
 
     public PersistenceIntegrationTests() => Directory.CreateDirectory(root);
 
+    [Theory]
+    [InlineData("zh-CN", "书籍摘要", "作者")]
+    [InlineData("en-US", "Book summary", "Author")]
+    public void ProjectSummaryKeepsDisplayFieldsAndOwnerIsolation(string locale, string title, string author)
+    {
+        var projects = new ProjectRepository(ConnectionString); projects.Initialize();
+        var draft = projects.Create("owner-id", "Client", locale: locale);
+        projects.Create("other-owner", "Other", locale: locale);
+        var cover = new ReferenceAssetDto("cover", "book-cover", "cover.png", "image/png", 123, "/api/projects/cover");
+        var saved = projects.Save("owner-id", draft.Id, new SaveDraftRequest(draft.Version,
+            draft.Project with { ProjectName = "Campaign" },
+            draft.Book with { Title = title, AuthorName = author, SourceAssets = [
+                cover with { Id = "manuscript", CategoryId = "manuscript", Url = "/api/projects/manuscript" },
+                cover, cover with { Id = "second", Url = "/api/projects/second" }] }));
+        Assert.Equal(SaveOutcome.Saved, saved.Outcome);
+        Execute("UPDATE projects SET task_number='LW-TEST', version=17, workflow_status='awaiting_customer' WHERE id=$id", ("$id", draft.Id));
+        // Simulate an existing database receiving the additional index on startup.
+        Execute("DROP INDEX ix_projects_owner_status_workflow;");
+        projects.Initialize(); projects.Initialize();
+        var detail = projects.Get("owner-id", draft.Id)!;
+        var page = projects.List("owner-id", "action_required", title, 1, 20);
+        Assert.Equal(1, page.Total);
+        Assert.Equal(new ProjectSummaryDto(draft.Id, "LW-TEST", 17, "Campaign", "Client", title, author,
+            cover.Url, "draft", detail.CreatedAt, detail.UpdatedAt, "awaiting_customer"), Assert.Single(page.Items));
+        Assert.Equal(1, projects.GetStats("owner-id").ActionRequired);
+        Assert.Empty(projects.List("other-owner", "action_required", title, 1, 20).Items);
+    }
+
+    [Fact]
+    public void ProjectSummaryPreservesBlankFallbackAndLegacyMissingCover()
+    {
+        var projects = new ProjectRepository(ConnectionString); projects.Initialize();
+        var draft = projects.Create("owner-id");
+        Assert.Equal(SaveOutcome.Saved, projects.Save("owner-id", draft.Id, new SaveDraftRequest(draft.Version,
+            draft.Project with { ProjectName = " ", ClientName = "\t" },
+            draft.Book with { Title = " ", AuthorName = "", SourceAssets = null })).Outcome);
+        var item = Assert.Single(projects.List("owner-id", null, null, 1, 20).Items);
+        Assert.Equal("—", item.ProjectName); Assert.Equal("—", item.ClientName);
+        Assert.Equal("—", item.BookTitle); Assert.Equal("—", item.AuthorName); Assert.Null(item.CoverUrl);
+    }
+
     [Fact]
     public void BookIntakeMigrationDisablesOldSourceTypesOnlyOnce()
     {

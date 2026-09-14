@@ -7,7 +7,14 @@ export function useUnsavedClose(onClose: () => void, confirmMessage: string, bus
   const asking = useRef(false);
   const latest = useRef({ busy, onClose }); latest.current = { busy, onClose };
   const [dirty, setDirty] = useState(false);
-  const blocker = useBlocker(dirty || busy);
+  const blocker = useBlocker(({currentLocation, nextLocation}) => {
+    const stripLocale = (path: string) => path.replace(/^\/(zh-CN|en-US)(?=\/|$)/, "");
+    const languageOnly = /^\/(zh-CN|en-US)(?:\/|$)/.test(currentLocation.pathname)
+      && /^\/(zh-CN|en-US)(?:\/|$)/.test(nextLocation.pathname)
+      && stripLocale(currentLocation.pathname) === stripLocale(nextLocation.pathname)
+      && currentLocation.search === nextLocation.search && currentLocation.hash === nextLocation.hash;
+    return (dirty || busy) && !languageOnly;
+  });
 
   const blockerRef = useRef(blocker); blockerRef.current = blocker;
   useEffect(() => {

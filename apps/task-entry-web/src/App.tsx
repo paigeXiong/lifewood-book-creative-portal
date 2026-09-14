@@ -1,3 +1,5 @@
+import { canRetainQueryData, RefreshNotice } from "./components/RefreshNotice";
+import {AccountLocaleRedirect} from "@lifewood/ui/account-locale";
 import {NotificationCenter} from "@lifewood/ui/notifications";
 
 import { lazy, Suspense, useEffect } from "react";
@@ -11,6 +13,7 @@ import { AppShell } from "./components/AppShell";
 import { ScreenError } from "./components/ScreenError";
 const RevisionWorkspace = lazy(() => import("./components/RevisionWorkspace").then(module => ({ default: module.RevisionWorkspace })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
+const DashboardPage = lazy(() => import("./pages/DashboardPage").then(module => ({ default: module.DashboardPage })));
 const TaskListPage = lazy(() => import("./pages/TaskListPage").then((module) => ({ default: module.TaskListPage })));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage").then((module) => ({ default: module.TaskDetailPage })));
 const SubmissionSuccessPage = lazy(() => import("./pages/SubmissionSuccessPage").then((module) => ({ default: module.SubmissionSuccessPage })));
@@ -46,7 +49,7 @@ function LocaleLayout() {
   return <Outlet context={{ locale }} />;
 }
 
-function ProtectedLayout() {
+export function ProtectedLayout() {
   const { locale } = useParams();
   const location = useLocation();
   const userQuery = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
@@ -54,13 +57,13 @@ function ProtectedLayout() {
   if (!isSupportedLocale(locale)) return null;
   if (userQuery.isPending) return <ScreenLoading />;
   if (userQuery.error instanceof ApiError && userQuery.error.details.code === "auth.unauthorized") {
-    return <Navigate replace state={{ from: location.pathname }} to={localizedPath(locale, "/login")} />;
+    return <Navigate replace state={{ from: location.pathname + location.search + location.hash }} to={localizedPath(locale, "/login")} />;
   }
-  if (userQuery.isError || !userQuery.data) {
+  if (!userQuery.data || (userQuery.isError && !canRetainQueryData(userQuery.error))) {
     return <ScreenError error={userQuery.error} onRetry={() => userQuery.refetch()} />;
   }
 
-  return <AppShell user={userQuery.data}><Suspense fallback={<ScreenLoading />}>{/\/tasks\/[^/]+/.test(location.pathname) ? <RevisionWorkspace><Outlet context={{ locale, user: userQuery.data }} /></RevisionWorkspace> : <Outlet context={{ locale, user: userQuery.data }} />}</Suspense></AppShell>;
+  return <><AccountLocaleRedirect locale={userQuery.data.locale}/><AppShell user={userQuery.data}><RefreshNotice error={userQuery.error} onRetry={() => userQuery.refetch()}/><Suspense fallback={<ScreenLoading />}>{/\/tasks\/[^/]+/.test(location.pathname) ? <RevisionWorkspace><Outlet context={{ locale, user: userQuery.data }} /></RevisionWorkspace> : <Outlet context={{ locale, user: userQuery.data }} />}</Suspense></AppShell></>;
 }
 
 export const appRoutes = createRoutesFromElements(<>
@@ -70,6 +73,7 @@ export const appRoutes = createRoutesFromElements(<>
         <Route element={<ProtectedLayout />}>
           <Route path="notifications" element={<NotificationCenter/>}/>
           <Route path="tasks" element={<TaskListPage />} />
+          <Route path="overview" element={<DashboardPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="tasks/:taskId/submitted" element={<SubmissionSuccessPage />} />

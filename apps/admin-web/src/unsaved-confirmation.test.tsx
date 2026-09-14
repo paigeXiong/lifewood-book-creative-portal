@@ -46,3 +46,20 @@ for(const locale of ["zh-CN","en-US"] as const) {
     }finally{await act(async()=>root.unmount());router.dispose();c.remove();}
   });
 }
+
+for(const busy of [false,true]) {
+ it(`allows language-only navigation while keeping an edited form (busy=${busy})`,async()=>{
+  function Editor(){const {markDirty}=useUnsavedClose(()=>{},"Unsaved",busy);return <input defaultValue="original" onInput={markDirty}/>;}
+  const router=createMemoryRouter([{path:"/:locale/*",element:<Editor/>}],{initialEntries:["/zh-CN/organizations?search=team#editor"]});
+  const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
+  try{
+   await act(async()=>root.render(<RouterProvider router={router}/>));
+   const input=c.querySelector("input")!;input.value="unsaved";
+   await act(async()=>input.dispatchEvent(new Event("input",{bubbles:true})));
+   await act(async()=>{await router.navigate("/en-US/organizations?search=team#editor",{replace:true});});
+   expect(router.state.location.pathname).toBe("/en-US/organizations");
+   expect(c.querySelector("input")).toBe(input);expect(input.value).toBe("unsaved");
+   expect(document.querySelector(".app-confirmation")).toBeNull();
+  }finally{await act(async()=>root.unmount());router.dispose();c.remove();}
+ });
+}

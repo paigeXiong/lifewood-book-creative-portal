@@ -232,6 +232,8 @@ auditEvents.Initialize();
 builder.Services.AddSingleton(auditEvents);
 var deliveries = new DeliveryRepository(databaseConnection);
 deliveries.Initialize();
+var customerDashboard = new CustomerDashboardRepository(databaseConnection);
+customerDashboard.Initialize(); builder.Services.AddSingleton(customerDashboard);
 builder.Services.AddSingleton(deliveries);
 var announcements = new AnnouncementRepository(databaseConnection);
 announcements.Initialize();
@@ -1523,6 +1525,22 @@ api.MapGet("/projects/stats", (HttpContext context, ProjectRepository projects) 
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
     return Results.Ok(projects.GetStats(user.Id));
+});
+
+api.MapGet("/projects/dashboard", (HttpContext context, CustomerDashboardRepository dashboard, string? month, string? timeZone, int day = 1, int page = 1) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
+    if (!DateTime.TryParseExact(month, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)
+        || start.Year < 2000 || start.Year > 2100 || day < 1 || day > DateTime.DaysInMonth(start.Year,start.Month) || string.IsNullOrWhiteSpace(timeZone) || timeZone.Length > 100)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid calendar range.", false);
+    TimeZoneInfo zone;
+    try { zone = TimeZoneInfo.FindSystemTimeZoneById(timeZone); }
+    catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+    { return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid time zone.", false); }
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.Ok(dashboard.Get(user.Id, start, zone, day, page));
 });
 
 api.MapPost("/projects", async (HttpContext context, ProjectRepository projects, PlatformLimits limits) =>

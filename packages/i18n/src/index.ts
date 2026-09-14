@@ -13,9 +13,10 @@ export function isSupportedLocale(
 const resources = {
   "zh-CN": {
     translation: {
+      dashboard: {"title": "数据概览", "navigation": "主导航", "total": "全部项目", "actionRequired": "待我处理", "active": "进行中", "downloadable": "可下载成品", "calendar": "项目活动", "trend": "活动趋势", "distribution": "项目状态", "recent": "近期更新", "monthPrevious": "上个月", "monthNext": "下个月", "thisMonth": "本月", "refresh": "刷新数据", "rules": "统计口径", "rulesText": "仅统计当前账号的项目。活动包括首次提交、重新提交及成品发布（包含之后撤回的发布记录）；不统计浏览或自动保存。活动多少不代表制作进度。", "coverage": "{{date}} 起完整记录活动，更早的日期仅显示已保留的记录。", "timezone": "统计时区：{{zone}}", "partial": "历史记录可能不完整", "noActivity": "当天没有活动", "noKnownActivity": "当天没有已保留的活动记录", "noProjects": "还没有项目，创建项目后可在这里查看数据。", "projectsLink": "前往项目", "daySummary": "{{date}} · {{count}} 次活动 · {{projects}} 个项目", "breakdown": "首次提交 {{submissions}} · 重新提交 {{resubmissions}} · 成品发布 {{deliveries}}", "submission": "首次提交", "resubmission": "重新提交", "delivery": "成品发布", "submissions": "提交资料", "deliveries": "成品发布", "dayDetails": "当日活动", "date": "日期", "activities": "活动次数", "chartData": "查看图表数据", "noTrend": "本月暂无已记录的活动", "legend": "活动强度", "future": "尚未到来", "untitled": "未命名项目", "previous": "上一页", "next": "下一页", "pagination": "第 {{page}} / {{pages}} 页 · {{count}} 条", "updated": "更新于 {{date}}", "count": "{{count}} 次", "allProjects": "查看全部项目"},
       feedback: {"entry": "问题反馈", "adminTitle": "平台反馈", "category": "反馈类型", "description": "问题描述", "placeholder": "请描述遇到的问题、操作步骤或希望改进的地方…", "screenshot": "截图（选填）", "imageHint": "支持 PNG、JPG、WebP，最多 1 MB。请遮挡截图中的密码等敏感信息。", "removeImage": "移除截图", "page": "反馈页面", "submitted": "反馈已提交", "replyHint": "管理员的回复将通过站内通知送达。", "submit": "提交反馈", "sending": "正在提交…", "retry": "重试", "retryHint": "尚未确认提交结果，重试将核对同一份反馈，不会重复提交。", "loadError": "暂时无法加载，请重试。", "search": "搜索问题、姓名或邮箱", "allStatuses": "全部状态", "empty": "暂时没有反馈", "author": "反馈人", "status": "处理状态", "createdAt": "提交时间", "view": "查看详情", "original": "原始反馈", "reply": "处理回复", "replyPlaceholder": "回复将作为站内通知发送给反馈人…", "sendReply": "保存并发送通知", "saveStatus": "保存状态", "saved": "处理结果已保存", "replyHistory": "已发送的通知", "noReplies": "尚未发送回复", "previous": "上一页", "next": "下一页", "pagination": "第 {{page}} 页 · 共 {{count}} 条", "closedAccount": "已注销账号", "refresh": "刷新", "noticeReply": "管理员回复", "errors": {"invalid": "请填写 5–4000 字的问题描述，并检查反馈类型。", "image": "请选择不超过 1 MB 的 PNG、JPG 或 WebP 图片。", "limited": "反馈提交较频繁，请稍后再试。", "conflict": "反馈已更新，请刷新详情后核对处理结果。"}},
       clientUx: {
-        sendingReply: "正在发送…","allSteps": "查看全部步骤", "hideSteps": "收起步骤", "returnedStatus": "待修改或回复", "resubmit": "重新提交需求", "backTo": "返回：{{unit}}", "revisionReviewHint": "核对本轮要求和回复后重新提交。若保留原需求，可以说明原因，无需强制修改。", "requestedUnits": "本轮请处理", "returnReason": "退回原因", "openFeedback": "查看反馈", "allProjects": "全部项目", "actionRequired": "待我处理", "continueDraft": "继续填写", "handleReturn": "处理退回", "viewProgress": "查看进展", "more": "更多操作", "optionalBook": "卖点与简介（选填）", "optionalFiles": "更多资料（选填）", "recognizedFields": "已填入：{{fields}}。请核对结果。", "searchOptions": "搜索{{label}}", "noOptions": "没有匹配的选项", "selected": "已选", "manuscriptOptional": "全书或节选（选填）"},
+        sendingReply: "正在发送…","allSteps": "查看全部步骤", "hideSteps": "收起步骤", "returnedStatus": "待修改或回复", "resubmit": "重新提交需求", "backTo": "返回：{{unit}}", "revisionReviewHint": "核对本轮要求和回复后重新提交。若保留原需求，可以说明原因，无需强制修改。", "requestedUnits": "本轮请处理", "returnReason": "退回原因", "openFeedback": "查看反馈", "allProjects": "全部项目", "actionRequired": "待我处理", "continueDraft": "继续填写", "handleReturn": "处理退回", "viewProgress": "查看进展", "more": "更多操作", "optionalBook": "卖点与简介（选填）", "optionalFiles": "更多资料（选填）", "recognizedFields": "已填入：{{fields}}。请核对结果。", "searchOptions": "搜索{{label}}", "noOptions": "没有匹配的选项", "selected": "已选", "manuscriptOptional": "书籍正文（选填）"},
       bookIntake: {"recognitionEndpoint": "AI 服务地址或模型不可用，请联系管理员检查接入配置。已有信息未被修改。", "basicHint": "填写品牌、项目名称、视频目标、截止日期和目标受众。", "presetImage": "{{name}}的默认角色参考图", "presetHint": "AI 生成的默认参考图。可修改设定、上传自己的参考图，或删除整个角色。", "uploadCover": "上传封面", "recognizeShort": "识别填写", "recognitionTitle": "封面识别", "recognitionHint": "上传封面、封底或书腰照片后，可将最多 6 张、合计 20 MB 的照片发送给已配置的 AI，提取书名、作者、副标题、类型、卖点和简介。只填入空白字段，请核对结果。", "recognitionDisabled": "尚未配置封面识别服务；请手动填写书籍信息。", "recognitionImages": "请选择 1–6 张已上传的封面照片，每张最多 10 MB，合计不超过 20 MB。", "recognitionFailed": "识别失败。请稍后重试或手动填写，已有信息未被修改。", "recognize": "识别并填写空白字段", "recognizing": "正在识别封面…", "recognitionDone": "已填入识别到的资料，请核对并补充。未识别的信息保留为空。", "recognitionNoChange": "没有可自动填入的新资料。已有内容已保留，您可以手动补充。", "uploadFirst": "上传封面照片", "takePhoto": "拍摄封面照片", "preparingPhoto": "正在处理并上传照片…", "photoFormat": "当前类别不接受 JPG 或 PNG 照片，请联系管理员检查文件类别配置。", "photoSize": "照片压缩后仍超过大小限制，请选择较小的照片。", "photoUnreadable": "无法读取这张照片，请将相机格式设为 JPG 后重拍，或选择 JPG、PNG 图片上传。", "photoInterrupted_camera": "拍照期间页面重新加载，尚未收到照片。请从相册重新选择照片上传。", "photoInterrupted_processing": "处理照片时页面重新加载，上传已中断。请降低拍照分辨率后重试。", "photoInterrupted_uploading": "上传时页面重新加载。请先检查封面列表，未出现时再重新上传。", "photoTimeout": "照片处理超时，请重新选择照片或降低相机分辨率后再试。", "photoUploadFailed": "照片上传失败，请重试。"},
       app: { name: "Lifewood · Deseret Book", clientName: "Deseret Book", providerName: "Lifewood" },
       nav: {
@@ -442,7 +443,7 @@ const resources = {
         unavailableOption: "已停用选项",
       },
       sourceFiles: {
-        hint: "请上传图书封面；全书或节选、补充图片均为可选。",
+        hint: "请上传图书封面；书籍正文和补充图片均为选填。",
         required: "必传",
         chooseFor: "为{{category}}选择文件",
         removeFile: "移除文件 {{fileName}}",
@@ -582,7 +583,7 @@ const resources = {
         fields: {
           contentLanguage: "内容语言",
           narrationTone: "旁白语气",
-          speechRate: "节奏",
+          speechRate: "语速",
           pronunciationNotes: "发音备注",
           voiceGender: "声音性别",
           voiceAge: "声音年龄感",
@@ -593,7 +594,7 @@ const resources = {
           coreMessage: "核心信息",
           requiredScenes: "必含场景",
           authorPreferences: "作者偏好",
-          closingMessage: "结尾行动号召",
+          closingMessage: "希望观众采取的行动",
           musicMood: "音乐氛围",
           avoidContent: "需规避内容",
         },
@@ -621,6 +622,7 @@ const resources = {
   },
   "en-US": {
     translation: {
+      dashboard: {"title": "Overview", "navigation": "Main navigation", "total": "All projects", "actionRequired": "Needs your input", "active": "In progress", "downloadable": "Ready to download", "calendar": "Project activity", "trend": "Activity trends", "distribution": "Project status", "recent": "Recently updated", "monthPrevious": "Previous month", "monthNext": "Next month", "thisMonth": "This month", "refresh": "Refresh data", "rules": "About these numbers", "rulesText": "Only your account’s projects are included. Activity counts first submissions, resubmissions and delivery publications (including publications later withdrawn), excluding views and autosaves. Activity volume does not measure production progress.", "coverage": "Activity is fully recorded from {{date}}. Earlier dates show only retained records.", "timezone": "Reporting time zone: {{zone}}", "partial": "Historical records may be incomplete", "noActivity": "No activity on this day", "noKnownActivity": "No retained activity records for this day", "noProjects": "No projects yet. Create a project to see its activity here.", "projectsLink": "Go to projects", "daySummary": "{{date}} · {{count}} activities · {{projects}} projects", "breakdown": "First submissions {{submissions}} · Resubmissions {{resubmissions}} · Delivery publications {{deliveries}}", "submission": "First submission", "resubmission": "Resubmission", "delivery": "Delivery published", "submissions": "Submissions", "deliveries": "Delivery publications", "dayDetails": "Daily activity", "date": "Date", "activities": "Activity count", "chartData": "View chart data", "noTrend": "No recorded activity this month", "legend": "Activity intensity", "future": "Future date", "untitled": "Untitled project", "previous": "Previous page", "next": "Next page", "pagination": "Page {{page}} / {{pages}} · {{count}} records", "updated": "Updated {{date}}", "count": "{{count}} activities", "allProjects": "View all projects"},
       feedback: {"entry": "Report an issue", "adminTitle": "Platform feedback", "category": "Category", "description": "Description", "placeholder": "Describe the issue, the steps you took, or your suggestion…", "screenshot": "Screenshot (optional)", "imageHint": "PNG, JPG or WebP, up to 1 MB. Hide passwords and other sensitive information in your screenshot.", "removeImage": "Remove screenshot", "page": "Page", "submitted": "Feedback submitted", "replyHint": "Administrator replies will arrive in your notifications.", "submit": "Submit feedback", "sending": "Submitting…", "retry": "Retry", "retryHint": "Submission is not yet confirmed. Retrying checks the same feedback without creating a duplicate.", "loadError": "Unable to load. Please try again.", "search": "Search issue, name or email", "allStatuses": "All statuses", "empty": "No feedback yet", "author": "Submitted by", "status": "Status", "createdAt": "Submitted", "view": "View details", "original": "Original feedback", "reply": "Response", "replyPlaceholder": "Your response will be sent as an in-app notification…", "sendReply": "Save and notify", "saveStatus": "Save status", "saved": "Changes saved", "replyHistory": "Sent notifications", "noReplies": "No response sent yet", "previous": "Previous", "next": "Next", "pagination": "Page {{page}} · {{count}} total", "closedAccount": "Closed account", "refresh": "Refresh", "noticeReply": "Administrator response", "errors": {"invalid": "Enter a description of 5–4000 characters and check the category.", "image": "Choose a PNG, JPG or WebP image up to 1 MB.", "limited": "You have submitted several reports recently. Please try again later.", "conflict": "Feedback has changed. Refresh the details and check the latest result."}},
       clientUx: {
         sendingReply: "Sending…","allSteps": "View all steps", "hideSteps": "Hide steps", "returnedStatus": "Changes or reply needed", "resubmit": "Resubmit brief", "backTo": "Back to {{unit}}", "revisionReviewHint": "Review the requested changes and your replies before resubmitting. You can explain why you want to keep the original brief without changing it.", "requestedUnits": "Please address", "returnReason": "Requested change", "openFeedback": "View feedback", "allProjects": "All projects", "actionRequired": "Needs my attention", "continueDraft": "Continue draft", "handleReturn": "Address feedback", "viewProgress": "View progress", "more": "More actions", "optionalBook": "Selling point & synopsis (optional)", "optionalFiles": "More materials (optional)", "recognizedFields": "Filled in: {{fields}}. Please review.", "searchOptions": "Search {{label}}", "noOptions": "No matching options", "selected": "Selected", "manuscriptOptional": "Manuscript or excerpt (optional)"},
@@ -1081,7 +1083,7 @@ const resources = {
         unavailableOption: "No longer available",
       },
       sourceFiles: {
-        hint: "Upload the book cover. A manuscript or excerpt and additional images are optional.",
+        hint: "Upload the book cover. Book text and additional images are optional.",
         required: "Required",
         chooseFor: "Choose files for {{category}}",
         removeFile: "Remove file {{fileName}}",
@@ -1238,7 +1240,7 @@ const resources = {
         fields: {
           contentLanguage: "Content language",
           narrationTone: "Narration tone",
-          speechRate: "Pacing",
+          speechRate: "Speech rate",
           pronunciationNotes: "Pronunciation notes",
           voiceGender: "Voice gender",
           voiceAge: "Voice age",
@@ -1249,7 +1251,7 @@ const resources = {
           coreMessage: "Main message",
           requiredScenes: "Key scenes to include",
           authorPreferences: "Author preference",
-          closingMessage: "CTA or ending message",
+          closingMessage: "What should viewers do next?",
           musicMood: "Music feel",
           avoidContent: "Anything sensitive to avoid",
         },
@@ -1523,3 +1525,12 @@ i18n.addResourceBundle("en-US","translation",{deliveryRecovery:{checking:"Checki
 
 i18n.addResourceBundle("zh-CN","translation",{projectProgress:{title:"当前进展",waiting:"资料已提交，正在由团队跟进。如需补充资料，你会收到站内通知。",production:"项目正在制作中，成品发布后可在这里下载。",completed:"项目已完成。请查看成品交付信息。",closed:"项目已关闭，已提交的资料仍可在下方查看。",viewMaterials:"查看提交资料"}},true,true);
 i18n.addResourceBundle("en-US","translation",{projectProgress:{title:"Current progress",waiting:"Your brief has been submitted and is being followed up. We will notify you here if more information is needed.",production:"Your project is in production. The final file will be available here when published.",completed:"Your project is complete. Check the delivery information for available files.",closed:"This project is closed. Your submitted materials remain available below.",viewMaterials:"View submitted materials"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{notifications:{clearFilters:"清除筛选",noResults:"没有符合筛选条件的通知，请调整或清除筛选。",invalidDates:"请输入有效日期，结束日期不能早于开始日期。",readAll:"所有通知标为已读",readAllConfirm:"将当前账号已有的所有通知标为已读？这包括未显示和已归档的通知，不受当前筛选或勾选范围限制；不会改变事项的处理状态。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{clientUx:{manuscriptOptional:"Book text (optional)"},notifications:{clearFilters:"Clear filters",noResults:"No notifications match your filters. Adjust or clear the filters.",invalidDates:"Enter valid dates. The end date must not be before the start date.",readAll:"Mark all notifications as read",readAllConfirm:"Mark all existing notifications for this account as read? This includes hidden and archived notifications, regardless of the current filters or selection. This will not change their action status."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{recovery:{refreshFailed:"暂时无法更新，当前显示上次加载的内容。"},feedback:{timeout:"发送等待超时，内容已保留。可重试确认提交结果，不会重复提交同一条反馈。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{recovery:{refreshFailed:"Unable to refresh right now. Showing the last loaded content."},feedback:{timeout:"The request timed out. Your feedback is preserved. Retry to confirm the result without creating a duplicate."}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{taskDetail:{contents:"提交资料导航",previewCover:"查看原图"}},true,true);
+i18n.addResourceBundle("en-US","translation",{taskDetail:{contents:"Submitted materials navigation",previewCover:"View original"}},true,true);

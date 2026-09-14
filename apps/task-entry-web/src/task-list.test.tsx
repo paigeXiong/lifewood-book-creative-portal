@@ -121,6 +121,22 @@ for (const locale of ["zh-CN", "en-US"] as const) {
       } finally { await page.close(); }
     });
 
+    it("debounces search, clears immediately and waits for IME composition", async () => {
+      const page = await mount(locale, "?status=draft&sort=author&direction=asc&page=2");
+      const input = page.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+      const edit = async (value: string) => { await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); }); };
+      const pause = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 340)); }); await page.settle(); };
+      try {
+        const count = page.list.mock.calls.length; await edit("new"); await edit("new book"); expect(page.list.mock.calls.length).toBe(count); await pause();
+        expect(page.params().get("q")).toBe("new book"); expect(page.params().get("status")).toBe("draft"); expect(page.params().has("page")).toBe(false);
+        await edit(""); expect(page.params().has("q")).toBe(false);
+        await act(async () => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+        await edit("zhong"); await pause(); expect(page.params().has("q")).toBe(false);
+        await edit("中文"); await act(async () => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中文" }))); await pause();
+        expect(page.params().get("q")).toBe("中文"); expect(page.params().get("sort")).toBe("author");
+      } finally { await page.close(); }
+    });
+
     it("removes individual chips and clears filters while retaining sort", async () => {
       const page = await mount(locale, "?q=book&status=draft&sort=author&direction=asc&page=2");
       try {

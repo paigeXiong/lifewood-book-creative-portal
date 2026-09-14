@@ -52,3 +52,11 @@ AI 接入分为两层：「模型服务商」维护名称、接口格式、HTTPS
 旧单服务商配置自动映射为一个服务商及封面识别绑定，保留模型、加密密钥和启用状态。被业务引用的服务商和模型不能直接删除，需先更改业务绑定。新增或编辑供应商不会自动切换当前业务。基础地址 / 和 /v1 会根据所选协议补全接口路径，自定义完整路径保持原样。
 
 Providers own their model catalogs; AI features select a provider and a model from that catalog. Both the UI and server enforce this relationship. Settings take effect on the next recognition request. Legacy settings migrate without changing the selected model or exposing the saved key.
+
+## 面向客户的名称调整（2026-09-14）
+
+默认文件类别“全书或节选”调整为“书籍正文 / Book text”，“情绪板”调整为“风格参考拼图 / Visual inspiration board”。表单同步使用“语速 / Speech rate”和“希望观众采取的行动 / What should viewers do next?”。
+
+启动时的一次性升级只替换已知旧默认名称，各语言分别判断；保留管理员自定义名称和说明、是否必填、上传限制、禁用与移除状态。类别 ID `manuscript`、`moodboard` 保持不变，不改动已上传文件和历史提交快照。书籍正文默认选填，可上传全书或部分章节。
+
+Default file labels now use plain language. A one-time startup migration updates recognized legacy defaults independently per language while preserving custom labels/descriptions, limits, required flags and removal state. Stable category IDs, uploaded assets and historical submission snapshots are unchanged.

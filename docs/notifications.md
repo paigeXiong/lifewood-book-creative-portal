@@ -58,3 +58,13 @@ SSE 每 5 秒同步一次，浏览器自动重连；计数和列表均每 30 秒
 ## 2026-09-11：备份告警
 
 新增 `backup_failed`、`backup_damaged`、`backup_stale`，收件范围固定为有效平台负责人。持久化异常状态防止每分钟重复通知；解除后原通知为已处理。具体阈值、解除条件及限制见 [后台备份管理](./managed-backups.md#备份异常站内提醒2026-09-11)。不涉及邮件或浏览器系统推送。
+
+## 通知筛选与已读范围（2026-09-14）
+
+客户、管理端和快捷通知弹窗共用筛选行为：搜索文字和项目名称输入停止 300ms 后请求；可一键清除筛选。日期无效或结束早于开始时显示双语提示并暂停列表请求。加载失败提供重试，不再同时显示“暂无通知”；真正没有通知和筛选无匹配分别显示。
+
+批量工具栏的“所有通知标为已读”确认后按账号和请求时的通知水位执行，包含当前筛选以外及已归档的通知，不影响确认期间新到达的通知，也不改变事项的处理状态。选中项的已读操作仍仅提交勾选 ID；确认期间切换账号不继续提交原账号操作。
+
+Notification search and project filters debounce for 300ms. Invalid date ranges block requests, and loading errors, empty feeds and filtered-empty results are distinct. Global read requires confirmation and includes hidden/archived notifications through the captured watermark; selected read uses only checked IDs. Both portals share the same bilingual behavior.
+
+本轮验证：通知双语交互与恢复/拖选测试 21 项通过；文件类别升级及删除兼容测试 14 项通过；客户和管理端生产构建通过。本地服务已启动，健康接口正常；使用 Accept-Language 分别核对中英文文件类别名称。

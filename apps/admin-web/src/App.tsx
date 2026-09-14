@@ -1,3 +1,4 @@
+import { AccountLocaleRedirect } from "@lifewood/ui/account-locale";
 import { AccountSessionGuard,AccountSwitcher } from "@lifewood/ui/account-switcher";
 import { NotificationBell,NotificationCenter } from "@lifewood/ui/notifications";
 import { UserPresence } from "@lifewood/ui/user-presence";
@@ -16,6 +17,7 @@ SupportedLocale
 import { isSupportedLocale,localizedPath,setLocale } from "@lifewood/i18n";
 import {
 useQuery,
+useMutation,
 useQueryClient
 } from "@tanstack/react-query";
 import {
@@ -35,7 +37,6 @@ NavLink,
 Route,
 Routes,
 useLocation,
-useNavigate,
 useParams
 } from "react-router-dom";
 import { ToastHost } from "./Toast";
@@ -222,7 +223,6 @@ function AdminShell({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const location = useLocation();
   const currentArea = location.pathname.split("/")[2];
@@ -271,18 +271,15 @@ function AdminShell({
       setLogoutPending(false);
     }
   };
+  const languagePreference = useMutation({
+    mutationFn: (next: SupportedLocale) => authService.updatePreferences({locale: next}),
+    onSuccess: updated => {
+      queryClient.setQueryData(["admin-me"], updated);
+      queryClient.setQueryData(["current-user"], updated);
+    },
+  });
   const changeLocale = (next: string) => {
-    if (isSupportedLocale(next))
-      navigate(
-        localizedAdminLocation(
-          window.location.pathname,
-          window.location.search,
-          window.location.hash,
-          locale,
-          next,
-        ),
-        {replace: true, state:location.state},
-      );
+    if (isSupportedLocale(next) && !languagePreference.isPending) languagePreference.mutate(next);
   };
   return (
     <div className="admin-shell">
@@ -355,12 +352,14 @@ function AdminShell({
               <span className="sr-only">{t("nav.language")}</span>
               <select
                 value={locale}
+                disabled={languagePreference.isPending}
                 onChange={(event) => changeLocale(event.target.value)}
               >
                 <option value="zh-CN">中文</option>
                 <option value="en-US">English</option>
               </select>
             </label>
+            {languagePreference.isError && <span className="admin-account-error" role="alert">{localizedApiError(languagePreference.error, t)}</span>}
             <div className="admin-account portal-account-control" ref={accountRef}>
               <a className="admin-avatar-trigger" href={`/api/portals/profile?locale=${locale}`} aria-label={t("nav.profile")}>
                 <img className="account-avatar" src={user.avatarUrl || "/api/me/avatar"} alt="" width="30" height="30" />
@@ -496,7 +495,7 @@ function AdminRoot() {
     );
   if (!me.data.permissions.includes("admin.access"))
     return (
-      <main className="center-state">
+      <><AccountLocaleRedirect locale={me.data.locale}/><main className="center-state">
         <div>
           <h1>{t("admin.forbidden.title")}</h1>
           <p>{t("admin.forbidden.body")}</p>
@@ -509,13 +508,13 @@ function AdminRoot() {
             {t("nav.logout")}
           </button>
         </div>
-      </main>
+      </main></>
     );
   const area = location.pathname.split(`/${locale}/`)[1]?.split("/")[0] ?? "";
   const required = ({ feedback: "admin.feedback.manage", reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
   const home = me.data.permissions.includes("admin.overview.read") ? "overview" : "workbench";
   return (
-    <AdminShell user={me.data} locale={locale}>
+    <><AccountLocaleRedirect locale={me.data.locale}/><AdminShell user={me.data} locale={locale}>
       {required && !me.data.permissions.includes(required) ? <Navigate replace to={localizedPath(locale, "/" + home)} /> :
       <Suspense fallback={<main className="center-state" role="status" aria-busy="true">{t("common.loading")}</main>}>
         <Routes>
@@ -559,7 +558,7 @@ function AdminRoot() {
         <Route path="*" element={<Navigate replace to={home} />} />
         </Routes>
       </Suspense>}
-    </AdminShell>
+    </AdminShell></>
   );
 }
 

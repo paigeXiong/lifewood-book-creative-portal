@@ -84,7 +84,7 @@ scripts/                测试、发布、安装和备份脚本
 /:locale/notifications
 ```
 
-首期 locale 为 `zh-CN` 和 `en-US`。语言切换必须保留项目 ID、当前步骤、查询参数和未保存表单状态。
+首期 locale 为 `zh-CN` 和 `en-US`。登录后账号语言偏好优先，访问不匹配的语言路由会自动替换；未登录时仍按路由显示。语言切换必须保留项目 ID、当前步骤、查询参数和未保存表单状态。
 
 ## 数据与配置原则
 
@@ -101,6 +101,12 @@ scripts/                测试、发布、安装和备份脚本
 ```powershell
 npm run verify
 ```
+
+涉及客户导航、共享弹窗或响应式布局时，另运行 `npm run test:customer-browsers`。当前覆盖与限制见 [客户端浏览器验收](./customer-browser-validation.md)。
+
+涉及项目列表、统计或查询结构时，使用 `npm run bench:api` 保存优化前后报告，运行方法与范围见 [性能与容量基线](./performance-baseline.md)。性能基线应独立运行，不与构建或其他测试争抢资源。
+
+涉及项目保存、附件上传、提交幂等或索引维护时，另运行 `npm run bench:mixed`，检查并发版本冲突、重复请求及重启后的数据完整性。范围与结果见 [混合读写验证](./mixed-load-validation.md)。持续读写及 Windows 进程资源回归使用 `npm run bench:sustained`，见 [持续读写与资源监测](./sustained-load-validation.md)。
 
 涉及 Windows 发布时继续运行：
 

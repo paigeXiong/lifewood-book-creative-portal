@@ -1,3 +1,4 @@
+import { gotoInAccountLocale, withRateLimitCooldown } from "./auth-request";
 import { expect, test } from "@playwright/test";
 
 // Bootstrap mutates shared fixture state and cannot be replayed against the same database.
@@ -7,7 +8,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
   page, browser,
 }) => {
   test.setTimeout(300_000);
-  await page.goto("/zh-CN/overview");
+  await gotoInAccountLocale(page, "/zh-CN/overview");
   await expect(
     page.getByRole("heading", { name: "初始化平台管理员" }),
   ).toBeVisible();
@@ -29,7 +30,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
   await expect(page.getByRole("button", { name: "Create user" })).toBeVisible();
 
   await test.step("admin saves and publishes single-content notice", async () => {
-    await page.goto("/zh-CN/settings/announcements");
+    await gotoInAccountLocale(page, "/zh-CN/settings/announcements");
     await page.getByRole("button", { name: "新建公告", exact: true }).click();
     await page.getByRole("textbox", { name: "标题", exact: true }).fill("客户公告验收");
     await page.getByRole("textbox", { name: "正文", exact: true }).fill("仅用于独立测试环境。");
@@ -66,7 +67,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
   });
 
   await test.step("English editor keeps one content version and supports optional targeting", async () => {
-    await page.goto("/en-US/settings/announcements");
+    await gotoInAccountLocale(page, "/en-US/settings/announcements");
     await expect(page.getByRole("cell", { name: "Published", exact: true })).toBeVisible();
     await expect(page.getByText("客户公告验收", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "New announcement", exact: true }).click();
@@ -84,7 +85,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
     await editor.getByRole("button", { name: "Save draft", exact: true }).click();
     await expect(editor).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto("/zh-CN/settings/announcements");
+    await gotoInAccountLocale(page, "/zh-CN/settings/announcements");
     const row = page.getByRole("row").filter({ hasText: "Single content draft" });
     await row.getByRole("button", { name: "编辑草稿", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveValue("无需同时填写翻译。 No forced split.");
@@ -99,9 +100,9 @@ test("owner can initialize the platform and navigate the localized admin shell",
   await test.step("legacy drafts preserve translations until their content is edited", async () => {
     const token = (await (await page.request.get("/api/auth/csrf")).json()).token;
     const id = (await import("node:crypto")).randomUUID().replaceAll("-", "");
-    const saved = await page.request.put(`/api/admin/announcements/${id}`, {
+    const saved = await withRateLimitCooldown(() => page.request.put(`/api/admin/announcements/${id}`, {
       headers: { "X-CSRF-TOKEN": token }, data: { titleZh: "旧版草稿", bodyZh: "原中文", titleEn: "Legacy draft", bodyEn: "Original English", placement: "personal", audience: "all", languages: [], organizationIds: [], startsAt: null, endsAt: null, version: 0 },
-    });
+    }));
     expect(saved.ok()).toBeTruthy();
     await page.reload();
     const row = page.getByRole("row").filter({ hasText: "旧版草稿" });
@@ -130,11 +131,12 @@ test("owner can initialize the platform and navigate the localized admin shell",
   const csrf = (await (await page.request.get("/api/auth/csrf")).json()).token;
   const publish = async (index: number, placement = "personal") => {
     const id = (await import("node:crypto")).randomUUID().replaceAll("-", "");
-    const saved = await page.request.put(`/api/admin/announcements/${id}`, {
+    const saved = await withRateLimitCooldown(() => page.request.put(`/api/admin/announcements/${id}`, {
       headers: { "X-CSRF-TOKEN": csrf }, data: { title: `历史公告 ${index}`, body: "测试正文", placement, audience: placement === "login" ? "specified" : "all", languages: placement === "login" ? ["zh-CN"] : [], organizationIds: [], startsAt: null, endsAt: null, version: 0 },
-    });
+    }));
     expect(saved.ok()).toBeTruthy();
-    const result = await page.request.post(`/api/admin/announcements/${id}/publish`, { headers: { "X-CSRF-TOKEN": csrf }, data: { version: (await saved.json()).version } });
+    const savedVersion = (await saved.json()).version;
+    const result = await withRateLimitCooldown(() => page.request.post(`/api/admin/announcements/${id}/publish`, { headers: { "X-CSRF-TOKEN": csrf }, data: { version: savedVersion } }));
     expect(result.ok()).toBeTruthy();
   };
   for (let index = 0; index < 22; index++) await publish(index);
@@ -144,10 +146,10 @@ test("owner can initialize the platform and navigate the localized admin shell",
   const customer = await customerContext.newPage();
   try {
     await test.step("public notices respect language and reappear on a new login visit", async () => {
-      await customer.goto("http://127.0.0.1:5193/en-US/login");
+      await gotoInAccountLocale(customer, "http://127.0.0.1:5193/en-US/login");
       await expect(customer.getByRole("textbox", { name: "Email", exact: true })).toBeVisible();
       await expect(customer.getByRole("dialog")).toHaveCount(0);
-      await customer.goto("http://127.0.0.1:5193/zh-CN/login");
+      await gotoInAccountLocale(customer, "http://127.0.0.1:5193/zh-CN/login");
       await expect(customer.getByRole("dialog")).toBeVisible();
       await expect(customer.getByRole("heading", { name: "历史公告 99", exact: true })).toBeVisible();
       await customer.locator("dialog header button").click();
@@ -198,7 +200,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
     const project = await created.json();
     for (const locale of ["zh-CN", "en-US"]) {
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${project.id}/edit/characters`);
+      await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${project.id}/edit/characters`);
       const hint = page.locator('input[id^="voiceHint-"]');
       await expect(hint).toBeVisible();
       await hint.focus();
@@ -216,14 +218,14 @@ test("owner can initialize the platform and navigate the localized admin shell",
     const { resolve } = await import("node:path");
     // Seed a business event only in the disposable E2E database; delivery uses the real worker.
     execFileSync(process.platform === "win32" ? "python" : "python3", ["-c", "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute(\"UPDATE projects SET project_json=json_set(project_json,'$.projectName','Notification E2E'),status='submitted',version=version+1 WHERE id=?\",(sys.argv[2],)); c.execute(\"INSERT INTO notification_events(event_key,kind,project_id,actor_id,target_id) VALUES('e2e-workflow','workflow',?,'test-actor','')\",(sys.argv[2],)); c.commit(); c.close()", resolve("artifacts/e2e-data/platform.db"), project.id]);
-    await page.goto("/zh-CN/notifications");
+    await gotoInAccountLocale(page, "/zh-CN/notifications");
     await expect(page.getByRole("heading", { name: "项目进度已更新：Notification E2E", exact: true })).toBeVisible({ timeout: 35000 });
-    await expect(page.getByRole("button", { name: "通知，1 条未读", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "通知，1 条未读", exact: true })).toBeVisible({timeout:35000});
     await page.getByRole("button", { name: "通知，1 条未读", exact: true }).click();
     const quick = page.getByRole("dialog", { name: "通知", exact: true });
     await expect(quick).toBeVisible();
     await quick.getByRole("button", { name: "关闭", exact: true }).click();
-    await expect(page.getByRole("button", { name: "通知，1 条未读", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "通知，1 条未读", exact: true })).toBeVisible({timeout:35000});
     // Simulate a different device changing read state while SSE is unavailable.
     const incoming = await (await page.request.get("/api/notifications")).json();
     expect((await page.request.post("/api/notifications/state", { headers: { "X-CSRF-TOKEN": token }, data: { action: "read", ids: [incoming.items[0].id] } })).ok()).toBeTruthy();
@@ -246,7 +248,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
     await page.getByRole("button", { name: "批量选择", exact: true }).click();
     await page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true }).check();
     await page.getByRole("button", { name: "取消归档", exact: true }).click();
-    await page.goto("/en-US/notifications");
+    await gotoInAccountLocale(page, "/en-US/notifications");
     await expect(page.getByRole("heading", { name: "Project progress updated: Notification E2E", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Preferences", exact: true }).click();
     const prefs = page.getByRole("dialog", { name: "Preferences", exact: true });
@@ -271,13 +273,13 @@ test("owner can initialize the platform and navigate the localized admin shell",
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
     await page.screenshot({ path: "artifacts/notification-center-mobile-en.png", fullPage: true });
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/zh-CN/settings/notifications");
+    await gotoInAccountLocale(page, "/zh-CN/settings/notifications");
     await expect(page.getByRole("heading", { name: "通知发送记录", exact: true })).toBeVisible();
     const rule = page.locator(".notification-rule-list article").filter({ hasText: "项目进度" });
     await rule.getByRole("button", { name: "编辑", exact: true }).click();
     await page.getByRole("dialog", { name: "编辑通知规则", exact: true }).getByRole("button", { name: "保存", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.goto("http://127.0.0.1:5193/en-US/notifications");
+    await gotoInAccountLocale(page, "http://127.0.0.1:5193/en-US/notifications");
     await expect(page.getByRole("heading", { name: "Project progress updated: Notification E2E", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Open related item", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/tasks/${project.id}`));

@@ -69,7 +69,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
   return (
     <div className="app-shell reference-shell">
       {location.pathname.replace(/\/$/, "") === `/${locale}/tasks` && user.taskBackgroundMotion !== false && <LoginBookBackdrop subtle />}
-      <a className="skip-link" href="#main-content">{t("nav.skipToContent")}</a>
+      <a className="skip-link" href="#main-content" tabIndex={0}>{t("nav.skipToContent")}</a>
       <header className="topbar reference-topbar">
         <Link className="brand" to={`/${locale}/tasks`} aria-label={t("app.name")} onClick={guardLink}>
           <img className="brand-logo" src="/lifewood-logo.png" alt="" width="2285" height="492" />
@@ -78,9 +78,12 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </span>
         </Link>
 
-        <PortalNavigation label={t("nav.tasks")}>
+        <PortalNavigation label={t("dashboard.navigation")}>
           <NavLink className="portal-projects-link" to={`/${locale}/tasks`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
             <span>{t("nav.tasks")}</span>
+          </NavLink>
+          <NavLink className="portal-projects-link" to={`/${locale}/overview`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
+            <span>{t("dashboard.title")}</span>
           </NavLink>
         </PortalNavigation>
         <div className="topbar-actions">

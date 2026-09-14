@@ -37,7 +37,7 @@ export function LoginPage() {
       const preferredLocale = user.locale ?? (isSupportedLocale(locale) ? locale : "zh-CN");
       const fallback = localizedPath(preferredLocale, "/tasks");
       const target = (location.state as { from?: string } | null)?.from ?? fallback;
-      navigate(target, { replace: true });
+      navigate(target.replace(/^\/(zh-CN|en-US)(?=\/|$)/, `/${preferredLocale}`), { replace: true });
     },
   });
 

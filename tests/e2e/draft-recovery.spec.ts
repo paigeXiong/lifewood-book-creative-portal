@@ -1,3 +1,4 @@
+import { gotoInAccountLocale } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import { expect, test } from "@playwright/test";
 
@@ -17,7 +18,7 @@ test("draft conflicts retain chosen input and fresh server fields in both langua
   for(const locale of ["zh-CN","en-US"]){
     const created=await page.request.post("/api/projects",{headers:await headers(),data:{}});expect(created.ok()).toBeTruthy();let draft=await created.json();
     await page.setViewportSize({width:locale==="en-US"?390:1366,height:900});
-    await page.goto(`http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/project`);
+    await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}/edit/project`);
     await expect(page.locator("#title")).toBeVisible();
     draft.book.title="Server title";draft.book.authorName="Server author";
     const remote=await page.request.put(`/api/projects/${draft.id}/draft`,{headers:await headers(),data:{version:draft.version,project:draft.project,book:draft.book}});expect(remote.ok(),await remote.text()).toBeTruthy();draft=await remote.json();
