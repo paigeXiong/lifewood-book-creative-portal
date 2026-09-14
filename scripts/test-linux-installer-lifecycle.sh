@@ -74,9 +74,18 @@ fixture seed
 fixture verify
 
 printf 'Overwrite installation / 覆盖安装\n'
-# Same release: verifies installer replacement, not historical database migration.
-bash "$payload/linux/install.sh" --non-interactive --lang en-US --data-dir "$test_root/forbidden-data"
+# Linux rejects a changed data path rather than silently ignoring it.
+sha256sum "$install_dir/server/Lifewood.BookPortal.Server" "$config_dir/portal.env" "$unit_file" "$configure_command" > "$report_dir/rejection.sha256"
+if bash "$payload/linux/install.sh" --non-interactive --lang en-US --data-dir "$test_root/forbidden-data" > "$report_dir/rejected-path.log" 2>&1; then
+  printf 'Changed data path unexpectedly accepted.\n' >&2; exit 1
+fi
+grep -Fq 'The production data directory is locked' "$report_dir/rejected-path.log"
 [[ ! -e "$test_root/forbidden-data" && ! -e "$test_root/forbidden-data.backups" ]]
+sha256sum --check --status "$report_dir/rejection.sha256"
+assert_service
+fixture verify
+# Same release: verifies installer replacement, not historical database migration.
+bash "$payload/linux/install.sh" --non-interactive --lang en-US
 assert_service
 fixture verify
 
