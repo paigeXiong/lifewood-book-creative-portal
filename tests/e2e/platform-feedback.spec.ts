@@ -1,4 +1,4 @@
-import { gotoInAccountLocale } from "./auth-request";
+import { gotoInAccountLocale, withRateLimitCooldown } from "./auth-request";
 import { postAuthentication } from "./auth-request";
 import {expect,test} from "@playwright/test";
 
@@ -13,7 +13,7 @@ test("platform feedback is submitted and answered through notifications in both 
  try{for(const locale of ["zh-CN","en-US"]){
   const zh=locale==="zh-CN";const email=`feedback-${Date.now()}@lifewood.test`;const password="Feedback-fixture-password-2026";
   const ownerCsrf={"X-CSRF-TOKEN":(await(await owner.request.get("/api/auth/csrf")).json()).token};
-  const created=await owner.request.post("/api/admin/users",{headers:ownerCsrf,data:{displayName:"Feedback fixture",email,password,role:"customer",organizationId:me.organization?.id}});expect(created.ok()).toBeTruthy();
+  const created=await withRateLimitCooldown(() => owner.request.post("/api/admin/users",{headers:ownerCsrf,data:{displayName:"Feedback fixture",email,password,role:"customer",organizationId:me.organization?.id}}));expect(created.ok(), await created.text()).toBeTruthy();
   expect((await postAuthentication(page.request, "/api/auth/login",{headers:await csrf(),data:{email,password,rememberMe:false}})).ok()).toBeTruthy();
   await page.setViewportSize({width:390,height:844});await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/profile`);
   await page.getByRole("button",{name:zh?"问题反馈":"Report an issue",exact:true}).click();
