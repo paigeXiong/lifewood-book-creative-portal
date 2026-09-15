@@ -29,6 +29,17 @@ test("draft conflicts retain chosen input and fresh server fields in both langua
     const title=dialog.locator("fieldset").filter({has:page.locator("legend",{hasText:locale==="zh-CN"?"书名":"Book title"})});
     await expect(title).toContainText("My unsaved title");await expect(title).toContainText("Server title");
     await title.getByRole("radio").first().check();
+    // Cancelling a slow recheck must leave local text untouched and allow a new comparison.
+    let release!:()=>void,started!:()=>void;
+    const gate=new Promise<void>(resolve=>{release=resolve;}),requested=new Promise<void>(resolve=>{started=resolve;});
+    const readRoute=`**/api/projects/${draft.id}`;
+    await page.route(readRoute,async route=>{started();await gate;await route.abort("aborted");});
+    await dialog.getByRole("button",{name:locale==="zh-CN"?"应用并继续编辑":"Apply and continue",exact:true}).click();await requested;
+    const cancel=dialog.getByRole("button",{name:locale==="zh-CN"?"取消":"Cancel",exact:true});await expect(cancel).toBeEnabled();
+    await cancel.click();await expect(dialog).toHaveCount(0);await expect(page.locator("#title")).toHaveValue("My unsaved title");
+    release();await page.unroute(readRoute);
+    await page.locator(".save-feedback button").click();await expect(dialog).toBeVisible();
+    await title.getByRole("radio").first().check();
     // Another writer updates after the comparison opened. The first apply must only refresh.
     draft.book.authorName="Newest author";
     const again=await page.request.put(`/api/projects/${draft.id}/draft`,{headers:await headers(),data:{version:draft.version,project:draft.project,book:draft.book}});expect(again.ok()).toBeTruthy();draft=await again.json();

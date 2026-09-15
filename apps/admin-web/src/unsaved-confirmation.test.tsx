@@ -22,7 +22,7 @@ afterEach(() => {
   if(close) Object.defineProperty(HTMLDialogElement.prototype,"close",close); else Reflect.deleteProperty(HTMLDialogElement.prototype,"close");
 });
 for(const locale of ["zh-CN","en-US"] as const) {
-  it.each(["close","route"] as const)(`preserves the admin editor on cancel and confirms %s (${locale})`, async mode => {
+  it.each(["close","route","escape","backdrop"] as const)(`preserves the admin editor on cancel and confirms %s (${locale})`, async mode => {
     await i18n.changeLanguage(locale);
     const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
     function Editor({onClose}:{onClose:()=>void}) {
@@ -31,7 +31,7 @@ for(const locale of ["zh-CN","en-US"] as const) {
     }
     function Page(){const [open,setOpen]=useState(true);return open?<Editor onClose={()=>setOpen(false)}/>:<p>Closed</p>;}
     const router=createMemoryRouter([{path:"/home",element:<p>Home</p>},{path:"/edit",element:<Page/>}],{initialEntries:["/home","/edit"]});
-    const start=async()=>{await act(async()=>{if(mode==="close")c.querySelector<HTMLButtonElement>("[data-close]")!.click();else await router.navigate(-1);});};
+    const start=async()=>{await act(async()=>{if(mode==="close")c.querySelector<HTMLButtonElement>("[data-close]")!.click();else if(mode==="escape")document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));else if(mode==="backdrop")c.querySelector(".modal-backdrop")!.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));else await router.navigate(-1);});};
     try {
       await act(async()=>root.render(<RouterProvider router={router}/>));
       await act(async()=>c.querySelector("input")!.dispatchEvent(new Event("input",{bubbles:true})));
@@ -42,7 +42,7 @@ for(const locale of ["zh-CN","en-US"] as const) {
       await start();
       await act(async()=>document.querySelector<HTMLButtonElement>(".app-confirmation-actions button:last-child")!.click());
       expect(c.querySelector("input")).toBeNull();
-      expect(c.textContent).toContain(mode==="close"?"Closed":"Home");
+      expect(c.textContent).toContain(mode==="route"?"Home":"Closed");
     }finally{await act(async()=>root.unmount());router.dispose();c.remove();}
   });
 }
@@ -63,3 +63,19 @@ for(const busy of [false,true]) {
   }finally{await act(async()=>root.unmount());router.dispose();c.remove();}
  });
 }
+
+it("keeps a pending route confirmation effective when navigation is requested again",async()=>{
+ function Editor(){const {markDirty}=useUnsavedClose(()=>{},"Unsaved");return <input onInput={markDirty}/>;}
+ const router=createMemoryRouter([{path:"/edit",element:<Editor/>},{path:"/first",element:<p>First</p>},{path:"/second",element:<p>Second</p>}],{initialEntries:["/edit"]});
+ const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
+ try {
+  await act(async()=>root.render(<RouterProvider router={router}/>));
+  await act(async()=>c.querySelector("input")!.dispatchEvent(new Event("input",{bubbles:true})));
+  await act(async()=>{await router.navigate("/first");});
+  expect(document.querySelectorAll(".app-confirmation")).toHaveLength(1);
+  await act(async()=>{await router.navigate("/second");});
+  expect(document.querySelectorAll(".app-confirmation")).toHaveLength(1);
+  await act(async()=>document.querySelector<HTMLButtonElement>(".app-confirmation-actions button:last-child")!.click());
+  expect(router.state.location.pathname).toBe("/second");
+ } finally {await act(async()=>root.unmount());router.dispose();c.remove();}
+});

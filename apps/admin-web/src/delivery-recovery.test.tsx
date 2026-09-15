@@ -2,12 +2,17 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { adminService } from "@lifewood/api-client";
+import { adminService, ApiError } from "@lifewood/api-client";
 import type { FinalDelivery } from "@lifewood/domain";
 import { useDeliveryUpload } from "./useDeliveryUpload";
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const delivery = { id:"delivery",projectId:"project",fileName:"final.mp4",contentType:"video/mp4",sizeBytes:5,publishedAt:"2026-09-12T00:00:00Z" } as FinalDelivery;
 const file = () => new File(["video"],"final.mp4",{type:"video/mp4"});
+it("keeps a quota-rejected delivery retryable without selecting the video again",async()=>{
+ const post=vi.spyOn(adminService,"publishFinalDelivery").mockRejectedValueOnce(new ApiError({code:"storage.quota",messageKey:"errors.storage.quota",retryable:true})).mockResolvedValue(delivery);
+ vi.spyOn(adminService,"getDeliveryUpload").mockResolvedValue({recorded:false});const f=await fixture();const original=file();
+ try{await act(async()=>f.hook.run(original,"Ready"));expect(f.hook.outcome).toBe("retry");expect(f.hook.frozen).toBe(true);expect(post).toHaveBeenCalledOnce();await act(async()=>f.hook.run());expect(post.mock.calls[1].slice(0,3)).toEqual(["project",original,"Ready"]);expect(post.mock.calls[1][3]?.uploadId).toBe(post.mock.calls[0][3]?.uploadId);expect(f.complete).toHaveBeenCalledOnce();}finally{await f.dispose();}
+});
 afterEach(()=>vi.restoreAllMocks());
 async function fixture() {
  let hook!:ReturnType<typeof useDeliveryUpload>; const complete=vi.fn(); const root=createRoot(document.createElement("div"));

@@ -64,13 +64,34 @@ test("customer submission, requested changes and final delivery recover safely i
   await admin.unroute(postUrl);await admin.unroute(`**/api/admin/projects/${draft.id}/deliveries/uploads/*`);
   await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}`);
   const summary=page.locator(".project-progress-summary");await expect(summary).toBeVisible();await expect(summary.locator(".customer-delivery.ready")).toBeVisible();await expect(summary.locator("b")).toHaveCount(0);
-  const downloadLink=summary.locator('a[href*="/deliveries/"]');const fileUrl=await downloadLink.getAttribute("href");
-  const downloadEvent=page.waitForEvent("download");await downloadLink.click();const download=await downloadEvent;expect(await readFile((await download.path())!)).toEqual(bytes);
+  // Notification failures remain visible inside the active modal and retry reaches the project.
+  await page.goto(`http://127.0.0.1:5193/${locale}/notifications`);
+  await page.locator(".notification-list").getByRole("button",{name:zh?"通知详情":"Notification details",exact:true}).first().click();
+  const noticeDialog=page.getByRole("dialog");
+  const targetRoute="**/api/notifications/*/target?admin=false";
+  await page.route(targetRoute,route=>route.abort("failed"));
+  const openProject=noticeDialog.getByRole("button",{name:zh?"查看关联事项":"Open related item",exact:true});
+  await openProject.click();await expect(noticeDialog.getByRole("alert")).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(`/${locale}/notifications`);
+  await page.screenshot({path:`artifacts/notification-target-error-${locale}.png`});
+  await page.unroute(targetRoute);await openProject.click();
+  await expect(page).toHaveURL(url=>url.pathname===`/${locale}/tasks/${draft.id}`);
+  expect(new URL(page.url()).searchParams.get("notification")).toBeTruthy();
+  await expect(noticeDialog).toHaveCount(0);await expect(summary.locator(".customer-delivery.ready")).toBeVisible();
+  const downloadButton=summary.getByRole("button", {name:zh?"下载最终成品":"Download final video", exact:true});
+  const published=await(await page.request.get(`/api/projects/${draft.id}/deliveries`)).json();
+  const fileUrl=`/api/projects/${draft.id}/deliveries/${published[0].id}/file`;
+  await page.route(`**${fileUrl}`,route=>route.fulfill({status:404,contentType:"application/json",body:JSON.stringify({code:"file.not_found",messageKey:"errors.http.notFound",retryable:false})}));
+  await downloadButton.click();await expect(summary.getByRole("alert")).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(`/${locale}/tasks/${draft.id}`);
+  await page.unroute(`**${fileUrl}`);
+  const downloadEvent=page.waitForEvent("download");await downloadButton.click();const download=await downloadEvent;expect(await readFile((await download.path())!)).toEqual(bytes);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);await page.screenshot({path:`artifacts/project-progress-${locale}.png`});
+  if(process.env.LW_TRANSFER_STRESS==="1" && zh){const {stressTransfers}=await import("./transfer-stress");await stressTransfers(page,admin,draft.id);}
   await admin.locator(".delivery-admin button.danger-link").click();const confirm=admin.getByRole("dialog");await confirm.locator("button").last().click();
   await expect.poll(async()=>(await(await page.request.get(`/api/projects/${draft.id}/deliveries`)).json()).length).toBe(0);
   expect((await page.request.get(fileUrl!)).status()).toBe(404);
   await expect(summary.locator(".customer-delivery.pending")).toBeVisible({timeout:15000});
-  await expect(summary.locator('a[href*="/deliveries/"]')).toHaveCount(0);
+  await expect(downloadButton).toHaveCount(0);
  }}finally{await owner.close();}
 });

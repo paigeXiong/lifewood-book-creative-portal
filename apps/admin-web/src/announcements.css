@@ -7,3 +7,4 @@
 .notice-copy-fields label+label{margin-top:12px}
 
 .notice-duration{max-width:180px}
+.announcement-admin .page-toolbar form{min-width:0;max-width:420px}.announcement-admin .page-toolbar form input{min-width:0}

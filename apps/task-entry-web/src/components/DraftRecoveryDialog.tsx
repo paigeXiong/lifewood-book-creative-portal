@@ -55,7 +55,7 @@ export function DraftRecoveryDialog({ recovery, options, voices }: {
     {copyState && <p role="status">{copyState}</p>}
     <footer>
       {comparison.fields.length > 0 && <button className="button button-ghost" type="button" onClick={() => void copy()}>{t("saveRecovery.copyLocal")}</button>}
-      <div><button ref={cancelRef} className="button button-secondary" type="button" disabled={recovery.loading} onClick={recovery.close}>{t("common.cancel")}</button>
+      <div><button ref={cancelRef} className="button button-secondary" type="button" onClick={recovery.close}>{t("common.cancel")}</button>
       <button className="button button-primary" type="button" disabled={recovery.loading} onClick={() => void recovery.accept(selected)}>{t(recovery.loading ? "common.loading" : "saveRecovery.apply")}</button></div>
     </footer>
   </dialog>;

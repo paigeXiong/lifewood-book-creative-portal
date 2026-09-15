@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useExportDownload } from "./useExportDownload";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router-dom";
@@ -21,10 +22,10 @@ export function AuditPage({locale,userId}:{locale:SupportedLocale;userId:string}
  const {t}=useTranslation(); const [params,setParams]=useSearchParams();
  const search=params.get("q")??"",actionId=params.get("action")??"",from=params.get("from")??"",to=params.get("to")??"";
  const raw=Number(params.get("page")); const page=Number.isSafeInteger(raw)&&raw>0?raw:1;
- const [input,setInput]=useState(search),[detail,setDetail]=useState<AuditEvent>(),[exporting,setExporting]=useState(false),[exportError,setExportError]=useState<unknown>();
- const controller=useRef<AbortController | undefined>(undefined);
+ const [input,setInput]=useState(search),[detail,setDetail]=useState<AuditEvent>();
+ const downloadState=useExportDownload(JSON.stringify([userId,locale,search,actionId,from,to]));
+ const {pending:exporting,error:exportError}=downloadState;
  useEffect(()=>{setInput(search);setDetail(undefined);},[search,actionId,from,to,page]);
- useEffect(()=>()=>controller.current?.abort(),[]);
  const filters={search,actionId,from:auditDayBoundary(from,false)??"",to:auditDayBoundary(to,true)??""};
  const actions=useQuery({queryKey:["admin-audit-actions",locale],queryFn:()=>adminService.listAuditActions(locale)});
  const events=useQuery({queryKey:["admin-audit-events",userId,filters,page],queryFn:()=>adminService.listAuditEvents({...filters,page,pageSize:30})});
@@ -33,7 +34,7 @@ export function AuditPage({locale,userId}:{locale:SupportedLocale;userId:string}
  const date=(value:string)=>new Intl.DateTimeFormat(locale,{dateStyle:"medium",timeStyle:"short"}).format(new Date(value));
  const update=(key:string,value:string)=>{const next=new URLSearchParams(params);value?next.set(key,value):next.delete(key);if(key!=="page")next.delete("page");setParams(next);};
  const pages=Math.max(1,Math.ceil((events.data?.total??0)/30));
- async function download(){const abort=new AbortController();controller.current=abort;setExporting(true);setExportError(undefined);try{const blob=await adminService.exportAuditEvents(filters,locale,abort.signal);if(abort.signal.aborted)return;const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="audit.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}catch(error){if(!abort.signal.aborted)setExportError(error);}finally{if(!abort.signal.aborted)setExporting(false);}}
+ const download=()=>downloadState.run(signal=>adminService.exportAuditEvents(filters,locale,signal),"audit.csv");
  const value=(field:string,text?:string)=>text==null?t("auditTools.noValue"):["enabled","allowMute","allowsCustomValue","removed"].includes(field)?t(["1","True","true"].includes(text)?"auditTools.yes":"auditTools.no"):["level","audience"].includes(field)?t("auditTools.values."+text,{defaultValue:t("runtimeHealth.unknown")}):text;
  return <main className="content audit-content">
   <div className="audit-tools-toolbar">
@@ -41,7 +42,8 @@ export function AuditPage({locale,userId}:{locale:SupportedLocale;userId:string}
    <select aria-label={t("admin.audit.actionFilter")} value={actionId} onChange={e=>update("action",e.target.value)}><option value="">{t("admin.audit.allActions")}</option>{actions.data?.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select>
    <label>{t("admin.audit.from")}<input type="date" value={from} max={to||undefined} onChange={e=>update("from",e.target.value)}/></label><label>{t("admin.audit.to")}<input type="date" value={to} min={from||undefined} onChange={e=>update("to",e.target.value)}/></label>
    <button onClick={()=>void events.refetch()} disabled={events.isFetching}>{t("auditTools.refresh")}</button>
-   <button onClick={()=>void download()} disabled={exporting||!events.data?.total||events.isFetching}>{t(exporting?"common.loading":"auditTools.export")}</button>
+   <button onClick={()=>void download()} disabled={exporting||!events.data?.total||events.isFetching||events.isError}>{t(exporting?"common.loading":"auditTools.export")}</button>
+   {exporting&&<button onClick={downloadState.cancel}>{t("common.cancel")}</button>}
   </div>
   {exportError!=null&&<p role="alert">{localizedApiError(exportError,t)}</p>}
   {events.isPending?<p role="status">{t("common.loading")}</p>:events.error?<p role="alert">{localizedApiError(events.error,t)}<button onClick={()=>void events.refetch()}>{t("common.retry")}</button></p>:<>

@@ -218,3 +218,34 @@ describe("API client", () => {
     expect(body.get("file")).toBe(file);
   });
 });
+
+
+describe("delivery download transport", () => {
+  it("downloads through the configured client with locale, cancellation and no caching", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("video", {headers:{"Content-Type":"video/mp4"}}));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const blob = await projectService.downloadDelivery("project/id", "file/id", "en-US", controller.signal);
+    expect(blob.size).toBe(5);
+    expect(blob.type).toBe("video/mp4");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/projects/project%2Fid/deliveries/file%2Fid/file");
+    expect(init.signal).toBe(controller.signal);
+    expect(init.cache).toBe("no-store");
+    expect(init.credentials).toBe("include");
+    expect(new Headers(init.headers).get("Accept-Language")).toBe("en-US");
+    expect(new Headers(init.headers).get("Accept")).toBe("*/*");
+  });
+
+  it("surfaces an interrupted response body as a retryable network failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok:true, status:200, blob:vi.fn().mockRejectedValue(new TypeError("terminated"))}));
+    await expect(projectService.downloadDelivery("project", "file", "zh-CN", new AbortController().signal)).rejects.toMatchObject({details:{code:"network.unavailable",retryable:true}});
+  });
+
+  it("preserves cancellation and server permission errors instead of creating a download", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ok:true, status:200, blob:vi.fn().mockRejectedValue(new DOMException("cancelled", "AbortError"))}));
+    await expect(projectService.downloadDelivery("project", "file", "zh-CN", new AbortController().signal)).rejects.toMatchObject({name:"AbortError"});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({code:"auth.forbidden",messageKey:"errors.auth.forbidden",retryable:false}),{status:403})));
+    await expect(projectService.downloadDelivery("project", "file", "zh-CN", new AbortController().signal)).rejects.toMatchObject({details:{code:"auth.forbidden",retryable:false}});
+  });
+});

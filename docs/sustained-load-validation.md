@@ -13,6 +13,10 @@ npm run bench:sustained -- artifacts/sustained-dotnet/bin/Lifewood.PlatformApi/r
 
 默认 180 秒。可传 `--seconds=10` 执行冒烟，允许 10–1800 秒；该参数只适用于持续模式。所有数据和日志位于独立的 `artifacts/api-benchmark/<UUID>`，固定测试端口 5097，不接受现有平台 URL 或业务数据目录。完整隔离规则见 [混合读写验证](./mixed-load-validation.md)。
 
+可选 `--idle-seconds=120` 在所有读写工作结束后、故障检查与重启前，对同一后端进程增加无请求观察，默认关闭。该参数仅用于持续模式；允许 0（关闭）或 10–600 秒。不会触发 GC、清缓存或重启来制造内存回落。
+
+启用空闲观察时，`resources.summary` 覆盖负载与空闲合计，不能直接作为纯负载均值。`report.idle` 记录实际起止时间及资源样本的起始索引、结束索引（不含结束索引）。分析时分别切片，舍弃相位边界邻近样本；空闲 CPU 只用空闲切片内部的累计 CPU 差值。请求延迟和 `mixed.durationMs` 仍仅覆盖负载阶段，不把等待空闲混入请求延迟。
+
 ## 工作负载
 
 背景为 10,000 条较重的合成 JSON 项目，限制与真实性说明沿用混合验证文档。两个客户各创建两个通过真实校验的项目，读取中英文选项并保存双语内容。
@@ -91,3 +95,127 @@ CPU 由相邻样本累计 CPU 时间差除以实际采样间隔计算：`100%` �
 - 两轮共同混合负载脚本 SHA-256：`b1550d3c8207a3bc78ef6fd2003db083937a51d2c57ff0ab3833aab258b72db0`。
 - 两轮共同资源采样脚本 SHA-256：`facdba84cdfb6cb95cc4ba815eea3690da4d6c10ab903661cc1cc2dc9d28bed4`。
 - 后端 DLL SHA-256：`a43d47907bd199a69509ca37e9827d4a501b261e13729f9b3e798b9267adcd9d`。
+
+## 2026-09-15：10 分钟持续回归
+
+对 v0.3.14 提交 `936e72ab583fa7e37f8abede2b66c3e706140100` 的服务端独立构建后执行 600 秒负载。工作区存在前一轮文档修订，因此报告的 `workingTreeDirty` 为 true；业务代码与上述提交一致，三个压测脚本哈希与 9 月 14 日记录相同。没有与本轮并行运行其他构建或测试，但本机并非专用压测机。
+
+```powershell
+dotnet build services/platform-api/Lifewood.PlatformApi.csproj -c Release --artifacts-path C:/Aigc/artifacts/sustained-20260915-dotnet --nologo
+node scripts/benchmark-api.mjs artifacts/sustained-20260915-dotnet/bin/Lifewood.PlatformApi/release/Lifewood.BookPortal.Server.dll --sustained --seconds=600
+```
+
+环境：Windows 11 / Ryzen 5 4600H（12 逻辑核）、Node v24.16.0、.NET 10。运行的是 Release DLL，使用托管运行时，不是 Native AOT 可执行文件。构建零警告、零错误；压测退出码为 0。
+
+### 请求与数据完整性
+
+- 10,000 条合成背景记录，四条写入流程、四条读取流程，持续阶段耗时 600.20 秒。
+- 每个项目完成 108 次保存（8 次初始 + 100 次持续）和 11 次上传重放，共 432 次保存、44 次重放；首次真实文件上传与最终提交各 4 次。
+- 总计 21,850 条计时业务请求样本（含准备和故障检查），非预期失败 0，HTTP 429 为 0。预期拒绝为两个 409 和两个 404；获取 CSRF 等辅助请求不在该样本数中。
+- 同版本写竞争、旧版本上传、跨客户访问、上传和提交幂等、数据库完整性均通过。停止再启动后，项目内容和四个附件 SHA-256 一致，未出现重复或孤立上传文件。
+
+| 操作 | 持续阶段样本数 | P95（ms） | 最大值（ms） |
+| --- | ---: | ---: | ---: |
+| 客户列表 | 10950 | 5.47 | 35.20 |
+| 客户统计 | 5427 | 7.37 | 34.57 |
+| 管理员列表 | 4951 | 17.05 | 43.75 |
+| 草稿保存 | 432 | 16.67 | 35.31 |
+| 图片上传重放 | 44 | 31.58 | 36.01 |
+| 首次上传 | 4 | 80.65 | 80.65 |
+| 首次提交 | 4 | 63.39 | 63.39 |
+
+首次上传与提交仅各四个样本，其 P95 等于最大值，不据此判断稳定尾延迟。延迟为本机回环 HTTP 数据，不代表公网或浏览器体验。
+
+### 资源与分段观察
+
+资源采样 593 次，覆盖 600.01 秒。平均 CPU 为单逻辑核口径 22.74%、整机口径 1.90%；单逻辑核口径峰值 110.11%。
+
+私有内存首样本 42.71 MiB、末样本 62.81 MiB、峰值 84.24 MiB；工作集首样本 93.85 MiB、末样本 122.31 MiB、峰值 142.23 MiB。未采集托管堆、GC 或磁盘 I/O。
+
+| 时间段 | 保存 P95（ms） | 管理员列表 P95（ms） | 平均私有内存（MiB） | 平均句柄数 |
+| --- | ---: | ---: | ---: | ---: |
+| 0–120 秒 | 20.60 | 17.62 | 57.02 | 529.6 |
+| 120–240 秒 | 16.25 | 16.99 | 57.73 | 535.4 |
+| 240–360 秒 | 16.55 | 17.05 | 58.34 | 542.2 |
+| 360–480 秒 | 16.37 | 16.83 | 58.89 | 528.6 |
+| 480–600 秒 | 16.43 | 16.88 | 62.70 | 513.4 |
+
+请求分段按持续阶段请求开始时间，资源分段按采样器启动时间，两个起点有轻微差异。后半程保存与列表延迟未明显恶化；分段平均私有内存从 57.02 MiB 升至 62.70 MiB，句柄数未持续上升。本轮只确认该负载下的请求和完整性断言通过；不能据此断言没有泄漏。更长时长、GC/堆与 I/O 采样、持续新增文件仍待独立验证。
+
+本轮没有增加客户数据概览接口负载，也没有模拟大文件上传、真实断网或写入中途崩溃。与前一天 180 秒结果只能作描述性对照，不能将不同日期和构建的数值变化直接归因于性能优化。
+
+### 记录与复现
+
+- 原始请求及逐秒资源：`artifacts/api-benchmark/83138e6c-22dd-48fd-b15e-7203b264df5f/report.json`、同目录 `resources.json`。
+- 构建与执行日志：`artifacts/sustained-20260915-build.log`、`artifacts/sustained-20260915-run.log`。
+- 后端 DLL SHA-256：`c26cbe2ab773f4dacdc1edcb966d762e76f85f710668fc899828f9898538dbe1`。
+- 入口脚本 SHA-256：`57c000705b476dfa64df7c41a0ce7fdf38cb51aace1f1979100822796b1afbdd`。
+- 混合负载脚本 SHA-256：`b1550d3c8207a3bc78ef6fd2003db083937a51d2c57ff0ab3833aab258b72db0`。
+- 资源采样脚本 SHA-256：`facdba84cdfb6cb95cc4ba815eea3690da4d6c10ab903661cc1cc2dc9d28bed4`。
+
+The 600-second bilingual regression passed all request, isolation, idempotency and restart-integrity checks with no unexpected failures or HTTP 429 responses. Private-memory averages increased across intervals, so longer runs and managed-heap/GC diagnostics remain open. This managed Release DLL loopback test does not certify Native AOT performance, production capacity or absence of leaks.
+
+## 后续 GC 诊断
+
+2026-09-15 已补充同负载的 600 秒运行时计数器采集：两次 Gen 2 回收后未见该代堆持续增长，POH 后约四分钟稳定；对象类型与保留路径仍未确定。方法、数据和限制见[GC 与托管堆诊断](./gc-diagnostic-2026-09-15.md)。
+
+## 2026-09-15：20 分钟负载与 2 分钟空闲
+
+沿用上述 SHA-256 为 `c26cbe2ab773f4dacdc1edcb966d762e76f85f710668fc899828f9898538dbe1` 的托管 Release DLL，将持续阶段延长至 1200 秒，并在所有请求工作结束后观察同一进程 120 秒。只新增测试脚本的空闲观察能力，没有修改生产代码、限流或 GC 设置。用户预览服务 5077 / 5173 / 5174 全程保持运行，未并行执行其他性能测试或构建；本机仍不是专用压测环境。
+
+```powershell
+node scripts/benchmark-api.mjs artifacts/sustained-20260915-dotnet/bin/Lifewood.PlatformApi/release/Lifewood.BookPortal.Server.dll --sustained --seconds=1200 --idle-seconds=120
+```
+
+### 操作与完整性
+
+- 实际负载 1200.22 秒，空闲 120.07 秒；命令以 0 退出，业务与资源报告均通过。
+- 一万条较重合成背景记录，四个有效项目、四条读取流程。每项目保存 208 次、上传重放 21 次，共 832 次保存和 84 次重放；首次上传和提交各 4 次。
+- 负载阶段记录 43,575 次业务操作；加上准备、验证和冲突检查，共记录 43,601 次。两者均不包含 CSRF 等辅助调用，不能称为所有 HTTP 请求总数。非预期失败 0，429 为 0；预期拒绝仍为两个 409 和两个 404。
+- 同版本保存竞争、旧版本上传拒绝、跨客户隔离、上传和提交幂等、数据库完整性均通过。空闲之后停止再启动隔离服务，四个项目完整响应与附件 SHA-256 一致，磁盘仍恰好四个上传文件。
+
+| 负载阶段操作 | 样本数 | P95（ms） | 最大值（ms） |
+| --- | ---: | ---: | ---: |
+| 客户列表 | 21936 | 5.82 | 60.37 |
+| 客户统计 | 10898 | 7.90 | 61.81 |
+| 管理员列表 | 9805 | 19.21 | 115.68 |
+| 草稿保存 | 832 | 16.62 | 41.89 |
+| 图片上传重放 | 84 | 34.97 | 49.46 |
+| 首次上传 | 4 | 105.49 | 105.49 |
+| 首次提交 | 4 | 83.03 | 83.03 |
+
+首次上传与提交只有四个样本，不据此判断稳定尾延迟。
+
+### 分阶段资源
+
+资源报告共 1303 个样本，覆盖 1319.55 秒，无采样错误。统计拆分负载和空闲，并舍弃边界附近三个样本：负载使用 1184 个，空闲使用 116 个。最大相邻间隔分别约 1.107 和 1.022 秒；没有强制回收、清理缓存或用重启制造空闲回落。
+
+| 指标 | 负载阶段 | 空闲阶段 |
+| --- | ---: | ---: |
+| 私有内存首 / 末 / 均值 / 峰值（MiB） | 42.50 / 53.91 / 60.60 / 85.25 | 53.27 / 49.71 / 49.61 / 53.27 |
+| 工作集首 / 末 / 峰值（MiB） | 94.45 / 116.96 / 144.46 | 115.59 / 113.29 / 115.64 |
+| 平均 CPU（单逻辑核=100%） | 22.91% | 0.33% |
+| 句柄首 / 末 / 均值 | 484 / 528 / 538.10 | 549 / 544 / 542.04 |
+
+| 负载时间段 | 保存 P95（ms） | 管理员列表 P95（ms） | 平均私有内存（MiB） | 平均句柄数 |
+| --- | ---: | ---: | ---: | ---: |
+| 0–5 分钟 | 18.93 | 19.38 | 60.87 | 554.36 |
+| 5–10 分钟 | 16.52 | 18.15 | 61.78 | 532.66 |
+| 10–15 分钟 | 16.59 | 17.63 | 58.89 | 534.05 |
+| 15–20 分钟 | 12.81 | 21.68 | 60.86 | 531.31 |
+
+分段私有内存和句柄均值没有持续上升，停止请求后私有内存自然回落到约 50 MiB。但管理员列表末段 P95 升至 21.68 ms，不能将业务校验通过解释为尾延迟完全不变。请求与资源分段起点略有差异；本轮不将跨轮差异归因于代码优化，也不据此证明不存在泄漏。
+
+合成背景数据库主文件为 176,373,760 字节，结束并完成重启检查后为 176,386,048 字节；四个附件总计 4,197,904 字节。这只是固定项目与同一文件重放的落盘检查，不包括持续新增文件、大文件流量或完整磁盘 I/O 计数，不能外推生产磁盘增长率或最大容量。真实手机、生产代理、Native AOT、崩溃中断和对象类型归因仍需独立验证。
+
+### 复现与留存
+
+- 正式目录：`artifacts/api-benchmark/df476c9a-3083-4d05-a416-8ee298a1cf96`，包含请求 `report.json`、资源 `resources.json`、分段 `idle-analysis.json`、运行脚本副本和分析脚本。
+- 正式入口脚本 SHA-256：`f51b646184abe4a5db5a4b9dbc25363720703500d493eb33a1d5eacc4bdab829`；混合负载脚本：`c355e0ee2f89491b44ddaeee12c2feee24bae7a981739604272ebff7da5ba4e3`；资源脚本保持前述哈希。
+- 正式运行开始后，入口参数的正空闲时长下限由 1 秒修正为 10 秒，解决 1 Hz 采样在一秒窗口内不足的误报。120 秒正式路径没有变化，原运行脚本已单独保留；当前脚本额外通过五组非法参数拒绝检查及 10 秒负载 + 10 秒空闲完整回归。
+- 初次短程验证：`artifacts/api-benchmark/1eba9c4e-2931-47cb-8746-b68263bf2096`；参数修正后回归：`artifacts/api-benchmark/0505974c-b10c-438a-a0a9-aab17dfdb0f9`。短程回归不用于性能对照。
+- 最终静态复核确认参数、同进程观察、清理顺序、分段切片及单位计算；业务预览服务在验收后仍正常响应，测试端口单独释放。
+
+The 1200-second load plus 120-second same-process idle observation passed bilingual isolation, conflict, idempotency and restart-integrity checks. There were 43,575 recorded load operations and no unexpected failures or HTTP 429 responses. Load private-memory averages did not increase monotonically, and idle memory fell to about 50 MiB; this is bounded evidence, not proof of leak freedom or maximum capacity. Customer and admin preview services remained running.
+
+后续已新增[持续附件写入与清理专项](./attachment-growth-validation.md)：使用 `--file-growth`，覆盖有限新增图片、类别满额拒绝、删除补传和 36 个最终文件的元数据及哈希校验。上文历史模式仍以同一文件重放为主，不能与新场景混为一谈。

@@ -3,7 +3,7 @@ import { useConfigRemoval } from "./useConfigRemoval";
 import { useConfirm } from "./useConfirm";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { adminService, localizedApiError, optionService } from "@lifewood/api-client";
+import { adminService, ApiError, captureAccountGuard, localizedApiError, optionService } from "@lifewood/api-client";
 import type { AdminVoiceReference, SupportedLocale } from "@lifewood/domain";
 import { useTranslation } from "react-i18next";
 import { ModalFrame } from "./ModalFrame";
@@ -49,8 +49,8 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
     },
   });
   const uploadSample = useMutation({
-    mutationFn: ({ id, file }: { id: string; file: File }) => adminService.uploadVoiceSample(id, file),
-    onSuccess: async () => { showAdminToast(t("admin.feedback.audioUploaded")); await refreshVoices(); },
+    mutationFn: ({ id, file, guard }: { id: string; file: File; guard: () => void }) => { guard(); return adminService.uploadVoiceSample(id, file); },
+    onSuccess: async () => { showAdminToast(t("admin.feedback.audioUploaded")); await refreshVoices(); uploadSample.reset(); },
   });
   const removeSample = useMutation({
     mutationFn: adminService.removeVoiceSample,
@@ -59,19 +59,28 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
   const removal = useConfigRemoval(adminService.removeVoiceReference, refreshVoices);
   const audioBusy = confirmingAudio || removal.busy || uploadSample.isPending || removeSample.isPending;
   const audioMutationError = uploadSample.error || removeSample.error;
+  const failedUpload = uploadSample.isError ? uploadSample.variables : undefined;
+  const retryAudio = failedUpload && (!(uploadSample.error instanceof ApiError) || uploadSample.error.details.retryable);
+  const runUpload = async (value: { id: string; file: File; guard: () => void }) => {
+    if (audioLock.current || audioBusy) return;
+    audioLock.current = true;
+    setAudioError(undefined);
+    try { await uploadSample.mutateAsync(value); }
+    catch { /* Keep the selected file and localized error for an explicit retry. */ }
+    finally { audioLock.current = false; }
+  };
   const handleAudio = (voice: AdminVoiceReference, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
+    if (!file || audioLock.current || audioBusy) return;
     const extension = file.name.split(".").pop()?.toLowerCase();
-    if (file.size > 20_000_000 || !["wav", "mp3"].includes(extension ?? "")) {
+    if (file.size === 0 || file.size > 20_000_000 || !["wav", "mp3"].includes(extension ?? "")) {
       setAudioError(t("admin.voices.audioInvalid"));
       return;
     }
+    uploadSample.reset(); removeSample.reset();
     setAudioError(undefined);
-    uploadSample.reset();
-    removeSample.reset();
-    uploadSample.mutate({ id: voice.id, file });
+    void runUpload({ id: voice.id, file, guard: captureAccountGuard() });
   };
 
   const handleRemoveAudio = async (voice: AdminVoiceReference) => {
@@ -95,6 +104,11 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
     </section>
     {voices.isError && <div className="message error" role="alert">{localizedApiError(voices.error, t)}</div>}
     {(audioError || audioMutationError) && <div className="message error" role="alert" aria-live="polite">{audioError ?? localizedApiError(audioMutationError, t)}</div>}
+    {failedUpload && <div className="voice-upload-recovery">
+      <span>{t("admin.voices.pendingAudio", { name: voices.data?.find(voice=>voice.id===failedUpload.id)?.[locale === "zh-CN" ? "nameZhCn" : "nameEnUs"] ?? failedUpload.id, file: failedUpload.file.name })}</span>
+      {retryAudio && <button type="button" disabled={audioBusy} onClick={()=>void runUpload(failedUpload)}>{t("admin.voices.retryUpload")}</button>}
+      <button type="button" disabled={audioBusy} onClick={()=>{uploadSample.reset();setAudioError(undefined);}}>{t("common.cancel")}</button>
+    </div>}
     {removal.error && <div className="message error" role="alert">{localizedApiError(removal.error, t)}</div>}
     <section className="table-card config-removable">
       <table>

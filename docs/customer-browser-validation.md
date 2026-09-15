@@ -38,3 +38,34 @@ Refresh failures preserve cached content and unsaved profile edits only for retr
 详情页压缩进度区和封面摘要，封面可打开原图；提交资料改为浅层级的标签/值排版，保留全部字段。左侧分组导航在桌面随页面滚动保持可见，窄屏重排为按钮组；锚点支持键盘焦点，并为顶部导航预留滚动距离。默认用现有 SVG 图标替代分组编号，中英文入口均已补齐。
 
 客户生产构建及 57 项关联回归通过。隔离浏览器预览使用示例项目数据和服务端双语选项目录，检查 1440、768、390、320 像素的溢出、分组定位与焦点；另检查桌面与 320 像素下有成品、长文件名的布局。已实际查看中文桌面、英文最窄屏与成品状态截图。截图和预览脚本位于 `artifacts/detail-redesign-*.png`、`artifacts/preview-detail-layout.mjs`，没有修改真实项目记录。
+
+
+## 客户成品下载恢复（2026-09-15）
+
+成品下载通过现有鉴权 API 客户端获取文件，成功后再交给浏览器保存。文件已撤回、登录失效、权限错误和网络中断显示为页内的中英文错误，不会把项目详情替换为接口响应。请求携带账号校验、语言和取消信号，禁止缓存；下载中阻止重复请求并提供取消操作，离开页面、切换项目/语言或刷新后发现文件不可用时中止未完成请求。失败后可再次点击原下载按钮重试。浏览器保存仍使用服务端记录的文件名，旧请求的迟到结果不能在取消后触发保存。
+
+验证：客户前端 323 项、管理端 95 项测试通过；客户生产构建通过。`tests/e2e/delivery-workflow.spec.ts` 在隔离数据库中跑通中英文提交、退回修改、发布成品、模拟下载 404、恢复下载及撤回流程（1 项用例包含两种语言）。恢复后的下载与上传字节一致，错误期间保持项目路由；英文窄屏截图已检查，未出现横向溢出。独立代码审查无严重/重要发现。
+
+原有 Blob 路径会在响应体接收完成后交给浏览器下载管理器。本机 Chromium 的 [500 MB 上限文件、取消与连接中断恢复专项](./large-transfer-validation.md)已通过双语大小及 SHA-256 校验；历史非持久上下文的两轮[内存诊断](./transfer-memory-validation.md)观测到约 1.3 GiB 的私有提交峰值和短时回落差异。后续新增[大文件流式保存](./streamed-delivery-download.md)：文件达到 50 MB 且安全上下文支持保存选择器时，直接按块写入所选文件；否则保留 Blob 路径。真实移动设备及持续弱网仍未验收，500 MB 服务端限制保持不变。
+
+Delivery failures stay on the project page with localized feedback, retry and cancellation. Unit and integration checks passed in both languages, including exact downloaded bytes and revocation. The subsequent streaming path writes deliveries of at least 50 MB to a user-selected file when supported; other cases retain Blob downloads. Historical nonpersistent Chromium diagnostics recorded peaks around 1.3 GiB, which must not be directly compared with the newer disk-profile results. Real mobile networks, native save dialogs and low-memory devices remain separate acceptance work.
+
+
+## 通知跳转异常恢复（2026-09-15）
+
+通知详情中的关联事项跳转失败、标记已读失败，会在当前弹窗显示本地化错误，避免被模态遮罩挡住。请求期间禁用重复打开，失败后可使用原入口重试。关闭详情、离开路由、切换语言或缓存账号时取消未完成请求；跨标签页触发 `lw-account-changed` 也立即取消，即使旧账号缓存尚未刷新。迟到响应不再触发后续标记已读或导航。未保存表单的离开确认继续生效。
+
+新增 15 项交互测试覆盖两种语言、客户和管理员、目标查询失败、已读请求失败、重复点击、关闭详情、账号变化、跨标签页事件以及取消未保存确认。连同通知筛选、通知详情恢复、多选、表单焦点、填报恢复和 API 回归，共 108 项关联检查通过；两端生产构建通过。独立复审无剩余问题。
+
+隔离环境的交付端到端用例新增「通知详情 → 模拟断网 → 弹窗内错误 → 重试进入对应项目」，中英文完整流程通过（单用例覆盖两种语言，53.5 秒）。保留服务端返回的通知来源参数；同时重新验证下载内容一致及撤回。实际查看 `artifacts/notification-target-error-zh-CN.png` 和 `artifacts/notification-target-error-en-US.png`，中文桌面与英文窄屏错误均在弹窗内可见。本轮未发现表单报错定位的新缺陷，未修改其实现。
+
+Notification navigation now reports localized errors within the active dialog and ignores cancelled or stale requests, including cross-tab account changes. Both locale/role combinations, unsaved-form cancellation, production builds and the bilingual browser workflow passed. Real-device and assistive-technology acceptance remains separate.
+
+
+## 草稿恢复取消（2026-09-15）
+
+恢复对比的「应用并继续编辑」会先再次读取服务器版本。本轮修复该读取卡住时无法取消的问题：按钮和 Esc 均可取消等待、关闭对比，并保留当前表单输入。读取请求带取消信号；取消后重新发起对比时，旧响应不会应用内容或清除新请求的加载状态。切换项目/语言、卸载及跨标签页账号变更也取消未完成的读取。既有版本、输入快照及可恢复字段校验保留。
+
+验证：9 项草稿恢复测试通过（新增 4 项，含中英文等待期间按钮/Esc 取消、取消后立即重试及账号事件）；连同填报、文件选择与上传进度，共 69 项关联检查通过。客户生产构建通过。隔离端到端用例 `tests/e2e/draft-recovery.spec.ts` 中英文通过（19.2 秒），覆盖挂起读取、取消、保留原文、重新对比和保存最终合并内容；已查看英文窄屏对比截图。独立代码审查无剩余问题。本轮对上传队列进行了关联回归，未新增上传业务能力。
+
+Draft conflict recovery can now be cancelled while its server recheck is pending. Cancellation preserves form input and suppresses late responses. Both locales, button/Esc cancellation, account-change cleanup, existing upload/form regression checks, production build and bilingual browser recovery passed.

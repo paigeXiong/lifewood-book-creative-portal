@@ -26,6 +26,7 @@ meta:
 - 预设角色和图片、配置引用保护与音色试听管理
 - 公告发布、定向收件、关闭记忆和个人历史
 - 已发布：公告公示天数、单份内容及完整站内通知（见 [通知说明](./notifications.md)）
+- v0.3.14 已发布：客户数据概览、账号语言跳转、详情布局、通知筛选和异常恢复，见[发布说明](./releases/v0.3.14.md)。
 - v0.3.13 已发布：平台反馈与通知回复、客户上传及提交恢复、逐字段草稿恢复（见 [发布说明](./releases/v0.3.13.md)）
 
 平台不依赖外部登录或测试 API。正式发布物不包含默认账号、假头像、Mock Token 或测试控制台。
@@ -72,6 +73,8 @@ scripts/                测试、发布、安装和备份脚本
 ```text
 /:locale/login
 /:locale/tasks
+/:locale/overview
+/:locale/profile
 /:locale/tasks/new/project
 /:locale/tasks/:taskId/edit/project
 /:locale/tasks/:taskId/edit/characters
@@ -122,8 +125,8 @@ npm run smoke:aot
 按以下顺序处理后续工作：
 
 1. 保持客户登记、管理员跟进和最终交付链路稳定
-2. 补充真实 Linux 安装、覆盖升级和故障回滚演练
+2. 在实际部署环境完成安装、备份和恢复验收；Linux 两种架构的 CI 安装与失败回滚已通过，不能替代目标环境验收
 3. 根据业务确认结果调整组织共享、授权和大文件上传
 4. 继续修复移动端、键盘操作、错误恢复和双语布局问题
 
-完整上线条件见 [发布就绪检查](./release-readiness.md)。业务开放问题见 [产品需求](./product-requirements.md#21-待确认事项)。
+集中待办、已验证范围与业务决策见[剩余工作与待确认事项](./remaining-work.md)。完整上线条件见 [发布就绪检查](./release-readiness.md)。业务开放问题见 [产品需求](./product-requirements.md#21-待确认事项)。

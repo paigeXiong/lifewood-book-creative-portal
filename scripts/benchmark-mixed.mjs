@@ -6,20 +6,21 @@ import {writeFileSync, readdirSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {startResourceSampler} from './benchmark-resources.mjs';
+import {createFileGrowth} from './benchmark-file-growth.mjs';
 
 const hash=data=>createHash('sha256').update(data).digest('hex');
 const delay=ms=>new Promise(done=>setTimeout(done,ms));
 const round=n=>Math.round(n*100)/100;
-function screenshot() {
+export function screenshot(seed=123456789) {
   // Deterministic, valid RGBA PNG with about 1 MiB of incompressible image data.
   const crc=bytes=>{let n=0xffffffff;for(const byte of bytes){n^=byte;for(let i=0;i<8;i++)n=(n>>>1)^((n&1)?0xedb88320:0);}return (n^0xffffffff)>>>0;};
   const chunk=(type,data)=>{const name=Buffer.from(type),size=Buffer.alloc(4),checksum=Buffer.alloc(4);size.writeUInt32BE(data.length);checksum.writeUInt32BE(crc(Buffer.concat([name,data])));return Buffer.concat([size,name,data,checksum]);};
   const header=Buffer.alloc(13);header.writeUInt32BE(512,0);header.writeUInt32BE(512,4);header[8]=8;header[9]=6;
-  const raw=Buffer.alloc(512*(512*4+1));let state=123456789;
+  const raw=Buffer.alloc(512*(512*4+1));let state=seed;
   for(let y=0;y<512;y++)for(let x=1;x<=512*4;x++){state^=state<<13;state^=state>>>17;state^=state<<5;raw[y*(512*4+1)+x]=state&255;}
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);
 }
-export async function runMixed({owner,customer,other,root,report,reportPath,databaseBytes,start,stop,serverPid,sustainedSeconds=0}) {
+export async function runMixed({owner,customer,other,root,report,reportPath,databaseBytes,start,stop,serverPid,sustainedSeconds=0,idleSeconds=0,fileGrowth=false}) {
   delete report.samplesPerScenario;delete report.warmups;
   report.scope='Four real project write flows plus four read workers over 10,000 synthetic background projects. Default limits retained. Short loopback workload, not production capacity.';
   const samples=[], checks=[], png=screenshot();
@@ -31,8 +32,9 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
   const persist=()=>writeFileSync(reportPath,JSON.stringify(report,null,2));
   const recordCheck=description=>{checks.push(description);persist();};
   persist();
-  async function send(operation,client,path,method='GET',body,expected=[200]) {
+  async function send(operation,client,path,method='GET',body,expected=[200],locale) {
     const headers={};
+    if(locale)headers['Accept-Language']=locale;
     if(method!=='GET') headers['X-CSRF-TOKEN']=(await client.api('/api/auth/csrf')).token;
     if(body!==undefined && !(body instanceof FormData)) {headers['Content-Type']='application/json';body=JSON.stringify(body);}
     const started=performance.now();
@@ -53,6 +55,8 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
   }
   const upload=(version,id=randomUUID())=>{const form=new FormData();form.set('version',String(version));form.set('categoryId','book-cover');form.set('uploadId',id);form.set('file',new Blob([png],{type:'image/png'}),'混合负载-cover.png');return form;};
   const entries=[];
+  const growth=fileGrowth?createFileGrowth({root,report,send,screenshot,png}):null;
+  if(growth)report.fileGrowthHarnessSha256=hash(await (await import('node:fs/promises')).readFile(new URL('./benchmark-file-growth.mjs',import.meta.url)));
   try {
     for(let i=0;i<4;i++) {
       const client=i<2?customer:other,locale=i%2?'en-US':'zh-CN';
@@ -71,6 +75,7 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
       draft.voiceAndReferences.voiceover={narrationEnabled:false,selectedVoiceIds:[]};draft.voiceAndReferences.creativeDirection.coreMessage='Keep concurrent changes intact.';
       draft=(await send('prepare-voice',client,path+'/voice-and-references','PUT',{version:draft.version,voiceAndReferences:draft.voiceAndReferences})).data;
       entries.push({client,locale,path,draft,saves:0,uploadReplays:0});
+      growth?.register(entries.at(-1),i,options);
     }
     // Warm the read paths before the measured mixed phase.
     for(const client of [customer,other]) {await client.api('/api/projects?pageSize=20');await client.api('/api/projects/stats');}
@@ -94,6 +99,7 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
         const version=entry.draft.version,uploadId=randomUUID();
         const result=(await send('upload',entry.client,entry.path+'/files?categoryId=book-cover','POST',upload(version,uploadId))).data;
         assert.equal(result.draft.version,version+1);entry.draft=result.draft;entry.asset=result.asset;
+        growth?.coverReady(entry);
         // Replaying the same ID and bytes must survive a stale version without duplicating the file.
         const replay=(await send('upload-replay',entry.client,entry.path+'/files?categoryId=book-cover','POST',upload(version,uploadId))).data;
         entry.uploadReplays++;assert.equal(replay.asset.id,result.asset.id);assert.equal(replay.draft.version,result.draft.version);
@@ -108,11 +114,13 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
             if(iteration%10===0) {
               const repeated=(await send('upload-replay',entry.client,entry.path+'/files?categoryId=book-cover','POST',upload(version,uploadId))).data;
               entry.uploadReplays++;assert.equal(repeated.asset.id,entry.asset.id);assert.equal(repeated.draft.version,entry.draft.version);
-              assert.equal(repeated.draft.book.sourceAssets.length,1);
+              assert.equal(repeated.draft.book.sourceAssets.length,growth?growth.assets(entry).length:1);
             }
+            if(growth && iteration%5===0)await growth.appendNext(entry);
             iteration++;await delay(Math.max(0,Math.min(6000,deadline-performance.now())));
           }
         }
+        if(growth)await growth.verifyLimitAndReplace(entry);
         const validation=(await send('validate',entry.client,entry.path+'/validate','POST',{version:entry.draft.version})).data;
         assert.equal(validation.valid,true,'The real submit validator must accept the project');
         const request={version:entry.draft.version,idempotencyKey:randomUUID().replaceAll('-','')};
@@ -148,8 +156,20 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
     }
     const completed=await Promise.allSettled([...entries.map(writer),...Array.from({length:4},(_,i)=>reader(i))]);
     report.mixed.durationMs=round(performance.now()-mixedStarted);
-    if(sampler) {await sampler.stop();sampler=null;persist();}
     for(const result of completed)if(result.status==='rejected')throw result.reason;
+    if(sampler && idleSeconds) {
+      // All HTTP workers have settled. Keep sampling this same process without requests or forced GC.
+      phase='idle';
+      const idleStarted=performance.now();
+      const idle=report.idle={configuredSeconds:idleSeconds,startedAt:new Date().toISOString(),resourceSampleStartIndex:sampler.report.samples.length};
+      persist();console.log(`Load complete; observing ${idleSeconds}s idle / 负载完成，观察空闲回落`);
+      await delay(idleSeconds*1000);
+      idle.durationMs=round(performance.now()-idleStarted);
+      idle.resourceSampleEndIndex=sampler.report.samples.length;
+      idle.finishedAt=new Date().toISOString();
+      assert(idle.resourceSampleEndIndex-idle.resourceSampleStartIndex>=Math.max(2,Math.floor(idleSeconds*.8)), 'Insufficient idle samples');
+    }
+    if(sampler) {await sampler.stop();sampler=null;persist();}
     report.mixed.perProject=entries.map(entry=>({id:entry.draft.id,locale:entry.locale,saves:entry.saves,uploadReplays:entry.uploadReplays}));
     phase='verification';
     assert.equal((await send('final-admin-read',owner,'/api/admin/projects?pageSize=20')).data.total,9984);
@@ -177,11 +197,16 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
       for(const entry of entries) {
         const saved=await entry.client.api(entry.path);
         assert.deepEqual(saved,entry.submitted);
-        const response=await entry.client.raw(entry.asset.url);assert(response.ok);
-        assert.equal(hash(Buffer.from(await response.arrayBuffer())),hash(png));
+        growth?.verifyMetadata(entry,saved);
+        for(const asset of growth?growth.assets(entry):[{...entry.asset,sha256:hash(png)}]) {
+          const response=await entry.client.raw(asset.url);assert(response.ok);
+          assert.equal(hash(Buffer.from(await response.arrayBuffer())),asset.sha256);
+        }
+        growth?.verifyDisk(entry,'durability');
       }
       const uploads=join(root,'data/uploads');
-      assert(existsSync(uploads));assert.equal(readdirSync(uploads,{recursive:true,withFileTypes:true}).filter(item=>item.isFile()).length,4,'No duplicate or orphan upload files');
+      const expectedFiles=growth?entries.reduce((sum,entry)=>sum+growth.assets(entry).length,0):4;
+      assert(existsSync(uploads));assert.equal(readdirSync(uploads,{recursive:true,withFileTypes:true}).filter(item=>item.isFile()).length,expectedFiles,'No duplicate or orphan upload files');
     }
     await verifyDurable();
     phase='restart-check';await stop();
@@ -194,7 +219,8 @@ export async function runMixed({owner,customer,other,root,report,reportPath,data
       }
     } finally {db.close();}
     await start();await verifyDurable();
-    recordCheck('Database integrity passed; submitted data and four file hashes survived a service restart without duplicate/orphan uploads');
+    recordCheck('Database integrity passed; submitted data and all expected file hashes survived a service restart without duplicate/orphan uploads');
+    if(growth)growth.finish();
     const groups=new Map();
     const timing=list=>{
       const times=list.map(item=>item.ms).sort((a,b)=>a-b);

@@ -1,5 +1,13 @@
 import { i18n } from "@lifewood/i18n";
 
+i18n.addResourceBundle("zh-CN", "translation", {admin:{download:{failed:"无法启动文件下载，请检查浏览器下载设置后重试。"}}}, true, true);
+i18n.addResourceBundle("en-US", "translation", {admin:{download:{failed:"The file download could not start. Check your browser download settings and try again."}}}, true, true);
+
+for (const [locale, voices] of Object.entries({
+  "zh-CN": { pendingAudio: "{{name}} · {{file}}", retryUpload: "重试上传" },
+  "en-US": { pendingAudio: "{{name}} · {{file}}", retryUpload: "Retry upload" },
+})) i18n.addResourceBundle(locale, "translation", { admin: { voices } }, true, true);
+
 i18n.addResourceBundle(
   "zh-CN",
   "translation",
@@ -883,3 +891,44 @@ for (const [locale, voices] of Object.entries({
 
 i18n.addResourceBundle("zh-CN", "translation", {admin:{users:{operatorHint:"仅可查看和处理分配给自己的项目；不能分配项目、管理账号或修改系统配置。"}}}, true, true);
 i18n.addResourceBundle("en-US", "translation", {admin:{users:{operatorHint:"Can view and handle assigned projects only. Cannot assign projects, manage accounts, or change system settings."}}}, true, true);
+
+for (const [locale, announcements] of Object.entries({
+  "zh-CN": {
+    recoveryConflict: "原公告已变化、被删除，或上次保存已经生效。当前输入已保留，请核对公告列表。若需要另一条公告，可用当前内容新建草稿。",
+    recoveryCopy: "用当前内容新建草稿",
+    recoveryReview: "在新标签页核对公告",
+    recoveryCopyConfirm: "将保留当前标题、正文和受众，新建一份待保存的草稿；已有公告不会被覆盖，也不会自动发布。如果上次保存已经生效，另建草稿可能重复。确认已核对并继续？",
+    recoveryRetry: "重试保存",
+    recoveryRetryHint: "暂时无法确认保存结果，输入已保留。重试将使用原公告编号和版本；若提示版本冲突，请先核对公告列表。"
+  },
+  "en-US": {
+    recoveryConflict: "The original announcement changed, was removed, or your previous save already succeeded. Your input is retained. Review the announcement list; create a new draft from this content if you need another announcement.",
+    recoveryCopy: "Create a new draft from this content",
+    recoveryReview: "Review announcements in a new tab",
+    recoveryCopyConfirm: "Keep the current title, body and audience in a new unsaved draft. The existing announcement will not be overwritten, and nothing will be published automatically. If the previous save succeeded, a new draft may be a duplicate. Have you reviewed the list and want to continue?",
+    recoveryRetry: "Retry save",
+    recoveryRetryHint: "The save result could not be confirmed. Your input is retained. Retry uses the original announcement ID and version. If a version conflict appears, review the announcement list first."
+  }
+})) i18n.addResourceBundle(locale, "translation", { announcements }, true, true);
+
+for (const [locale, announcements] of Object.entries({
+  "zh-CN": {
+    actionConflict: "公告的版本或状态已变化，本次操作未按旧版本执行。请核对刷新后的列表，再重新选择操作。",
+    actionMissing: "这条公告已不存在。请以刷新后的列表为准。",
+    actionUnknown: "暂时无法确认本次操作是否生效。请先核对刷新后的公告状态；如果仍需操作，请重新选择并确认。",
+    actionNotCompleted: "本次操作未完成。请检查错误提示和公告列表后再操作。",
+    actionRefreshFailed: "未能加载最新公告列表，已暂停列表操作。请点击刷新，核对状态后继续。",
+    actionSuccess: { publish: "“{{title}}”已发布。", withdraw: "“{{title}}”已下架。", delete: "“{{title}}”草稿已删除。" }
+  },
+  "en-US": {
+    actionConflict: "The announcement version or status changed. This operation was not applied using the old version. Review the refreshed list before choosing an action again.",
+    actionMissing: "This announcement no longer exists. Use the refreshed list to continue.",
+    actionUnknown: "The result of this operation could not be confirmed. Review the refreshed announcement status first. If an action is still needed, select and confirm it again.",
+    actionNotCompleted: "This operation did not complete. Review the error and announcement list before continuing.",
+    actionRefreshFailed: "The latest announcement list could not be loaded. List actions are paused. Refresh and review the status before continuing.",
+    actionSuccess: { publish: "“{{title}}” published.", withdraw: "“{{title}}” withdrawn.", delete: "Draft “{{title}}” deleted." }
+  }
+})) i18n.addResourceBundle(locale, "translation", { announcements }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", {announcements:{listLimit:"已显示最多 1,000 条公告，请使用搜索或筛选缩小范围。"}}, true, true);
+i18n.addResourceBundle("en-US", "translation", {announcements:{listLimit:"Up to 1,000 announcements are shown. Narrow the results with search or filters."}}, true, true);

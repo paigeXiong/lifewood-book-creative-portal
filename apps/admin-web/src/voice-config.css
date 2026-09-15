@@ -229,6 +229,9 @@ button.danger:hover:not(:disabled) { background: #f2cec7; }
 .voice-sample-menu { position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 5; background: #fff; border-radius: 8px; padding: 4px; box-shadow: 0 4px 18px #173f3026; }
 .voice-sample-menu button { color: #a3342a; background: #fff1ee; }
 .voice-config-page .config-row-actions { flex-wrap: nowrap; }
+.voice-upload-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.voice-upload-recovery > span { min-width: 0; overflow-wrap: anywhere; }
+.voice-upload-recovery > button { flex: 0 0 auto; }
 @media (max-width: 640px) {
   .voice-config-page td[data-label] { min-width: 0; }
   .voice-sample-line { gap: 6px; }

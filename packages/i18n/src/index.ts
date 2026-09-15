@@ -321,6 +321,11 @@ const resources = {
         readyBadge: "可下载",
         fileMeta: "{{size}} · {{date}}",
         downloadLatest: "下载最终成品",
+        downloading: "正在下载…",
+        downloadSaved: "文件已准备好，请在浏览器下载记录中查看。",
+        fileSaved: "文件已保存到所选位置。",
+        saving: "正在完成文件保存…",
+        saveFailed: "无法保存文件，请检查可用空间和文件夹权限，或选择其他位置后重试。",
         download: "下载此版本",
       },
       submitted: {
@@ -945,6 +950,11 @@ const resources = {
         readyBadge: "Ready to download",
         fileMeta: "{{size}} · {{date}}",
         downloadLatest: "Download final video",
+        downloading: "Downloading…",
+        downloadSaved: "Your file is ready. Check your browser downloads.",
+        fileSaved: "Your file has been saved to the selected location.",
+        saving: "Finishing file save…",
+        saveFailed: "The file could not be saved. Check available space and folder permissions, or choose another location and retry.",
         download: "Download this version",
       },
       submitted: {

@@ -1,7 +1,8 @@
-import type { NoticeEditor } from "./AnnouncementsPage";
+import { noticeReturnPath } from "./announcement-list-state";
+import { readNoticeDraft, readNoticeSelection, writeNoticeDraft } from "./announcement-draft";
 import { useConfirm } from "./useConfirm";
-import { useState, type FormEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState, type FormEvent } from "react";
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { adminService, localizedApiError } from "@lifewood/api-client";
@@ -20,14 +21,19 @@ function OrganizationWordmark({ organization }: { organization: AdminOrganizatio
   return <img className="organization-wordmark" src={organization.avatarUrl} alt={organization.name} title={organization.name} width="144" height="24" loading="lazy" decoding="async" onError={()=>setFailed(true)} />;
 }
 
-export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
+export function OrganizationsPage({ locale, userId }: { locale: SupportedLocale; userId: string }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const location=useLocation(); const navigate=useNavigate();
-  const noticeEditor=(location.state as {announcementEditor?:NoticeEditor}|null)?.announcementEditor;
+  const noticeEditor=readNoticeDraft(location.state,userId);
   const picking=!!noticeEditor && new URLSearchParams(location.search).get("pick")==="announcement";
-  const [selected,setSelected]=useState<string[]>(noticeEditor?.content.organizationIds??[]);
-  const [names,setNames]=useState<Record<string,string>>(noticeEditor?.organizations??{});
+  const pendingNotices=useMutationState({filters:{mutationKey:["admin-announcement-save",userId],status:"pending"},select:mutation=>(mutation.state.variables as {flowId?:string}|undefined)?.flowId});
+  const noticeSaving=!!noticeEditor && pendingNotices.includes(noticeEditor.flowId);
+  const canChangeNotice=()=>!!readNoticeDraft(location.state,userId) && !queryClient.getMutationCache().findAll({mutationKey:["admin-announcement-save",userId],status:"pending"}).some(mutation=>(mutation.state.variables as {flowId?:string}|undefined)?.flowId===noticeEditor?.flowId);
+  const selection=noticeEditor?readNoticeSelection(location.state,noticeEditor):{ids:[],names:{}};
+  const selected=selection.ids,names=selection.names;
+  const selectionRef=useRef(selection);selectionRef.current=selection;
+  const selectOrganization=(organization:AdminOrganization,checked:boolean)=>{if(!canChangeNotice())return;const current=selectionRef.current;const next={ids:checked?[...new Set([...current.ids,organization.id])]:current.ids.filter(id=>id!==organization.id),names:{...current.names,[organization.id]:organization.name}};selectionRef.current=next;navigate(location.pathname+location.search+location.hash,{replace:true,flushSync:true,state:{...location.state,announcementSelection:next}});};
 
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearch = searchParams.get("q") ?? "";
@@ -71,7 +77,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
 
   return (
     <main className="content organizations-content">
-      {picking&&<section className="page-toolbar"><span>{t("announcements.selected")} · {selected.length}</span><button onClick={()=>navigate(`/${locale}/settings/announcements`,{state:{announcementEditor:noticeEditor}})}>{t("announcements.cancel")}</button><button className="primary" onClick={()=>navigate(`/${locale}/settings/announcements`,{state:{announcementEditor:{...noticeEditor,organizations:names,content:{...noticeEditor!.content,organizationIds:selected}}}})}>{t("announcements.done")}</button></section>}
+      {picking&&<section className="page-toolbar"><span>{t("announcements.selected")} · {selected.length}</span><button onClick={()=>navigate(noticeReturnPath(locale,noticeEditor?.listSearch),{replace:true,state:{announcementEditor:noticeEditor}})}>{t("announcements.cancel")}</button><button className="primary" disabled={noticeSaving} onClick={()=>{if(!canChangeNotice())return;const next={...noticeEditor!,organizations:selectionRef.current.names,content:{...noticeEditor!.content,organizationIds:selectionRef.current.ids}};writeNoticeDraft(next);navigate(noticeReturnPath(locale,noticeEditor?.listSearch),{replace:true,state:{announcementEditor:next}});}}>{t("announcements.done")}</button></section>}
       <section className="page-toolbar">
         <form onSubmit={submitSearch} role="search">
           <input
@@ -103,7 +109,7 @@ export function OrganizationsPage({ locale }: { locale: SupportedLocale }) {
               <td data-label={t("admin.organizations.members")}>{picking ? organization.memberCount : <Link className="organization-members-link organization-member-count" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} aria-label={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}>{organization.memberCount}</Link>}</td>
               <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
               <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>
-              <td data-label={t("admin.organizations.action")}>{picking?<label><input type="checkbox" disabled={!organization.active || !selected.includes(organization.id)&&selected.length>=200} checked={selected.includes(organization.id)} onChange={e=>{setSelected(prev=>e.target.checked?[...prev,organization.id]:prev.filter(x=>x!==organization.id));setNames(prev=>({...prev,[organization.id]:organization.name}));}}/>{t("announcements.select")}</label>:<button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button>}</td>
+              <td data-label={t("admin.organizations.action")}>{picking?<label><input type="checkbox" disabled={noticeSaving || !organization.active || !selected.includes(organization.id)&&selected.length>=200} checked={selected.includes(organization.id)} onChange={e=>selectOrganization(organization,e.target.checked)}/>{t("announcements.select")}</label>:<button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button>}</td>
             </tr>
           ))}</tbody>
         </table>

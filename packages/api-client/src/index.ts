@@ -81,13 +81,21 @@ function normalizeErrorPayload(value: unknown, fallback: AppErrorShape): AppErro
 }
 
 interface RequestOptions extends RequestInit {
-  responseType?: "blob";
+  responseType?: "blob" | "stream";
+  destination?: WritableStream<Uint8Array>;
+  onCommitting?: () => void;
   locale?: SupportedLocale;
 }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
 let boundAccount: string | undefined;
 let accountBlocked = false;
+export function captureAccountGuard(): () => void {
+  const account = boundAccount;
+  return () => {
+    if (accountBlocked || account !== boundAccount) throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
+  };
+}
 function reportAccountChange() {
   if(accountBlocked)return;
   accountBlocked = true;
@@ -168,7 +176,7 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
   const requestAccount = boundAccount;
   const headers = new Headers(options.headers);
   if (boundAccount && !["/auth/login", "/auth/bootstrap", "/auth/status"].includes(path)) headers.set("X-LW-Account", boundAccount);
-  headers.set("Accept", options.responseType === "blob" ? "application/zip" : "application/json");
+  headers.set("Accept", options.responseType ? "*/*" : "application/json");
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -203,11 +211,60 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
     throw new ApiError(details);
   }
 
+  if (options.responseType === "stream") {
+    const current = () => {
+      options.signal?.throwIfAborted();
+      if (accountBlocked || requestAccount !== boundAccount) throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
+    };
+    if (!response.body || !options.destination) throw new ApiError({code:"network.invalidResponse",messageKey:"errors.network.invalidResponse",retryable:true});
+    const reader = response.body.getReader(), writer = options.destination.getWriter();
+    const abort = () => { void reader.cancel(options.signal?.reason).catch(() => {}); void writer.abort(options.signal?.reason).catch(() => {}); };
+    options.signal?.addEventListener("abort", abort, {once:true});
+    const write = async (operation: () => Promise<unknown>) => {
+      try { await operation(); }
+      catch (error) {
+        options.signal?.throwIfAborted();
+        throw new ApiError({code:"download.save_failed",messageKey:"delivery.saveFailed",retryable:true});
+      }
+    };
+    try {
+      while (true) {
+        current();
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try { chunk = await reader.read(); }
+        catch (error) {
+          options.signal?.throwIfAborted();
+          throw new ApiError({code:"network.unavailable",messageKey:"errors.network.unavailable",retryable:true});
+        }
+        current();
+        if (chunk.done) break;
+        // Await every write: at most one received chunk is being written here.
+        await write(() => writer.write(chunk.value));
+      }
+      current();
+      options.onCommitting?.();
+      current();
+      await write(() => writer.close());
+      return undefined as T;
+    } catch (error) {
+      await reader.cancel(error).catch(() => {});
+      await writer.abort(error).catch(() => {});
+      throw error;
+    } finally {
+      options.signal?.removeEventListener("abort", abort);
+      reader.releaseLock(); writer.releaseLock();
+    }
+  }
   if (response.status === 204) {
     return undefined as T;
   }
   if (options.responseType === "blob") {
-    const blob = await response.blob();
+    let blob: Blob;
+    try { blob = await response.blob(); }
+    catch (error) {
+      if (options.signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
+      throw new ApiError({ code: "network.unavailable", messageKey: "errors.network.unavailable", retryable: true });
+    }
     if (accountBlocked || requestAccount !== boundAccount) throw new ApiError({code:"auth.account_changed",messageKey:"accountSwitch.changed",retryable:false});
     return blob as T;
   }
@@ -285,8 +342,8 @@ export const projectService = {
     request<CustomerDashboard>(`/projects/dashboard?${new URLSearchParams({ month: params.month, timeZone: params.timeZone, day: String(params.day), page: String(params.page) })}`, { signal }),
   createDraft: (locale: SupportedLocale) =>
     request<TaskDraft>("/projects", { method: "POST", locale, body: "{}" }),
-  getProject: (projectId: string, locale: SupportedLocale) =>
-    request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}`, { locale }),
+  getProject: (projectId: string, locale: SupportedLocale, signal?: AbortSignal) =>
+    request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}`, { locale, signal }),
   deleteDraft: (projectId: string, version: number, locale: SupportedLocale) =>
     request<void>(`/projects/${encodeURIComponent(projectId)}?version=${version}`, { method: "DELETE", locale }),
   saveDraft: (projectId: string, draft: TaskDraft, locale: SupportedLocale) =>
@@ -331,6 +388,17 @@ export const projectService = {
   },
   deleteAsset: (projectId: string, fileId: string, version: number, locale: SupportedLocale) =>
     request<TaskDraft>(`/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}?version=${version}`, { method: "DELETE", locale }),
+  downloadDelivery: (projectId: string, deliveryId: string, locale: SupportedLocale, signal: AbortSignal) =>
+    request<Blob>(`/projects/${encodeURIComponent(projectId)}/deliveries/${encodeURIComponent(deliveryId)}/file`, { locale, signal, responseType: "blob", cache: "no-store" }),
+  downloadDeliveryTo: async (projectId: string, deliveryId: string, locale: SupportedLocale, signal: AbortSignal, destination: WritableStream<Uint8Array>, onCommitting?: () => void) => {
+    try {
+      await request<void>(`/projects/${encodeURIComponent(projectId)}/deliveries/${encodeURIComponent(deliveryId)}/file`, {locale,signal,responseType:"stream",destination,onCommitting,cache:"no-store"});
+    } catch (error) {
+      // Covers HTTP/authentication failures before a writer was acquired as well.
+      await destination.abort(error).catch(() => {});
+      throw error;
+    }
+  },
   listDeliveries: (projectId: string, locale: SupportedLocale) =>
     request<FinalDelivery[]>(`/projects/${encodeURIComponent(projectId)}/deliveries`, { locale }),
 };
@@ -622,10 +690,10 @@ export interface NotificationRules {items:NotificationRule[];retentionDays:numbe
 export interface NotificationPreferences {toast:boolean;sound:boolean;quietStart:string|null;quietEnd:string|null;timeZone:string;mutedKinds:string[]|null}
 export interface NotificationLog {id:number;kind:string;projectId:string;createdAt:string;status:string;attempts:number;recipients:number;error:string|null}
 export const notificationService={
- target:(id:number,locale:SupportedLocale,admin:boolean)=>request<{path:string}>(`/notifications/${id}/target?admin=${admin}`,{locale}),
+ target:(id:number,locale:SupportedLocale,admin:boolean,signal?:AbortSignal)=>request<{path:string}>(`/notifications/${id}/target?admin=${admin}`,{locale,signal}),
  list:(locale:SupportedLocale,params:Record<string,string>={},before?:number)=>request<NotificationPage>(`/notifications?${new URLSearchParams({...params,...(before?{before:String(before)}:{})})}`,{locale}),
  counts:()=>request<{unread:number;watermark:number}>("/notifications/counts"),
- update:(action:string,ids?:number[],through?:number)=>request<void>("/notifications/state",{method:"POST",body:JSON.stringify({action,ids,through})}),
+ update:(action:string,ids?:number[],through?:number,signal?:AbortSignal)=>request<void>("/notifications/state",{method:"POST",signal,body:JSON.stringify({action,ids,through})}),
  preferences:()=>request<NotificationPreferences>("/notifications/preferences"),
  savePreferences:(p:NotificationPreferences)=>request<NotificationPreferences>("/notifications/preferences",{method:"PUT",body:JSON.stringify(p)}),
  catalog:()=>request<NotificationRules>("/notifications/catalog"),

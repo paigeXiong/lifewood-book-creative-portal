@@ -12,13 +12,21 @@ import {DatabaseSync} from 'node:sqlite';
 const workspace = resolve(import.meta.dirname, '..');
 const args=process.argv.slice(2);
 const sustained=args.includes('--sustained');
+const fileGrowth=args.includes('--file-growth');
+const storageQuota=args.includes('--storage-quota');
+assert(!storageQuota || !args.some(value=>['--mixed','--sustained','--file-growth'].includes(value)), '--storage-quota runs separately from load modes');
 const secondsArg=args.find(value=>value.startsWith('--seconds='));
 const sustainedSeconds=secondsArg?Number(secondsArg.slice(10)):180;
+const idleArg=args.find(value=>value.startsWith('--idle-seconds='));
+const idleSeconds=idleArg?Number(idleArg.slice(15)):0;
+assert(!idleArg || sustained, '--idle-seconds requires --sustained');
+assert(Number.isInteger(idleSeconds) && (idleSeconds===0 || (idleSeconds>=10 && idleSeconds<=600)), 'Idle duration must be 0 or 10–600 seconds');
 assert(!secondsArg || sustained, '--seconds requires --sustained');
 assert(Number.isInteger(sustainedSeconds) && sustainedSeconds>=10 && sustainedSeconds<=1800, 'Duration must be 10–1800 seconds');
+assert(!fileGrowth || (sustained && sustainedSeconds>=240), '--file-growth requires --sustained and at least 240 seconds');
 assert(!sustained || platform()==='win32', 'Resource sampling currently requires Windows');
 const mixed=sustained || args.includes('--mixed');
-const files=args.filter(value=>!['--mixed','--sustained',secondsArg].includes(value));
+const files=args.filter(value=>!['--mixed','--sustained','--file-growth','--storage-quota',secondsArg,idleArg].includes(value));
 assert(files.length<=1 && files.every(value=>!value.startsWith('--')), 'Expected an optional DLL path, --mixed or --sustained, and optional --seconds=N');
 const dll = resolve(files[0] ?? join(workspace, 'services/platform-api/bin/Release/net10.0/Lifewood.BookPortal.Server.dll'));
 assert(statSync(dll).isFile(), 'Build the Release backend first / 请先构建 Release 后端');
@@ -34,11 +42,16 @@ const childEnvironment=Object.fromEntries(Object.entries(process.env).filter(([k
 let child, launchError;
 let stopping;
 for(const [signal,code] of [['SIGINT',130],['SIGTERM',143]]) process.once(signal,()=>{void stop().finally(()=>process.exit(code));});
-async function start() {
+let quotaBytes;
+async function start(options={}) {
+  if(options.quotaBytes!==undefined) {
+    assert(storageQuota && Number.isSafeInteger(options.quotaBytes) && options.quotaBytes>0 && options.quotaBytes<=64*1024*1024,'Quota override is restricted to the isolated quota check');
+    quotaBytes=options.quotaBytes;
+  }
   const fd = openSync(join(root, 'server.log'), 'a');
   child = spawn('dotnet', [dll, '--urls='+base, '--Lifewood:DataDirectory='+join(root,'data'),
     '--Lifewood:CoordinationDirectory='+join(root,'coordination'), '--Lifewood:BackupDirectory='+join(root,'backups'), '--Lifewood:RequireWebAssets=false',
-    '--Logging:LogLevel:Default=Warning'], {cwd:root, env:{...childEnvironment, ASPNETCORE_ENVIRONMENT:'Production'}, windowsHide:true, stdio:['ignore',fd,fd]});
+    '--Logging:LogLevel:Default=Warning', ...(quotaBytes===undefined?[]:['--Lifewood:Limits:MaxStoredBytes='+quotaBytes])], {cwd:root, env:{...childEnvironment, ASPNETCORE_ENVIRONMENT:'Production'}, windowsHide:true, stdio:['ignore',fd,fd]});
   closeSync(fd); launchError = null; child.once('error', error => {launchError=error;});
   for(let i=0;i<120;i++) {
     if(launchError) throw launchError;
@@ -156,11 +169,16 @@ try {
     await client.api('/api/projects','POST',{});
   }
   customerId=(await customer.api('/api/me')).id;otherId=(await other.api('/api/me')).id;
-  if(mixed) {
+  if(storageQuota) {
+    report.quotaHarnessSha256=digest(new URL('./benchmark-storage-quota.mjs',import.meta.url));
+    report.mixedHarnessSha256=digest(new URL('./benchmark-mixed.mjs',import.meta.url));
+    const {runStorageQuota}=await import('./benchmark-storage-quota.mjs');
+    await runStorageQuota({customer,other,root,report,reportPath,start,stop});
+  } else if(mixed) {
     await stop(); const databaseBytes=seed(10000); await start();
     report.mixedHarnessSha256=digest(new URL('./benchmark-mixed.mjs',import.meta.url));
     const {runMixed}=await import('./benchmark-mixed.mjs');
-    await runMixed({owner,customer,other,root,report,reportPath,databaseBytes,start,stop,serverPid:child.pid,sustainedSeconds:sustained?sustainedSeconds:0});
+    await runMixed({owner,customer,other,root,report,reportPath,databaseBytes,start,stop,serverPid:child.pid,sustainedSeconds:sustained?sustainedSeconds:0,idleSeconds,fileGrowth});
   } else for(const count of [1000,10000]) {
     await stop();const databaseBytes=seed(count);await start();
     const total=count*9/10, detailId='b'+String(21).padStart(31,'0');
@@ -181,7 +199,7 @@ try {
     }
     writeFileSync(join(root,'report.json'),JSON.stringify(report,null,2));
   }
-  assert(mixed ? report.mixed.passed : report.stages.every(stage=>stage.results.every(result=>result.errors===0)),'Benchmark requests failed; inspect report');
+  assert(storageQuota ? report.storageQuota.passed : mixed ? report.mixed.passed : report.stages.every(stage=>stage.results.every(result=>result.errors===0)),'Benchmark requests failed; inspect report');
   console.log('Benchmark complete / 基线完成: '+join(root,'report.json'));
 } catch(error) {report.failure=error.message;writeFileSync(reportPath,JSON.stringify(report,null,2));throw error;}
 finally {await stop();}

@@ -76,7 +76,7 @@ internal static class DeliveryEndpoints
             }
 
             await using var reservation = await storageQuota.TryReserveAsync(file.Length, context.RequestAborted);
-            if (reservation is null) return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached. Contact an administrator.");
+            if (reservation is null) return Error(context, 507, "storage.quota", "errors.storage.quota", "Storage capacity has been reached. Contact an administrator.", retryable: true);
 
             var uploaderId = user.Id;
             var folder = Path.Combine(dataDirectory, "deliveries", id);
@@ -237,8 +237,8 @@ internal static class DeliveryEndpoints
 
     private static bool Can(CurrentUserDto user, string permission) => user.Permissions.Contains(permission, StringComparer.Ordinal);
 
-    private static IResult Error(HttpContext context, int status, string code, string messageKey, string fallback) =>
-        Results.Json(new ApiErrorDto(code, messageKey, fallback, null, false, context.TraceIdentifier), AppJsonContext.Default.ApiErrorDto, statusCode: status);
+    private static IResult Error(HttpContext context, int status, string code, string messageKey, string fallback, bool retryable = false) =>
+        Results.Json(new ApiErrorDto(code, messageKey, fallback, null, retryable, context.TraceIdentifier), AppJsonContext.Default.ApiErrorDto, statusCode: status);
 
     private static string NormalizeContentType(string contentType, string fileName)
     {

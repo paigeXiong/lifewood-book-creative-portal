@@ -526,9 +526,9 @@ function AdminRoot() {
         <Route path="projects" element={<ProjectsPage locale={locale} user={me.data} />} />
         <Route path="users" element={<UsersPage locale={locale} currentUserId={me.data.id} />} />
         <Route path="feedback" element={<FeedbackPage key={me.data.id} userId={me.data.id} locale={locale}/>}/>
-        <Route path="organizations" element={<OrganizationsPage locale={locale} />} />
+        <Route path="organizations" element={<OrganizationsPage key={me.data.id} userId={me.data.id} locale={locale} />} />
         <Route path="audit" element={<AuditPage key={me.data.id} locale={locale} userId={me.data.id} />} />
-        <Route path="settings/announcements" element={<AnnouncementsPage locale={locale} />} />
+        <Route path="settings/announcements" element={<AnnouncementsPage key={me.data.id} userId={me.data.id} locale={locale} />} />
         <Route path="settings/characters" element={<CharacterPresetsPage locale={locale} imageBase={customerPortalUrl(locale)} />} />
         <Route path="settings/ai" element={<AiSettingsPage locale={locale} />} />
         <Route path="settings" element={<Navigate replace to="options" />} />

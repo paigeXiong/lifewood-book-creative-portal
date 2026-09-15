@@ -1,4 +1,5 @@
 import {useState} from "react";
+import {useExportDownload} from "./useExportDownload";
 import {useQuery} from "@tanstack/react-query";
 import {Link,useSearchParams} from "react-router-dom";
 import {useTranslation} from "react-i18next";
@@ -11,10 +12,12 @@ export function ReportsPage({locale}:{locale:SupportedLocale}){
  const now=new Date(),start=new Date();start.setDate(start.getDate()-29);
  const filters={from:params.get("from")||localDay(start),to:params.get("to")||localDay(now),organization:params.get("organization")||"",assignee:params.get("assignee")||"",offset:-now.getTimezoneOffset()};
  const [page,setPage]=useState(1);
+ const downloadState=useExportDownload(JSON.stringify([locale,filters]));
  const query=useQuery({queryKey:["admin-reports",filters],queryFn:()=>productivityService.report(filters)});
  const data=query.data?.days??[],metrics=["submitted","delivered","overdue"] as const,maximum=Math.max(1,...data.flatMap(day=>metrics.map(key=>day[key])));
- const exportCsv=()=>{if(!query.data)return;const rows=[[t("productivity.date"),...metrics.map(key=>t("productivity.metrics."+key))],...data.map(day=>[day.date,...metrics.map(key=>day[key])])];const blob=new Blob(["\uFEFF"+rows.map(row=>row.map(value=>'"'+String(value).replaceAll('"','""')+'"').join(',')).join('\r\n')],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`report-${filters.from}-${filters.to}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
- return <main className="content reports-page"><div className="reports-toolbar"><Link to={`/${locale}/workbench`}>{t("operations.workbench")}</Link><button disabled={!query.data||query.isFetching} onClick={exportCsv}>{t("productivity.exportCsv")}</button></div>
+ const exportCsv=()=>{if(!query.data||query.isFetching||query.isError)return;void downloadState.run(async()=>{const rows=[[t("productivity.date"),...metrics.map(key=>t("productivity.metrics."+key))],...data.map(day=>[day.date,...metrics.map(key=>day[key])])];return new Blob(["\uFEFF"+rows.map(row=>row.map(value=>'"'+String(value).replaceAll('"','""')+'"').join(',')).join('\r\n')],{type:"text/csv;charset=utf-8"});},`report-${filters.from}-${filters.to}.csv`);};
+ return <main className="content reports-page"><div className="reports-toolbar"><Link to={`/${locale}/workbench`}>{t("operations.workbench")}</Link><button disabled={!query.data||query.isFetching||query.isError||downloadState.pending} onClick={exportCsv}>{t("productivity.exportCsv")}</button></div>
+  {Boolean(downloadState.error)&&<p role="alert">{localizedApiError(downloadState.error,t)}</p>}
   <form className="reports-filters" key={params.toString()} onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);setPage(1);setParams(new URLSearchParams(Object.fromEntries([...form].map(([key,value])=>[key,String(value)]))));}}>
    <label>{t("productivity.from")}<input name="from" type="date" required defaultValue={filters.from}/></label><label>{t("productivity.to")}<input name="to" type="date" required defaultValue={filters.to}/></label><label>{t("profile.organization")}<input name="organization" maxLength={200} defaultValue={filters.organization} placeholder={t("productivity.organizationSearch")}/></label><label>{t("admin.projects.assignee")}<input name="assignee" maxLength={200} defaultValue={filters.assignee} placeholder={t("productivity.assigneeSearch")}/></label><button>{t("common.search")}</button>
   </form>

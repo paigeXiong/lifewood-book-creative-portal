@@ -27,15 +27,25 @@ npm run stop:local
 ## 开始开发前必读
 
 1. [产品需求基线](./scope-registration-platform.md)：当前范围、角色、流程、配置、交付和验收优先级。
-2. [客户详细需求](./product-requirements.md)：客户字段、页面和历史决策细节。
-3. [管理中心需求](./admin-center-requirements.md)：用户、组织、项目跟进、最终交付和系统配置。
-4. [技术架构](./technical-architecture.md)：React 前端、服务端及 Native AOT 限制。
-5. [UI 设计规范](./ui-design-specification.md)：品牌化项目资料提交体验、紧凑布局、组件和 i18n 规则。
-6. [当前实现与继续开发基线](./development-readiness.md)：已交付范围、仓库结构、工程约束和继续开发优先级。
-7. [正式部署与数据备份](./deployment-and-backup.md)：同域路由、Native AOT 发布、数据目录、备份和恢复要求。
-8. [验证并发布平台](./release-readiness.md)：Windows 与 Linux 验证、Native AOT 发布包和上线前人工检查。
+2. [剩余工作与待确认事项](./remaining-work.md)：可继续推进的验证、未决业务规则和上线条件。
+3. [客户详细需求](./product-requirements.md)：客户字段、页面和历史决策细节。
+4. [管理中心需求](./admin-center-requirements.md)：用户、组织、项目跟进、最终交付和系统配置。
+5. [技术架构](./technical-architecture.md)：React 前端、服务端及 Native AOT 限制。
+6. [UI 设计规范](./ui-design-specification.md)：品牌化项目资料提交体验、紧凑布局、组件和 i18n 规则。
+7. [当前实现与继续开发基线](./development-readiness.md)：已交付范围、仓库结构、工程约束和继续开发优先级。
+8. [正式部署与数据备份](./deployment-and-backup.md)：同域路由、Native AOT 发布、数据目录、备份和恢复要求。
+9. [验证并发布平台](./release-readiness.md)：Windows 与 Linux 验证、Native AOT 发布包和上线前人工检查。
 
 ## 项目处理效率
+
+- [大文件与传输中断验证](./large-transfer-validation.md)：500 MB 成品、双语取消与连接中断恢复，以及复现方法和验证边界。
+- [大文件下载内存诊断](./transfer-memory-validation.md)：独立浏览器的两轮采样、临时链接释放和峰值优化方向。
+- [大文件流式保存](./streamed-delivery-download.md)：按浏览器能力直接写入所选文件，保留账号校验、取消及双语错误，并记录磁盘模式内存对照。
+- [持续新增附件与文件清理验证](./attachment-growth-validation.md)：不同内容图片的持续写入、满额重放、上限拒绝、删除补传及重启后的逐项文件校验。
+- [存储配额触顶与上传恢复](./storage-quota-validation.md)：507 拒绝、并发空间预留、双语错误提示、删除释放与原请求重试。
+- [后台文件上传错误与恢复](./admin-upload-recovery.md)：试听音频保留文件重试、角色图片双语配额错误及最终成品的可恢复标记。
+- [后台导出与下载恢复](./admin-export-recovery.md)：防止重复导出、取消后重试、切换筛选时丢弃旧结果及双语下载错误。
+- [后台表单未保存保护](./admin-unsaved-editors.md)：备份策略、项目截止日期和共用关闭逻辑的双语确认、保存保护与导航恢复。
 
 - [批量处理、趋势报表、常用筛选、草稿续填与登录设备](./productivity-tools.md)
 
@@ -65,7 +75,7 @@ npm run stop:local
 
 ## 后续维护方向（2026-09-07）
 
-优先修复当前流程与优化反馈，保持中英文和移动端一致。客户验收、生产协作、组织共享等不自动进入开发范围；多账号切换等便利功能保留为候选。具体以[产品需求基线](./scope-registration-platform.md)为准。日常开发使用 `C:\Aigc`，不另建工作树。
+优先修复当前流程与优化反馈，保持中英文和移动端一致。客户验收、生产协作、组织共享等不自动进入开发范围；快捷账号切换、批量处理与导出已实现；模板与复制项目等未批准能力仍保留为候选。具体以[产品需求基线](./scope-registration-platform.md)为准。日常开发使用 `C:\Aigc`，不另建工作树。
 
 - [2026-09-07 发布准备检查记录](./release-readiness-2026-09-07.md)：本地回归结果及发布前剩余检查。
 
@@ -104,3 +114,11 @@ npm run stop:local
 ## 客户数据概览
 
 - [客户数据概览的功能、数据口径与验证](./customer-dashboard.md)
+
+## 稳定性诊断
+
+- [公告草稿与组织选择恢复](./announcement-draft-recovery.md)：页面返回、刷新暂存、取消选择、账号隔离及保存期间恢复。
+- [公告发布、下架与删除恢复](./announcement-action-recovery.md)：操作锁、失败后刷新、结果不确定提示和版本冲突处理。
+- [公告列表筛选与加载范围恢复](./announcement-list-history.md)：地址参数、历史前进/后退、组织返回和分页竞态保护。
+
+- [GC 与托管堆诊断（2026-09-15）](./gc-diagnostic-2026-09-15.md)：600 秒负载下的 GC、分代堆和内存观察，以及尚未确定的对象归因。

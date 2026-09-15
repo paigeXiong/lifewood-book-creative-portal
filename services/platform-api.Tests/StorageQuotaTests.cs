@@ -20,5 +20,25 @@ public sealed class StorageQuotaTests : IDisposable
         await using var next=await quota.TryReserveAsync(8,CancellationToken.None);Assert.NotNull(next);
         Assert.ThrowsAny<OperationCanceledException>(()=>StorageQuota.MeasureFiles([Path.Combine(root,"attachment")],new CancellationToken(true)));
     }
+    [Fact] public async Task WaitingReservationRechecksUsageAfterTheFirstWriterFinishes()
+    {
+        await File.WriteAllBytesAsync(Path.Combine(root, "existing"), new byte[8]);
+        var quota = new StorageQuota(root, new(20, 10, 60));
+        var first = await quota.TryReserveAsync(2, CancellationToken.None);
+        Assert.NotNull(first);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var waiting = quota.TryReserveAsync(2, timeout.Token).AsTask();
+        try
+        {
+            Assert.False(waiting.IsCompleted);
+            await File.WriteAllBytesAsync(Path.Combine(root, "new-upload"), new byte[2]);
+        }
+        finally { await first.DisposeAsync(); }
+        await using var second = await waiting;
+        Assert.Null(second);
+        File.Delete(Path.Combine(root, "new-upload"));
+        await using var recovered = await quota.TryReserveAsync(2, timeout.Token);
+        Assert.NotNull(recovered);
+    }
     public void Dispose()=>Directory.Delete(root,true);
 }
