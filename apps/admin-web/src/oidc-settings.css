@@ -1,0 +1,24 @@
+.oidc-settings { padding: 20px; background: white; border-radius: 14px; }
+.oidc-settings form { max-width: 880px; }
+.oidc-settings .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.oidc-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.oidc-fields label { display: grid; align-content: start; gap: 6px; }
+.oidc-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.oidc-field-heading { display: flex; align-items: center; gap: 2px; }
+.oidc-callbacks { margin: 16px 0; }
+.oidc-fields input { min-width: 0; width: 100%; }
+.oidc-fields .check-row { display: flex; align-items: center; }
+.oidc-fields input[type=checkbox] { width: 18px; height: 18px; }
+.oidc-settings p, .oidc-fields small { line-height: 1.6; color: #5d7067; }
+.oidc-settings code { overflow-wrap: anywhere; }
+.oidc-provider-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 16px; align-items: center; padding: 12px; margin-top: 8px; border-radius: 10px; background: #f3f6f4; }
+.oidc-provider-row small { display: block; color: #5d7067; margin-top: 4px; overflow-wrap: anywhere; }
+.oidc-provider-row strong { overflow-wrap: anywhere; }
+.oidc-delete-confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 360px; }
+@media(max-width: 640px) { .oidc-provider-row { grid-template-columns: minmax(0,1fr) auto; } .oidc-provider-row > .toolbar { grid-column: 1 / -1; } }
+@media(max-width: 640px) { .oidc-fields { grid-template-columns: 1fr; } }
+
+.oidc-conflict { margin: 12px 0; padding: 12px; border-radius: 10px; background: #f3f6f4; }
+.oidc-comparison { margin: 8px 0; overflow-x: auto; }
+.oidc-comparison table { width: 100%; table-layout: fixed; font-size: .85rem; }
+.oidc-comparison th, .oidc-comparison td { padding: 8px; text-align: start; vertical-align: top; overflow-wrap: anywhere; }

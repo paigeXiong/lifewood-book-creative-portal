@@ -81,6 +81,7 @@ function normalizeErrorPayload(value: unknown, fallback: AppErrorShape): AppErro
 }
 
 interface RequestOptions extends RequestInit {
+  publicEmailAction?: boolean;
   responseType?: "blob" | "stream";
   destination?: WritableStream<Uint8Array>;
   onCommitting?: () => void;
@@ -175,7 +176,7 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
   options.signal?.throwIfAborted();
   const requestAccount = boundAccount;
   const headers = new Headers(options.headers);
-  if (boundAccount && !["/auth/login", "/auth/bootstrap", "/auth/status"].includes(path)) headers.set("X-LW-Account", boundAccount);
+  if (boundAccount && !options.publicEmailAction && !["/auth/login", "/auth/bootstrap", "/auth/status"].includes(path)) headers.set("X-LW-Account", boundAccount);
   headers.set("Accept", options.responseType ? "*/*" : "application/json");
   if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -272,6 +273,37 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
 }
 
 export interface LoginCredentials { email: string; password: string; rememberMe: boolean }
+export interface EmailSettings { available: boolean; email: string; verified: boolean; notifications: boolean; deliveryStatus?: string }
+export interface MailQueuePage {
+  configurationChecks?: { code: string; passed: boolean }[];
+  available: boolean; checkedAt: number; counts: { status: string; count: number }[]; kinds: string[];
+  items: { id: string; recipient: string; kind: string; status: string; failures: number; nextAttempt: number | null; expires: number }[];
+  total: number; page: number; pageSize: number;
+}
+export const mailQueueService = {
+  list: (status: string, kind: string, page: number, signal?: AbortSignal) => request<MailQueuePage>(`/admin/mail/status?${new URLSearchParams({ status, kind, page: String(page) })}`, { signal }),
+};
+export interface OidcConfiguration { id: string; version: number; nameZh: string; nameEn: string; issuer: string; clientId: string; publicOrigin: string; adminOrigin: string; enabled: boolean; hasSecret: boolean }
+export interface OidcBindingStatus { id: string; available: boolean; bound: boolean; nameZh: string; nameEn: string }
+export type OidcInput = Omit<OidcConfiguration, "hasSecret"> & { secret?: string };
+export const oidcService = {
+  providers: () => request<{ items: Array<{ id: string; nameZh: string; nameEn: string }> }>("/auth/oidc/providers", { publicEmailAction: true }),
+  start: (locale: string, portal: "customer" | "admin", providerId: string, password?: string) => request<{ url: string }>("/auth/oidc/start", { publicEmailAction: password === undefined, method: "POST", body: JSON.stringify({ locale, portal, providerId, bind: password !== undefined, password }) }),
+  binding: () => request<{ items: OidcBindingStatus[] }>("/me/oidc"),
+  unbind: (password: string, providerId: string) => request<void>("/me/oidc/unbind", { method: "POST", body: JSON.stringify({ password, providerId }) }),
+  configuration: () => request<{ items: OidcConfiguration[] }>("/admin/settings/oidc"),
+  save: (input: OidcInput) => request<OidcConfiguration>("/admin/settings/oidc" + (input.id ? "/" + encodeURIComponent(input.id) : ""), { method: input.id ? "PUT" : "POST", body: JSON.stringify(input) }),
+  remove: (id: string, version: number) => request<void>(`/admin/settings/oidc/${encodeURIComponent(id)}?version=${version}`, { method: "DELETE" }),
+  test: (input: OidcInput) => request<void>("/admin/settings/oidc/test", { method: "POST", body: JSON.stringify(input) }),
+};
+export const emailService = {
+  availability: () => request<{ available: boolean }>("/auth/email-status", { publicEmailAction: true }),
+  settings: () => request<EmailSettings>("/me/email"),
+  verify: () => request<void>("/me/email/verify", { method: "POST" }),
+  preferences: (notifications: boolean) => request<EmailSettings>("/me/email/preferences", { method: "PUT", body: JSON.stringify({ notifications }) }),
+  forgot: (email: string) => request<void>("/auth/password/forgot", { publicEmailAction: true, method: "POST", body: JSON.stringify({ email }) }),
+  consume: (purpose: "verify" | "reset", token: string, newPassword?: string) => request<void>(purpose === "verify" ? "/auth/email/verify" : "/auth/password/reset", { publicEmailAction: true, method: "POST", body: JSON.stringify({ token, newPassword }) }),
+};
 export interface BootstrapAccount { displayName: string; email: string; password: string; phone?: string; organizationName?: string; locale?: SupportedLocale }
 
 export const authService = {

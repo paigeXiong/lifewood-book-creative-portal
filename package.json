@@ -1,7 +1,7 @@
 {
   "name": "lifewood-task-platform",
   "private": true,
-  "version": "0.3.15",
+  "version": "0.3.16",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -21,6 +21,7 @@
     "test:api": "dotnet test services/platform-api.Tests/Lifewood.PlatformApi.Tests.csproj -c Release --nologo",
     "test:ops": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-backup-special-filenames.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-operation-regressions.ps1",
     "test:customer-browsers": "playwright test --config=playwright.customer.config.ts",
+    "test:admin-help": "playwright test --config playwright.admin-help.config.ts",
     "test:e2e": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e2e.ps1",
     "verify": "npm run test:web && npm run test:admin && npm run test:api && npm run test:ops && npm run build:web && npm run build:admin",
     "publish:aot": "dotnet publish services/platform-api/Lifewood.PlatformApi.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/aot-local",

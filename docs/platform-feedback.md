@@ -24,3 +24,17 @@
 反馈弹窗只处理自身的 `cancel` 事件，忽略文件输入框冒泡的同名事件。取消图片选择或重新选择相同文件不会关闭弹窗，也不会清空描述和已选截图；弹窗自身的 Escape 和关闭按钮维持原有行为。回归覆盖中英文实际点击文件选择入口、取消事件和后续提交。
 
 截图处理显示等待状态，损坏或无法压缩的图片会给出双语错误提示，不回退上传超限原图。针对超过 1 MB 的真实 PNG 验证压缩后提交，另覆盖 10 MB 边界、无损优先和小图直传。
+
+### 图片处理与提交恢复
+
+截图格式、大小与自动压缩说明，以及随反馈附带的页面路径，默认收在“截图”标签旁的小问号中，点击展开；处理进度和提交错误仍直接显示。
+
+2026-09-16：图片处理中可以取消弹窗，保留当前账号的描述和此前已选截图；关闭后忽略未完成的压缩结果，正在执行的 FileReader 会中止。重新打开不会插入上一次取消的图片。压缩本身不保证即时停止，但其结果不会再写入表单或提交。
+
+提交使用同步锁，图片读取与发送期间不能重复提交。请求超时后保留原提交 ID、描述、类别、页面路径和截图，手动重试发送同一份内容；不自动重发。类别和上传限制的读取失败或尚未结束时暂停提交，重试读取不触发发送。
+
+反馈表单按账号隔离。跨标签页账号变化立即清除旧输入并停止旧操作；换账号或卸载后，迟到的图片和提交结果不再更新界面。继续仅在页面内存中保留草稿，不新增浏览器持久化。
+
+本轮 36 项定向回归通过，其中新增 12 项中英文生命周期测试，覆盖重复点击、带截图超时重试、处理图片时取消、账号切换、FileReader 中止和配置读取恢复。测试使用替代接口，未向后台创建真实反馈。
+
+English: Closing during image processing retains the draft and previous screenshot, aborts an active FileReader, and ignores abandoned compression results. Submission is synchronously locked and timeout retries reuse the exact payload and ID. Account changes discard private input and stale results. Catalog read failures require read recovery before sending; writes are never automatically retried.

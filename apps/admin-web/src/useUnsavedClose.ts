@@ -58,5 +58,5 @@ export function useUnsavedClose(onClose: () => void, confirmMessage: string, bus
     finally { if (lifetime.current === scope) asking.current = null; }
   }, [confirmMessage, confirm]);
 
-  return { markDirty: () => { dirtyRef.current = true; setDirty(true); }, requestClose };
+  return { markDirty: () => { dirtyRef.current = true; setDirty(true); }, resetDirty: () => { dirtyRef.current = false; setDirty(false); }, requestClose };
 }

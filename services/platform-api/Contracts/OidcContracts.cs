@@ -1,0 +1,11 @@
+namespace Lifewood.PlatformApi.Contracts;
+public sealed record OidcConfiguration(long Version, string NameZh, string NameEn, string Issuer, string ClientId, string PublicOrigin, string AdminOrigin, bool Enabled, bool HasSecret, string Id = "default");
+public sealed record OidcConfigurations(OidcConfiguration[] Items);
+public sealed record SaveOidcConfiguration(long Version, string NameZh, string NameEn, string Issuer, string ClientId, string PublicOrigin, string AdminOrigin, bool Enabled, string? Secret, string Id = "default");
+public sealed record OidcProvider(string NameZh, string NameEn, string Id = "default");
+public sealed record OidcProviders(OidcProvider[] Items);
+public sealed record OidcStartRequest(string Locale, string Portal, bool Bind = false, string? Password = null, string ProviderId = "default");
+public sealed record OidcStartResult(string Url);
+public sealed record OidcBindingStatus(bool Available, bool Bound, string NameZh, string NameEn, string Id = "default");
+public sealed record OidcBindings(OidcBindingStatus[] Items);
+public sealed record OidcUnbindRequest(string Password, string ProviderId = "default");

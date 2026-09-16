@@ -212,6 +212,7 @@ builder.Services.AddSingleton(revisions);
 var users = new UserRepository(databaseConnection, dataDirectory);
 users.Initialize();
 builder.Services.AddSingleton(users);
+OidcFeature.Register(builder.Services, databaseConnection, (context, user, version) => SignIn(context, user, false, authenticatedVersion: version));
 var personalWorkspace=new PersonalWorkspaceRepository(databaseConnection);
 personalWorkspace.Initialize();builder.Services.AddSingleton(personalWorkspace);
 var feedback=new FeedbackRepository(databaseConnection);
@@ -244,6 +245,14 @@ builder.Services.AddSingleton(savedAccounts);
 var notifications = new NotificationRepository(databaseConnection);
 notifications.Initialize();
 builder.Services.AddSingleton(notifications);
+builder.Services.AddSingleton<MailSettings>();
+builder.Services.AddSingleton<IPlatformMailer, SmtpPlatformMailer>();
+builder.Services.AddSingleton(service => {
+    var repository = new EmailRepository(databaseConnection, service.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(), service.GetRequiredService<MailSettings>(), users, notifications);
+    repository.Initialize();
+    return repository;
+});
+builder.Services.AddHostedService<EmailWorker>();
 builder.Services.AddSingleton<BackupGate>();
 builder.Services.AddHostedService<NotificationWorker>();
 var characterPresets = new CharacterPresetRepository(databaseConnection);
@@ -506,6 +515,8 @@ if (app.Environment.IsDevelopment()) app.MapOpenApi();
 var api = app.MapGroup("/api");
 api.MapBackups(CurrentUser);
 api.MapFeedback(CurrentUser);
+api.MapEmail(CurrentUser);
+api.MapOidc(CurrentUser);
 api.MapGet("/portals/{portal}", (string portal, string? locale, HttpContext context, RuntimeSettingsStore settings) => {
     if (portal is not ("customer" or "admin" or "profile" or "backups")) return Results.NotFound();
     var language = locale == "en-US" ? "en-US" : "zh-CN";
@@ -2154,9 +2165,9 @@ static CurrentUserDto? CurrentUser(HttpContext context)
         : context.User.FindFirstValue("lw_login_session") is not {} login||!context.RequestServices.GetRequiredService<AccountSwitchStore>().IsSessionActive(userId,login,sessionVersion,!context.Items.ContainsKey("backup.read_only"))?null:context.RequestServices.GetRequiredService<UserRepository>().Get(userId, sessionVersion);
 }
 
-static async Task<bool> SignIn(HttpContext context, CurrentUserDto user, bool persistent, DateTimeOffset? expires = null, int? savedVersion = null, bool refreshExisting = false)
+static async Task<bool> SignIn(HttpContext context, CurrentUserDto user, bool persistent, DateTimeOffset? expires = null, int? savedVersion = null, bool refreshExisting = false, int? authenticatedVersion = null)
 {
-    var sessionVersion = savedVersion ?? context.RequestServices.GetRequiredService<UserRepository>().GetSessionVersion(user.Id)
+    var sessionVersion = authenticatedVersion ?? savedVersion ?? context.RequestServices.GetRequiredService<UserRepository>().GetSessionVersion(user.Id)
         ?? throw new InvalidOperationException("Cannot create a session for an inactive or missing user.");
     var previousId=context.User.FindFirstValue(ClaimTypes.NameIdentifier);
     if(previousId is not null && previousId!=user.Id)context.RequestServices.GetRequiredService<UserPresenceRepository>().EndSession(previousId,PresenceSession(context));

@@ -1,3 +1,4 @@
+import { HelpPopover } from "@lifewood/ui/help-popover";
 import { useDeliveryUpload } from "./useDeliveryUpload";
 import {ProjectAction} from "./ProjectAction";
 import { useConfirm } from "./useConfirm";
@@ -83,7 +84,7 @@ export function FinalDeliveryPanel({ projectId, projectStatus, locale, canDelive
     </section>}
     {open && canPublish && <ModalFrame labelledBy="delivery-dialog-title" busy={publish.isPending} onClose={() => setOpen(false)}><div className="modal-title"><h2 id="delivery-dialog-title">{t("admin.delivery.dialogTitle")}</h2><button type="button" aria-label={t("common.close")} disabled={publish.isPending} onClick={() => setOpen(false)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></div><form onSubmit={submit} aria-busy={publish.isPending}>
       <div className="delivery-warning"><strong>{t("admin.delivery.immediateTitle")}</strong><p>{t("admin.delivery.immediateBody")}</p></div>
-      <label><span>{t("admin.delivery.file")}</span><input disabled={publish.frozen} name="file" type="file" accept=".mp4,.mov,video/mp4,video/quicktime" required /><small>{t("admin.delivery.fileHint")}</small></label>
+      <div className="field-help-heading"><label htmlFor="delivery-file">{t("admin.delivery.file")}</label><HelpPopover label={t("admin.delivery.file")}>{t("admin.delivery.fileHint")}</HelpPopover></div><input id="delivery-file" disabled={publish.frozen} name="file" type="file" accept=".mp4,.mov,video/mp4,video/quicktime" required />
       <label><span>{t("admin.delivery.note")}</span><textarea disabled={publish.frozen} name="note" rows={3} maxLength={2000} placeholder={t("admin.delivery.notePlaceholder")} /></label>
       {publish.frozen && <p className="delivery-attempt">{publish.fileName}{publish.note && <small>{publish.note}</small>}</p>}
       {fileInvalid && <div className="message error" role="alert">{t("errors.delivery.file")}</div>}

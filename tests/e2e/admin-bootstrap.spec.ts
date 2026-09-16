@@ -202,7 +202,9 @@ test("owner can initialize the platform and navigate the localized admin shell",
       await page.setViewportSize({ width: 390, height: 844 });
       await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${project.id}/edit/characters`);
       const hint = page.locator('input[id^="voiceHint-"]');
-      await expect(hint).toBeVisible();
+      // This is the first visit to the lazily loaded creative form on a cold
+      // Vite server; wait for the input itself, without a fixed sleep.
+      await expect(hint).toBeVisible({ timeout: 15000 });
       await hint.focus();
       const grid = await page.locator(".character-grid").boundingBox();
       const upload = await page.locator(".reference-image-upload").boundingBox();

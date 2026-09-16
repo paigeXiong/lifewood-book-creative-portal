@@ -1,0 +1,10 @@
+namespace Lifewood.PlatformApi.Contracts;
+public sealed record EmailSettingsDto(bool Available, string Email, bool Verified, bool Notifications, string? DeliveryStatus);
+public sealed record MailAvailabilityDto(bool Available);
+public sealed record EmailPreferenceRequest(bool Notifications);
+public sealed record ForgotPasswordRequest(string Email);
+public sealed record EmailTokenRequest(string Token, string? NewPassword = null);
+public sealed record MailQueueCount(string Status, long Count);
+public sealed record MailQueueItem(string Id, string Recipient, string Kind, string Status, int Failures, long? NextAttempt, long Expires);
+public sealed record MailConfigurationCheck(string Code, bool Passed);
+public sealed record MailQueuePage(bool Available, long CheckedAt, IReadOnlyList<MailQueueCount> Counts, IReadOnlyList<string> Kinds, IReadOnlyList<MailQueueItem> Items, long Total, int Page, int PageSize, IReadOnlyList<MailConfigurationCheck> ConfigurationChecks);

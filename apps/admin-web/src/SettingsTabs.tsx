@@ -6,6 +6,8 @@ import { useTranslation } from "react-i18next";
 import "./settings-tabs.css";
 
 const settingsIconPaths = {
+  mail: "M3 5h18v14H3zM3 5l9 7 9-7",
+  oidc: "M8 10V7a4 4 0 0 1 8 0v3M5 10h14v11H5zM12 14v3",
   options: "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",
   files: "M3 7V5h6l2 2h10v13H3V7Zm0 3h18",
   characters: "M9 8a3 3 0 1 0 6 0 3 3 0 1 0-6 0M5 20v-2a7 7 0 0 1 14 0v2",
@@ -74,6 +76,8 @@ export function SettingsTabs({ locale }: { locale: SupportedLocale }) {
     <SettingsTab locale={locale} name="characters">{t("admin.presets.title")}</SettingsTab>
     <SettingsTab locale={locale} name="voices">{t("admin.settings.voices")}</SettingsTab>
     <SettingsTab locale={locale} name="ai">{t("admin.settings.ai")}</SettingsTab>
+    <SettingsTab locale={locale} name="oidc">{t("oidc.settings")}</SettingsTab>
+    <SettingsTab locale={locale} name="mail">{t("mailQueue.title")}</SettingsTab>
     <SettingsTab locale={locale} name="announcements">{t("announcements.title")}</SettingsTab>
     <SettingsTab locale={locale} name="notifications">{t("notifications.title")}</SettingsTab>
     <SettingsTab locale={locale} name="backups">{t("backups.title")}</SettingsTab>

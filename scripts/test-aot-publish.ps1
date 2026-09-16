@@ -88,6 +88,15 @@ try {
     $me = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/me" -WebSession $session
     if ($me.id -ne $owner.id) { throw "AOT authenticated session could not be restored." }
 
+    $providers = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/auth/oidc/providers"
+    if ($providers.items.Count -ne 0) { throw "AOT exposed an unconfigured identity provider." }
+    $oidc = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/admin/settings/oidc" -WebSession $session
+    if ($oidc.items.Count -ne 0) { throw "AOT default enterprise login state was invalid." }
+    $mailQueue = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/admin/mail/status?status=failed&page=1" -WebSession $session
+    if ($mailQueue.available -or $mailQueue.total -ne 0 -or $mailQueue.counts.Count -ne 7 -or $mailQueue.pageSize -ne 25 -or $mailQueue.configurationChecks.Count -ne 6) { throw "AOT mail queue status returned an invalid default state." }
+    $binding = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/me/oidc" -WebSession $session
+    if ($binding.items.Count -ne 0) { throw "AOT default identity binding state was invalid." }
+
     $csrf = (Invoke-RestMethod -Method Get -Uri "$baseUrl/api/auth/csrf" -WebSession $session).token
     $customerBody = @{ displayName = "AOT Customer"; email = "aot-customer@example.test"; password = $password; role = "customer" } | ConvertTo-Json
     $customer = Invoke-RestMethod -Method Post -Uri "$baseUrl/api/admin/users" -WebSession $session -Headers @{ "X-CSRF-TOKEN" = $csrf } -ContentType "application/json" -Body $customerBody

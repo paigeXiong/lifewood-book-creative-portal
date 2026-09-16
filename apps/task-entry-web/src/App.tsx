@@ -70,6 +70,7 @@ export const appRoutes = createRoutesFromElements(<>
       <Route path="/" element={<RootRedirect />} />
       <Route path="/:locale" element={<LocaleLayout />}>
         <Route path="login" element={<LoginRoute />} />
+        <Route path="email-action" lazy={async () => ({ Component: (await import("./pages/EmailActionPage")).EmailActionPage })} />
         <Route element={<ProtectedLayout />}>
           <Route path="notifications" element={<NotificationCenter/>}/>
           <Route path="tasks" element={<TaskListPage />} />

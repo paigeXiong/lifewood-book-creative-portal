@@ -67,4 +67,31 @@ SSE 每 5 秒同步一次，浏览器自动重连；计数和列表均每 30 秒
 
 Notification search and project filters debounce for 300ms. Invalid date ranges block requests, and loading errors, empty feeds and filtered-empty results are distinct. Global read requires confirmation and includes hidden/archived notifications through the captured watermark; selected read uses only checked IDs. Both portals share the same bilingual behavior.
 
+## 通知操作与确认生命周期（2026-09-16）
+
+已读、未读、归档和恢复共用账号级操作锁，从确认开始持续到写入及列表刷新结束。快捷弹窗和完整通知中心共用该锁，关闭再打开不能绕过正在进行的操作。失败保留仍在列表中的已选通知，重试使用原操作和 ID；若确认框本身失败，重试会重新确认。网络错误可能发生在服务端已执行之后，因此失败也会刷新列表核对状态。
+
+页面离开、语言/筛选范围变化和账号变更会关闭过期确认框并阻止尚未发出的请求。已发送的请求不承诺撤销，但旧响应不会清空新页面或新账号的选择。操作结束后恢复批量选择入口的键盘焦点。复用既有中英文提示和无障碍名称。
+
+Notification actions share an account-scoped lock across the compact and full centers, from confirmation through write and reconciliation. Expired confirmations close on navigation, scope changes, or account changes. Failed writes preserve visible selections for explicit retry; failed confirmations require consent again. Already-sent writes are not cancelled, and late responses cannot reset a new view's selection.
+
+回归覆盖双端、中英文、重复点击、确认失败/取消、跨页返回、跨标签账号事件、重新打开面板，以及旧账号响应与新选择隔离。v0.3.15 补充浏览器回归中的首次角色页面加载超时已调整为等待实际输入框出现，单项上限 15 秒；本地完整浏览器回归 15 项通过。此处记录本地验证，不代表旧 GitHub Verify 运行已重跑。
+
+本轮客户侧 384 项、管理侧 156 项测试和两端生产构建通过；通知动作专项 24 项另行复核通过（包含键盘焦点恢复）。
+
+## 筛选与加载范围恢复（2026-09-16）
+
+完整通知中心将搜索、类型、处理状态、项目编号、日期、未读/归档条件和已加载页数记录到地址参数。搜索仍在停止输入 300ms 后生效；离开当前历史条目时丢弃未提交的输入，避免旧定时器或草稿覆盖后退/前进结果。清除筛选和更改条件回到第一页。
+
+刷新或返回列表后，按服务端游标逐页补齐之前加载的范围；后退到较小范围时只显示该范围，不把缓存中更多的页直接展示出来。分页失败不会推进地址页数，支持重试；旧分页请求完成后不会改写已经离开的历史条目。每次最多恢复 50 页（当前每页 30 条），到达上限后提示缩小筛选范围。
+
+快捷通知框使用独立筛选，不读取或修改所在页面的查询参数；“进入通知中心”会带上快捷框的当前筛选，从第一页开始。缓存仍按账号隔离。恢复的是筛选和加载范围，不是历史数据快照或精确的滚动像素；通知已读、归档、删除或权限改变后，以服务端当前可见数据为准。
+
+The full center stores filters and the loaded page count in the URL. Refresh and browser history restore that range through sequential server cursors, capped at 50 pages. Failed or stale pagination cannot advance another history entry. Compact filters remain independent and transfer only when opening the full center. This restores the browsing range, not a historical data snapshot or an exact scroll offset.
+
+验证：新增恢复测试 29 项，客户侧全量 413 项通过；真实 Chromium 专项覆盖两端及中英文的输入、加载更多、后退/前进、整页刷新、关联跳转返回和快捷筛选转入。两端生产构建通过。
+
 本轮验证：通知双语交互与恢复/拖选测试 21 项通过；文件类别升级及删除兼容测试 14 项通过；客户和管理端生产构建通过。本地服务已启动，健康接口正常；使用 Accept-Language 分别核对中英文文件类别名称。
+# 邮件提醒扩展（2026-09-16）
+
+用户可在个人设置验证登录邮箱，并主动开启邮件提醒。邮件默认关闭，部署 SMTP 配置完成后才可使用；不影响站内通知。新提醒按用户汇总，发送前再次检查未读状态与当前访问权限，已读或失去权限的待发提醒会取消。参见 [邮箱验证与邮件配置](./email.md)。

@@ -1,3 +1,4 @@
+import { HelpPopover } from "@lifewood/ui/help-popover";
 import { VoiceSampleControl } from "./VoiceSampleControl";
 import { useConfigRemoval } from "./useConfigRemoval";
 import { useConfirm } from "./useConfirm";
@@ -99,7 +100,7 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
     <SettingsTabs locale={locale} />
     <section className="page-toolbar">
       <h1 className="config-context">{t("admin.voices.title")}</h1>
-      <span className="result-count">{t("admin.voices.count", { count: voices.data?.length ?? 0 })}</span>
+      <span className="result-count">{t("admin.voices.count", { count: voices.data?.length ?? 0 })}</span><HelpPopover label={t("admin.voices.audio")}>{t("admin.voices.audioHint")}</HelpPopover>
       <button className="primary push-right" type="button" disabled={audioBusy} onClick={() => { save.reset(); setEditing({ ...emptyVoice }); }}>{t("admin.voices.create")}</button>
     </section>
     {voices.isError && <div className="message error" role="alert">{localizedApiError(voices.error, t)}</div>}
@@ -126,7 +127,7 @@ export function VoiceConfigPage({ locale }: { locale: SupportedLocale }) {
       </table>
       {!voices.isPending && !voices.data?.length && <div className="empty">{t("admin.voices.empty")}</div>}
     </section>
-    <p className="config-hint">{t("admin.voices.audioHint")}</p>
+
     {editing && <VoiceDialog voice={editing} tagOptions={[
       ...(options.data?.voiceTags ?? []),
       ...editing.tagIds.filter((id) => !(options.data?.voiceTags ?? []).some((item) => item.id === id)).map((id) => ({ id, label: `${t("admin.voices.unavailableTag")} · ${id}`, unavailable: true })),

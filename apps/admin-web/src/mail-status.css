@@ -1,0 +1,17 @@
+.mail-status { padding: 16px; min-width: 0; background: #fff; border-radius: 14px; }
+.mail-status-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.mail-status-toolbar label { display: flex; align-items: center; gap: 6px; }
+.mail-status-toolbar select { width: auto; max-width: 220px; }
+.mail-status-toolbar time { font-size: .8rem; color: var(--muted); }
+.mail-status-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.mail-status-counts button { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
+.mail-status-counts button[aria-pressed=true] { background: var(--brand, #19513e); color: white; }
+.mail-status-table { overflow-x: auto; margin: 12px 0; }
+.mail-status-table table { width: 100%; min-width: 740px; font-size: .85rem; }
+.mail-status-table th, .mail-status-table td { padding: 10px; text-align: start; }
+.mail-status-table td:first-child { overflow-wrap: anywhere; max-width: 220px; }
+.mail-config-state { display: inline-flex; align-items: center; gap: 2px; }
+.mail-config-checks { list-style: none; padding: 0; margin: 8px 0 0; }
+.mail-config-checks li { padding: 6px 0; }
+.mail-config-checks li > div { display: flex; justify-content: space-between; gap: 12px; }
+.mail-config-checks p { margin: 4px 0 0; }

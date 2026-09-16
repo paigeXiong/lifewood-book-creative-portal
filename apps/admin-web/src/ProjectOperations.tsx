@@ -1,3 +1,4 @@
+import { HelpPopover } from "@lifewood/ui/help-popover";
 import {ProjectAction} from "./ProjectAction";
 import {useId,useState,type FormEvent} from "react";
 import {useExportDownload} from "./useExportDownload";
@@ -28,7 +29,7 @@ export function ProjectOperations({id,locale,permissions,workflow}: {id:string;l
     {followup.isError&&<div role="alert" className="message error">{localizedApiError(followup.error,t)}<button onClick={()=>void followup.refetch()}>{t("operations.refresh")}</button></div>}
     {Boolean(exportError)&&<p role="alert" className="message error">{localizedApiError(exportError,t)}</p>}
     {editing&&<UnsavedFormModal labelledBy={title} busy={save.isPending} onClose={()=>setEditing(false)}>{({markDirty,requestClose})=><form onChange={markDirty} onSubmit={submit} className="operations-followup-form">
-      <h2 id={title}>{t("operations.deadline")}</h2><p className="muted">{t("uiDensity.deadlineHint")}</p>
+      <div className="field-help-heading"><h2 id={title}>{t("operations.deadline")}</h2><HelpPopover label={t("operations.deadline")}>{t("uiDensity.deadlineHint")}</HelpPopover></div>
       <label>{t("operations.localTime")}<input type="datetime-local" required value={date} min="2000-01-01T00:00" max="2100-12-31T23:59" disabled={terminal||save.isPending} onChange={e=>setDate(e.target.value)}/></label>
       {terminal&&<p>{t("operations.terminal")}</p>}
       {save.isError&&<p className="message error" role="alert">{localizedApiError(save.error,t)}</p>}

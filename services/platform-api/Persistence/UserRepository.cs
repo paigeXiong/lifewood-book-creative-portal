@@ -501,6 +501,8 @@ internal sealed class UserRepository
 
     private static bool ValidNewPassword(string password) => !string.IsNullOrEmpty(password) && password.Length is >= 8 and <= 128;
 
+    internal void ApplyEmailPasswordReset(SqliteConnection connection, SqliteTransaction transaction, string id, string password) => UpdatePassword(connection, transaction, id, password);
+
     private void UpdatePassword(SqliteConnection connection, SqliteTransaction transaction, string id, string password)
     {
         using var command = connection.CreateCommand();

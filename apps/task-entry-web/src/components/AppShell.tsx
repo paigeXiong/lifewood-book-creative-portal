@@ -87,7 +87,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           </NavLink>
         </PortalNavigation>
         <div className="topbar-actions">
-          <FeedbackButton key={user.id} locale={locale}/><NotificationBell key={`notifications-${user.id}`}/><Announcements key={user.id} userId={user.id} locale={locale} />
+          <FeedbackButton key={user.id} userId={user.id} locale={locale}/><NotificationBell key={`notifications-${user.id}`}/><Announcements key={user.id} userId={user.id} locale={locale} />
           {canAccessAdmin ? (
             <a className="admin-entry" href={`/api/portals/admin?locale=${locale}`} aria-label={t("nav.adminCenter")} onClick={event => guardLink(event, undefined, true)}>
               <span className="admin-entry-icon" aria-hidden="true">⚙</span>

@@ -317,7 +317,7 @@ function ProjectRow({
           {[item.ownerName || t("accountClosure.deleted"), item.bookTitle && item.bookTitle !== item.projectName ? item.bookTitle : undefined].filter(Boolean).join(" · ")}
         </small>
         <small>
-          {[item.taskNumber, formatDate(item.updatedAt, locale)].filter(Boolean).join(" · ")}
+          {formatDate(item.updatedAt, locale)}
         </small>
       </span>
       <span className={`status status-${item.workflowStatus}`}>

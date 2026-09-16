@@ -1,3 +1,4 @@
+import { HelpPopover } from "@lifewood/ui/help-popover";
 import {
 adminService,
 localizedApiError
@@ -436,9 +437,10 @@ function CreateUserDialog({
           <span>{t("admin.users.phone")}</span>
           <input name="phone" type="tel" inputMode="tel" autoComplete="tel" maxLength={50} />
         </label>
-        <label>
-          <span>{t("admin.users.password")}</span>
+        <div className="form-help-field">
+          <div className="field-help-heading"><label htmlFor="new-user-password">{t("admin.users.password")}</label><HelpPopover label={t("admin.users.password")}>{t("admin.users.passwordHint")}</HelpPopover></div>
           <input
+            id="new-user-password"
             name="password"
             type="password"
             autoComplete="new-password"
@@ -446,20 +448,18 @@ function CreateUserDialog({
             maxLength={128}
             required
           />
-          <small>{t("admin.users.passwordHint")}</small>
-        </label>
+        </div>
         <label>
           <span>{t("admin.users.role")}</span>
           <AccountRoleSelect initialRole="customer" />
         </label>
-        <label>
-          <span>{t("admin.users.organization")}</span>
-          <select name="organizationId" defaultValue="">
+        <div className="form-help-field">
+          <div className="field-help-heading"><label htmlFor="user-organization">{t("admin.users.organization")}</label><HelpPopover label={t("admin.users.organization")}>{t("admin.users.organizationHint")}</HelpPopover></div>
+          <select id="user-organization" name="organizationId" defaultValue="">
             <option value="">{t("admin.users.noOrganization")}</option>
             {organizations.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <small>{t("admin.users.organizationHint")}</small>
-        </label>
+        </div>
         {Boolean(error) && (
           <div className="message error" role="alert">
             {localizedApiError(error, t)}
@@ -517,14 +517,13 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
             <AccountRoleSelect initialRole={user.role} />
           )}
         </label>
-        <label>
-          <span>{t("admin.users.organization")}</span>
-          <select name="organizationId" defaultValue={user.organization?.id ?? ""}>
+        <div className="form-help-field">
+          <div className="field-help-heading"><label htmlFor="user-organization">{t("admin.users.organization")}</label><HelpPopover label={t("admin.users.organization")}>{t("admin.users.organizationHint")}</HelpPopover></div>
+          <select id="user-organization" name="organizationId" defaultValue={user.organization?.id ?? ""}>
             <option value="">{t("admin.users.noOrganization")}</option>
             {selectableOrganizations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? "" : ` · ${t("admin.organizations.inactive")}`}</option>)}
           </select>
-          <small>{t("admin.users.organizationHint")}</small>
-        </label>
+        </div>
         {user.role !== "owner" && <label className="check-row"><input name="active" type="checkbox" defaultChecked={user.active} /><span>{t("admin.users.accountEnabled")}</span></label>}
         {Boolean(error) && <div className="message error" role="alert">{localizedApiError(error, t)}</div>}
         <div className="modal-actions"><button type="button" disabled={busy} onClick={requestClose}>{t("common.cancel")}</button><button className="primary" disabled={busy}>{t(busy ? "common.loading" : "common.save")}</button></div>

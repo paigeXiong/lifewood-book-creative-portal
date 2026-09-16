@@ -1,3 +1,4 @@
+import { HelpPopover } from "@lifewood/ui/help-popover";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -50,15 +51,15 @@ export function AccountSwitcher({user,destination}:{user:CurrentUser;destination
       {switcher.isPending&&!adding&&<p role="status">{t('accountSwitch.switching')}</p>}
       <button className="account-switch-add" type="button" disabled={busy||!accounts.isSuccess||(accounts.data?.items.length??0)>=(accounts.data?.limit??5)} onClick={()=>{switcher.reset();setAdding(true);}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M2 21v-3a7 7 0 0 1 14 0v3m3-15v8m-4-4h8"/></svg>{t('accountSwitch.add')}</button>
       {adding&&<NoticeModal title={t('accountSwitch.add')} onClose={()=>{if(!busy){setAdding(false);setPassword('');}}}>
-        <p className="account-switch-hint">{t('accountSwitch.hint')}</p>
+
         <form className="account-switch-form" onSubmit={e=>{e.preventDefault();void run({email:email.trim(),password,rememberMe});}}>
           <label>{t('auth.email')}<input type="email" autoComplete="username" required value={email} disabled={busy} onChange={e=>setEmail(e.target.value)}/></label>
           <label>{t('auth.password')}<input type="password" autoComplete="current-password" required value={password} disabled={busy} onChange={e=>setPassword(e.target.value)}/></label>
           <label className="account-switch-remember"><input type="checkbox" checked={rememberMe} disabled={busy} onChange={e=>setRememberMe(e.target.checked)}/>{t('auth.rememberMe')}</label>
           {switcher.error&&<p role="alert">{localizedApiError(switcher.error,t)}</p>}
-          <div className="account-switch-actions"><button type="button" disabled={busy} onClick={()=>{setAdding(false);setPassword('');switcher.reset();}}>{t('common.cancel')}</button><button type="submit" disabled={busy}>{t(switcher.isPending?'accountSwitch.switching':'accountSwitch.addAndSwitch')}</button></div>
+          <div className="account-switch-actions"><HelpPopover label={t("accountSwitch.add")}><p>{t("accountSwitch.hint")}</p><p>{t("accountSwitch.logoutHint")}</p></HelpPopover><button type="button" disabled={busy} onClick={()=>{setAdding(false);setPassword('');switcher.reset();}}>{t('common.cancel')}</button><button type="submit" disabled={busy}>{t(switcher.isPending?'accountSwitch.switching':'accountSwitch.addAndSwitch')}</button></div>
         </form>
-        <p className="account-switch-hint">{t('accountSwitch.logoutHint')}</p>
+
       </NoticeModal>}
     </section>;
 }

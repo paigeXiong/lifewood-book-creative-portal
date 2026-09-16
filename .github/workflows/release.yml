@@ -20,7 +20,7 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists."
           else
-            gh release create "$RELEASE_TAG" --verify-tag --title "Lifewood Book Creative Portal $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md" --draft
+            gh release create "$RELEASE_TAG" --verify-tag --title "Book Creative Portal $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md" --draft
           fi
 
   windows:

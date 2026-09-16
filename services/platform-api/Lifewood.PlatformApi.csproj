@@ -10,6 +10,7 @@
     <AssemblyName>Lifewood.BookPortal.Server</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
@@ -26,5 +27,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Lifewood.PlatformApi.Tests" />
+    <InternalsVisibleTo Include="Lifewood.OidcNativeSmoke" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,6 @@
 # 项目处理效率与个人工作区
 
-本轮功能均适配简体中文和英文。邮件通知仍未接入。
+本轮功能均适配简体中文和英文。当前工作区已具备可配置邮件通知，真实发件服务仍未接入验收，见[邮件说明](./email.md)。
 
 ## 批量处理
 
@@ -38,10 +38,16 @@
 
 支持退出指定其他设备或全部其他设备，保留当前设备。退出会同时删除该设备的账号切换凭据和有效登录记录；旧登录 cookie 在下一次请求时失效，重新登录需要密码。只撤销当前账号，不退出该设备保存的其他账号。已开始处理的请求可能完成。
 
+翻页、设备从列表消失或列表刷新失败时清除旧退出确认；列表读取中、离线暂停或失败时不能提交退出。退出请求在当前前端实例内按账号共享操作锁，离开后重开也不能重复提交；无论响应成功或失败，均重新读取服务端设备状态，失败后不自动重发退出请求。账号切换会清除旧确认、屏蔽旧请求的页面结果，弹窗仍可关闭。恢复操作需要重新选择设备并确认。
+
+English: Paging, refresh failure, or disappearance of the target clears its sign-out confirmation. Actions stay blocked while the list is fetching, paused offline, or in error. A per-account lock in the current frontend instance spans revocation and reconciliation, including remounts. Lost responses trigger a read, never an automatic revocation retry. Account changes invalidate stale results while allowing the dialog to close.
+
 活动会话沿用滑动续期，同步延长对应服务端登录记录，已过期或撤销的记录不能通过续期恢复。历史 cookie 仅在仍有匹配有效凭据时升级；旧记录可能显示未知浏览器或无最近连接记录。密码变更、禁用和账号注销继续沿用原有全账号会话失效规则。
 
 接口：`GET /api/me/sessions?page=1`、`DELETE /api/me/sessions/{id}`、`POST /api/me/sessions/revoke-others`；写操作要求 CSRF 校验。
 
 ## 验证
+
+2026-09-16 登录设备异常恢复：新增 14 项中英文回归及已有 2 项账号缓存隔离测试通过，覆盖翻页旧确认、列表失败/目标消失、重复点击与重开、响应丢失、离线恢复、账号切换及明确确认后退出其他设备。使用替代接口，未撤销真实设备会话。
 
 `ProductivityTests.cs` 覆盖筛选归属、上限和版本，草稿和退回范围，批量字段更新冲突，趋势时区/范围，以及设备撤销和不可恢复规则。HTTP 集成测试覆盖客户越权、批量部分成功、旧 cookie 失效以及滑动续期。隔离浏览器验证中英文、1366/390 像素布局、筛选应用/移除、续填链接、CSV 下载、批量保存与设备退出。

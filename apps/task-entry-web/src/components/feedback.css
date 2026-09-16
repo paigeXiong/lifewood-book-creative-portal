@@ -4,3 +4,4 @@
 @media(prefers-reduced-motion:reduce){.feedback-trigger svg{transition:none}.feedback-trigger:hover svg{transform:none}}
 
 .feedback-file-control{position:relative;display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;font-weight:400}.feedback-file-control>span:first-child{padding:8px 12px;border-radius:8px;background:#edf4ef;color:#205743;flex-shrink:0;font-weight:600}.feedback-file-control>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64766d}.feedback-file-control input{position:absolute;inset:0;opacity:0;cursor:pointer}.feedback-file-control:focus-within{outline:2px solid #2c7758;outline-offset:3px;border-radius:8px}.feedback-file-control:has(input:disabled){opacity:.6;cursor:default}
+.feedback-screenshot-field{display:grid;gap:6px}.feedback-form .feedback-file-control{display:flex;font-weight:400;gap:10px}

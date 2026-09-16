@@ -1,4 +1,8 @@
 import { AccountLocaleRedirect } from "@lifewood/ui/account-locale";
+import { ForgotPasswordButton } from "@lifewood/ui/email";
+import { OtherLoginMethods } from "@lifewood/ui/oidc";
+import { OidcSettingsPage } from "./OidcSettingsPage";
+import { MailStatusPage } from "./MailStatusPage";
 import { AccountSessionGuard,AccountSwitcher } from "@lifewood/ui/account-switcher";
 import { NotificationBell,NotificationCenter } from "@lifewood/ui/notifications";
 import { UserPresence } from "@lifewood/ui/user-presence";
@@ -208,6 +212,8 @@ function IdentityGate({
             )}
           </button>
         </form>
+        {!requiresBootstrap && <ForgotPasswordButton />}
+        {!requiresBootstrap && <OtherLoginMethods portal="admin" />}
       </section>
     </main>
   );
@@ -531,6 +537,8 @@ function AdminRoot() {
         <Route path="settings/announcements" element={<AnnouncementsPage key={me.data.id} userId={me.data.id} locale={locale} />} />
         <Route path="settings/characters" element={<CharacterPresetsPage locale={locale} imageBase={customerPortalUrl(locale)} />} />
         <Route path="settings/ai" element={<AiSettingsPage locale={locale} />} />
+        <Route path="settings/oidc" element={<OidcSettingsPage key={me.data.id} locale={locale} allowed={me.data.roles.includes("owner")} />} />
+        <Route path="settings/mail" element={<MailStatusPage key={me.data.id} locale={locale} allowed={me.data.roles.includes("owner")} />} />
         <Route path="settings" element={<Navigate replace to="options" />} />
         <Route
           path="settings/options"

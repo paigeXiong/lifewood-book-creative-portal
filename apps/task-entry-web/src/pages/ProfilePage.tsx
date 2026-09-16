@@ -1,12 +1,14 @@
 import { canRetainQueryData } from "../components/RefreshNotice";
 import {LoginSessions} from "@lifewood/ui/login-sessions";
+import { EmailSettingsPanel } from "@lifewood/ui/email";
+import { OidcBinding } from "@lifewood/ui/oidc";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { useConfirm } from "../useConfirm";
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
-import { authService, localizedApiError } from "@lifewood/api-client";
+import { ApiError, authService, captureAccountGuard, localizedApiError } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { SupportedLocale } from "@lifewood/domain";
 import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
@@ -14,13 +16,48 @@ import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
 const AvatarEditor = lazy(() => import("@lifewood/ui/avatar-editor").then((module) => ({ default: module.AvatarEditor })));
 
 export function ProfilePage() {
+  const { t } = useTranslation(), { locale } = useParams();
+  const userQuery = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
+  const user = userQuery.data;
+  if (!isSupportedLocale(locale)) return null;
+  if (userQuery.isError && (!user || !canRetainQueryData(userQuery.error))) return <div className="screen-status" role="alert">{localizedApiError(userQuery.error, t)} <button className="button button-secondary" onClick={() => void userQuery.refetch()}>{t("common.retry")}</button></div>;
+  if (userQuery.isPending || !user) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
+  return <ProfileContent key={user.id} user={user} readReady={!userQuery.error && userQuery.fetchStatus === "idle"} />;
+}
+
+type ProfileUser = Awaited<ReturnType<typeof authService.getCurrentUser>>;
+function ProfileContent({ user, readReady }: { user: ProfileUser; readReady: boolean }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const { locale } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const userQuery = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
-  const user = userQuery.data;
+  const mounted = useRef(false), accountChanged = useRef(false), profileLock = useRef(false);
+  const writeRevision = useRef(0);
+  const avatarLock = useRef(false);
+  const [invalidated, setInvalidated] = useState(false);
+  useEffect(() => {
+    mounted.current = true;
+    const stop = () => { accountChanged.current = true; setInvalidated(true); };
+    window.addEventListener("lw-account-changed", stop);
+    return () => { mounted.current = false; window.removeEventListener("lw-account-changed", stop); };
+  }, []);
+  const isCurrent = () => mounted.current && !accountChanged.current && queryClient.getQueryData<ProfileUser>(["current-user"])?.id === user.id;
+  async function write<T>(request: () => Promise<T>): Promise<T> {
+    const guard = captureAccountGuard();
+    const check = () => { guard(); if (!isCurrent()) throw new ApiError({ code: "auth.account_changed", messageKey: "accountSwitch.changed", retryable: false }); };
+    check(); const result = await request(); check(); return result;
+  }
+  const mergeUser = async (updated: ProfileUser, fields: Partial<ProfileUser>) => {
+    if (!isCurrent() || updated.id !== user.id) return false;
+    writeRevision.current += 1;
+    // An older background read must not replace a confirmed write. Do not
+    // revert the cache: another setting may have finished since that read began.
+    await queryClient.cancelQueries({ queryKey: ["current-user"], exact: true }, { revert: false });
+    if (!isCurrent() || updated.id !== user.id) return false;
+    queryClient.setQueryData<ProfileUser>(["current-user"], current => current?.id === user.id ? { ...current, ...fields } : current);
+    return true;
+  };
   const [displayName, setDisplayName] = useState<string>();
   const [phone, setPhone] = useState<string>();
   const [saved, setSaved] = useState(false);
@@ -36,30 +73,47 @@ export function ProfilePage() {
   }, [editing]);
 
   const updateProfile = useMutation({
-    mutationFn: () => authService.updateProfile({
-      displayName: (displayName ?? user?.displayName ?? "").trim(),
-      phone: (phone ?? user?.phone ?? "").trim(),
-    }),
+    mutationFn: (input: { displayName: string; phone: string }) => write(() => authService.updateProfile(input)),
+    retry: false,
     onMutate: () => setSaved(false),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["current-user"], updated);
-      setDisplayName(updated.displayName);
-      setPhone(updated.phone ?? "");
+    onSuccess: async (updated) => {
+      if (!await mergeUser(updated, { displayName: updated.displayName, phone: updated.phone })) return;
+      setDisplayName(undefined);
+      setPhone(undefined);
       setSaved(true);
       setEditing(false);
     },
+    onError: async () => {
+      // A lost response may already have saved; retain the draft while reading
+      // the actual profile, and never automatically repeat the write.
+      if (isCurrent()) {
+        try {
+          let revision: number;
+          do {
+            revision = writeRevision.current;
+            captureAccountGuard()();
+            await queryClient.invalidateQueries({ queryKey: ["current-user"], exact: true });
+            // A concurrent successful setting can cancel this read. Keep the
+            // contact save locked until a read after that write has finished.
+          } while (isCurrent() && revision !== writeRevision.current);
+        } catch { /* The page exposes refresh recovery. */ }
+      }
+    },
+    onSettled: () => { profileLock.current = false; },
   });
   const avatarUpdate = useMutation({
-    mutationFn: (action: { file?: File; remove?: boolean }) => action.remove ? authService.removeAvatar() : authService.uploadAvatar(action.file!),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["current-user"], updated);
+    retry: false,
+    mutationFn: (action: { file?: File; remove?: boolean }) => write(() => action.remove ? authService.removeAvatar() : authService.uploadAvatar(action.file!)),
+    onSuccess: async (updated) => {
+      if (!await mergeUser(updated, { avatarUrl: updated.avatarUrl, hasCustomAvatar: updated.hasCustomAvatar })) return;
       setAvatarOpen(false);
     },
+    onSettled: () => { avatarLock.current = false; },
   });
   const updatePreferences = useMutation({
-    mutationFn: (preferences: { locale: SupportedLocale; taskBackgroundMotion?: boolean }) => authService.updatePreferences(preferences),
-    onSuccess: (updated, preferences) => {
-      queryClient.setQueryData(["current-user"], updated);
+    mutationFn: (preferences: { locale: SupportedLocale; taskBackgroundMotion?: boolean }) => write(() => authService.updatePreferences(preferences)),
+    onSuccess: async (updated, preferences) => {
+      if (!await mergeUser(updated, { locale: updated.locale, taskBackgroundMotion: updated.taskBackgroundMotion })) return;
       if (preferences.taskBackgroundMotion === undefined && preferences.locale !== locale) navigate(localizedPath(preferences.locale, "/profile"), { replace: true });
     },
   });
@@ -67,18 +121,25 @@ export function ProfilePage() {
   const currentDisplayName = displayName ?? user?.displayName ?? "";
   const currentPhone = phone ?? user?.phone ?? "";
   const unchanged = !user || (currentDisplayName.trim() === user.displayName && currentPhone.trim() === (user.phone ?? ""));
-  const dirty = Boolean(user) && !unchanged;
+  const dirty = editing && !unchanged;
+  const saveAvatar = (action: { file?: File; remove?: boolean }) => {
+    if (!isCurrent() || avatarLock.current || avatarUpdate.isPending) return;
+    avatarLock.current = true;
+    avatarUpdate.mutate(action);
+  };
 
 
   if (!isSupportedLocale(locale)) return null;
-  if (userQuery.isError && (!user || !canRetainQueryData(userQuery.error))) return <div className="screen-status" role="alert">{localizedApiError(userQuery.error, t)} <button className="button button-secondary" onClick={() => void userQuery.refetch()}>{t("common.retry")}</button></div>;
-  if (userQuery.isPending || !user) return <div className="screen-status" role="status" aria-busy="true"><UnsavedChangesGuard dirty={dirty} />{t("common.loading")}</div>;
+  if (invalidated) return <div className="screen-status" role="alert">{t("accountSwitch.changed")}</div>;
   const role = user.roles[0] ?? "member";
   const roleLabel = t(`profile.roles.${role}`, { defaultValue: t("profile.roles.member") });
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!unchanged) updateProfile.mutate();
+    if (editing && readReady && !unchanged && !profileLock.current && !updateProfile.isPending) {
+      profileLock.current = true;
+      updateProfile.mutate({ displayName: currentDisplayName.trim(), phone: currentPhone.trim() });
+    }
   };
 
   return (
@@ -111,7 +172,7 @@ export function ProfilePage() {
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8c.5-4 2.8-6 7-6s6.5 2 7 6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
             </span>
             <span><h2 id="profile-contact-title">{t("profile.contactTitle")}</h2></span>
-            {!editing && <button ref={editButtonRef} className="button button-secondary profile-edit-button" type="button" onClick={() => { setEditing(true); setSaved(false); updateProfile.reset(); }}>{t("profile.edit")}</button>}
+            {!editing && <button ref={editButtonRef} className="button button-secondary profile-edit-button" type="button" onClick={() => { setDisplayName(user.displayName); setPhone(user.phone ?? ""); setEditing(true); setSaved(false); updateProfile.reset(); }}>{t("profile.edit")}</button>}
           </div>
           {editing ? <div className="profile-fields">
             <label className="profile-field" htmlFor="profile-display-name">
@@ -131,7 +192,7 @@ export function ProfilePage() {
           {saved ? <p className="profile-success" role="status">{t("profile.saved")}</p> : null}
           {editing && <div className="profile-actions">
             <button className="button button-secondary" type="button" disabled={updateProfile.isPending} onClick={() => { setDisplayName(undefined); setPhone(undefined); setEditing(false); updateProfile.reset(); }}>{t("common.cancel")}</button>
-            <button className="button button-primary" type="submit" disabled={updateProfile.isPending || unchanged}>{updateProfile.isPending ? t("common.saving") : t("profile.save")}</button>
+            <button className="button button-primary" type="submit" disabled={updateProfile.isPending || !readReady || unchanged}>{updateProfile.isPending ? t("common.saving") : t("profile.save")}</button>
           </div>}
         </form>
 
@@ -152,6 +213,7 @@ export function ProfilePage() {
               <button className="profile-security-action" type="button" onClick={() => setPasswordOpen(true)}>{t("nav.changePassword")}</button>
             </div>
               <div className="profile-security-row"><LoginSessions key={user.id} userId={user.id}/></div>
+              <OidcBinding key={user.id} userId={user.id} />
           </aside>
 
           <section className="profile-surface profile-preferences" aria-labelledby="profile-preferences-title" aria-busy={updatePreferences.isPending}>
@@ -191,11 +253,12 @@ export function ProfilePage() {
               {updatePreferences.isSuccess ? <span>{t("profile.preferenceSaved")}</span> : null}
               {updatePreferences.isError ? <span className="field-error" role="alert">{localizedApiError(updatePreferences.error, t)}</span> : null}
             </div>
+            <EmailSettingsPanel key={user.id} userId={user.id} />
           </section>
         </div>
       </div>
 
-      {passwordOpen ? <ChangePasswordDialog onClose={() => setPasswordOpen(false)} /> : null}
+      {passwordOpen ? <ChangePasswordDialog userId={user.id} onClose={() => setPasswordOpen(false)} /> : null}
       {avatarOpen ? <Suspense fallback={null}><AvatarEditor
         avatarUrl={user.avatarUrl || "/api/me/avatar"}
         displayName={user.displayName}
@@ -203,8 +266,8 @@ export function ProfilePage() {
         busy={avatarUpdate.isPending}
         error={avatarUpdate.isError ? t("nav.avatarFailed") : undefined}
         onClose={() => { if (!avatarUpdate.isPending) { setAvatarOpen(false); avatarUpdate.reset(); } }}
-        onSave={(file) => avatarUpdate.mutate({ file })}
-        onRemove={async () => { if (await confirm(t("nav.removeAvatarConfirm"))) avatarUpdate.mutate({ remove: true }); }}
+        onSave={(file) => saveAvatar({ file })}
+        onRemove={async () => { if (await confirm(t("nav.removeAvatarConfirm"))) saveAvatar({ remove: true }); }}
         returnFocus={avatarButtonRef.current}
         labels={{
           title: t("nav.avatarEditorTitle"), close: t("common.close"), choose: t("nav.chooseAvatar"), chooseAnother: t("nav.chooseAnotherAvatar"),

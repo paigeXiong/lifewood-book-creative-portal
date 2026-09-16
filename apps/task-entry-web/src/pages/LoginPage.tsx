@@ -1,4 +1,7 @@
+import { HelpPopover } from "@lifewood/ui/help-popover";
 import { Announcements } from "../components/Announcements";
+import { ForgotPasswordButton } from "@lifewood/ui/email";
+import { OtherLoginMethods } from "@lifewood/ui/oidc";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -71,20 +74,22 @@ export function LoginPage() {
         {status.isError ? <div className="inline-error" role="alert">{localizedApiError(status.error, t)} <button className="button button-secondary" type="button" onClick={() => void status.refetch()}>{t("common.retry")}</button></div> : null}
         {status.data ? (
           <>
-            <div className="login-heading">
+            <div className="login-heading field-help-heading">
               <h1 id="login-title">{t(requiresBootstrap ? "auth.bootstrapTitle" : "auth.title")}</h1>
-              {requiresBootstrap && <p>{t("auth.bootstrapDescription")}</p>}
+              {requiresBootstrap && <HelpPopover label={t("auth.bootstrapTitle")}>{t("auth.bootstrapDescription")}</HelpPopover>}
             </div>
             <form className="login-form" onSubmit={submit} aria-busy={authenticate.isPending}>
               {requiresBootstrap ? <label className="login-field" htmlFor="display-name"><span>{t("auth.displayName")}</span><input id="display-name" name="displayName" type="text" autoComplete="name" minLength={2} maxLength={100} required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label> : null}
               {requiresBootstrap ? <label className="login-field" htmlFor="organization-name"><span>{t("auth.organizationName")}</span><input id="organization-name" name="organizationName" type="text" autoComplete="organization" minLength={2} maxLength={120} value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} /></label> : null}
               {requiresBootstrap ? <label className="login-field" htmlFor="bootstrap-phone"><span>{t("auth.phone")}</span><input id="bootstrap-phone" name="phone" type="tel" autoComplete="tel" maxLength={50} value={phone} onChange={(event) => setPhone(event.target.value)} /></label> : null}
               <label className="login-field" htmlFor="login-email"><span>{t("auth.email")}</span><input id="login-email" name="email" type="email" inputMode="email" autoComplete="username" spellCheck={false} maxLength={254} required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-              <label className="login-field" htmlFor="login-password"><span>{t("auth.password")}</span><span className="password-control"><input id="login-password" name="password" type={passwordVisible ? "text" : "password"} autoComplete={requiresBootstrap ? "new-password" : "current-password"} minLength={requiresBootstrap ? 8 : undefined} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" onClick={() => setPasswordVisible((visible) => !visible)}>{t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")}</button></span>{requiresBootstrap ? <small>{t("auth.passwordHint")}</small> : null}</label>
+              <div className="login-field"><div className="field-help-heading"><label htmlFor="login-password">{t("auth.password")}</label>{requiresBootstrap && <HelpPopover label={t("auth.password")}>{t("auth.passwordHint")}</HelpPopover>}</div><span className="password-control"><input id="login-password" name="password" type={passwordVisible ? "text" : "password"} autoComplete={requiresBootstrap ? "new-password" : "current-password"} minLength={requiresBootstrap ? 8 : undefined} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" onClick={() => setPasswordVisible((visible) => !visible)}>{t(passwordVisible ? "auth.hidePassword" : "auth.showPassword")}</button></span></div>
               {requiresBootstrap ? <label className="login-field" htmlFor="confirm-password"><span>{t("auth.confirmPassword")}</span><input id="confirm-password" name="confirmPassword" type={passwordVisible ? "text" : "password"} autoComplete="new-password" minLength={8} maxLength={128} required aria-invalid={clientError ? true : undefined} aria-describedby={clientError ? "password-error" : undefined} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />{clientError ? <small className="field-error" id="password-error" role="alert">{clientError}</small> : null}</label> : <label className="remember-control"><input name="rememberMe" type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} /><span>{t("auth.rememberMe")}</span></label>}
               {authenticate.isError ? <div className="inline-error" role="alert">{localizedApiError(authenticate.error, t)}</div> : null}
               <button className="button button-primary login-submit" type="submit" disabled={authenticate.isPending}>{authenticate.isPending ? t(requiresBootstrap ? "auth.creatingAccount" : "auth.signingIn") : t(requiresBootstrap ? "auth.createAccount" : "auth.signIn")}</button>
             </form>
+            {!requiresBootstrap && <ForgotPasswordButton />}
+            {!requiresBootstrap && <OtherLoginMethods portal="customer" />}
           </>
         ) : null}
       </section>

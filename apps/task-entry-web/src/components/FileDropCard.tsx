@@ -1,4 +1,5 @@
 import { FileTransfers, type FileTransfer } from "./FileTransfers";
+import { HelpPopover } from "@lifewood/ui/help-popover";
 import { createId } from "../create-id";
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -108,7 +109,7 @@ export function FileDropCard({
 
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target;
-    if (target instanceof Element && target.closest("button, a, input")) return;
+    if (target instanceof Element && target.closest("button, a, input, [popover]")) return;
     openPicker();
   };
 
@@ -165,11 +166,10 @@ export function FileDropCard({
     onDrop={handleDrop}
   >
     <div className="upload-card-heading">
-      <div>
+      <div className="field-help-heading">
         <strong>{label}{required && <span className="required" aria-hidden="true">*</span>}</strong>
-        <small>{category.description}</small>
+        <HelpPopover label={label}><p>{category.description}</p><p>{t("voice.fileLimit", { size: formatBytes(category.maxBytes, locale), count: category.maxFiles })}</p></HelpPopover>
       </div>
-      <small>{t("voice.fileLimit", { size: formatBytes(category.maxBytes, locale), count: category.maxFiles })}</small>
     </div>
     {preview}
     <div className="upload-drop-prompt" role="button" tabIndex={disabled ? -1 : 0} aria-disabled={disabled} aria-label={t("sourceFiles.chooseFor", { category: label })} onKeyDown={handleKeyDown}>

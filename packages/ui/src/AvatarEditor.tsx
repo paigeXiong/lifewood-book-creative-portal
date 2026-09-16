@@ -127,7 +127,6 @@ export function AvatarEditor({
   const [localError, setLocalError] = useState<string>();
   const [preparing, setPreparing] = useState(false);
   busyRef.current = busy;
-  preparingRef.current = preparing;
   closeRef.current = onClose;
 
   const baseScale = image ? Math.max(VIEWPORT_SIZE / image.element.naturalWidth, VIEWPORT_SIZE / image.element.naturalHeight) : 1;
@@ -165,7 +164,7 @@ export function AvatarEditor({
   }, [returnFocus]);
 
   const chooseImage = async (file?: File) => {
-    if (!file) return;
+    if (!file || busyRef.current || preparingRef.current) return;
     const selection = ++selectionRef.current;
     if (pendingUrlRef.current) { URL.revokeObjectURL(pendingUrlRef.current); pendingUrlRef.current = undefined; }
     const mediaType = sourceMediaType(file);
@@ -241,13 +240,17 @@ export function AvatarEditor({
   };
 
   const save = () => {
-    if (!image) return;
+    if (!image || busyRef.current || preparingRef.current) return;
+    preparingRef.current = true;
+    const selection = ++selectionRef.current;
+    if (pendingUrlRef.current) { URL.revokeObjectURL(pendingUrlRef.current); pendingUrlRef.current = undefined; }
     setPreparing(true);
+    setLocalError(undefined);
     const canvas = document.createElement("canvas");
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
     const context = canvas.getContext("2d");
-    if (!context) { setPreparing(false); setLocalError(labels.invalidImage); return; }
+    if (!context) { preparingRef.current = false; setPreparing(false); setLocalError(labels.invalidImage); return; }
     const ratio = OUTPUT_SIZE / VIEWPORT_SIZE;
     try {
       context.imageSmoothingEnabled = true;
@@ -260,11 +263,14 @@ export function AvatarEditor({
         renderedHeight * ratio,
       );
       canvas.toBlob((blob) => {
+        if (selection !== selectionRef.current) return;
+        preparingRef.current = false;
         setPreparing(false);
         if (!blob) { setLocalError(labels.invalidImage); return; }
         onSave(new File([blob], "avatar.png", { type: "image/png", lastModified: Date.now() }));
       }, "image/png");
     } catch {
+      preparingRef.current = false;
       setPreparing(false);
       setLocalError(labels.invalidImage);
     }

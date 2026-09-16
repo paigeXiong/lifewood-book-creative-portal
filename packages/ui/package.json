@@ -1,9 +1,12 @@
 {
   "name": "@lifewood/ui",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "private": true,
   "type": "module",
   "exports": {
+    "./help-popover": "./src/HelpPopover.tsx",
+    "./email": "./src/Email.tsx",
+    "./oidc": "./src/Oidc.tsx",
     "./tokens.css": "./src/tokens.css",
     "./account-menu.css": "./src/account-menu.css",
     "./avatar-editor": "./src/AvatarEditor.tsx",
