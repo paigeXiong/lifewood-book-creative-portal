@@ -245,7 +245,11 @@ test("owner can initialize the platform and navigate the localized admin shell",
     await page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true }).check();
     await page.getByRole("button", { name: "归档选中", exact: true }).click();
     await expect(page.getByText("暂无通知", { exact: true })).toBeVisible();
-    await page.getByRole("checkbox", { name: "已归档", exact: true }).check();
+    // The controlled value is committed by router navigation after the click.
+    const archivedFilter = page.getByRole("checkbox", { name: "已归档", exact: true });
+    await archivedFilter.click();
+    await expect(archivedFilter).toBeChecked();
+    await expect(page).toHaveURL(/archived=true/);
     await expect(page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "批量选择", exact: true }).click();
     await page.getByRole("checkbox", { name: "选择：项目进度已更新：Notification E2E", exact: true }).check();

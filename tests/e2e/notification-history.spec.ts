@@ -25,6 +25,12 @@ test("notification filters and loaded pages survive browser navigation in both p
     await gotoInAccountLocale(page, `${base}/notifications`);
     const center = page.locator(".notification-center.content"), rows = center.locator(".notification-list > li"), search = center.locator('input[type="search"]');
     await expect(rows).toHaveCount(30, { timeout: 15000 });
+    const archived = center.getByRole("checkbox", { name: locale === "zh-CN" ? "已归档" : "Archived", exact: true });
+    await archived.click(); await expect(archived).toBeChecked();
+    await expect(page).toHaveURL(`${base}/notifications?archived=true`);
+    await page.reload(); await expect(archived).toBeChecked();
+    await archived.click(); await expect(archived).not.toBeChecked();
+    await expect(page).toHaveURL(`${base}/notifications`);
     await search.fill("Book"); await expect(page).toHaveURL(`${base}/notifications?q=Book`);
     await center.getByRole("button", { name: locale === "zh-CN" ? "加载更多" : "Load more", exact: true }).click();
     await expect(page).toHaveURL(`${base}/notifications?q=Book&pages=2`); await expect(rows).toHaveCount(60);
