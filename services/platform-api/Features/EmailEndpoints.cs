@@ -11,13 +11,51 @@ internal static class EmailEndpoints
         api = api.MapGroup("");
         api.AddEndpointFilter(async (context, next) => { context.HttpContext.Response.Headers.CacheControl = "no-store"; return await next(context); });
         api.MapGet("/auth/email-status", (MailSettings settings) => Results.Ok(new MailAvailabilityDto(settings.Ready)));
+        api.MapGet("/admin/mail/templates", (HttpContext c, string? locale) => {
+            if (currentUser(c) is not {} user) return Results.Unauthorized();
+            if (!user.Roles.Contains("owner")) return Results.StatusCode(403);
+            if (locale is not ("zh-CN" or "en-US")) return Failure(c, 400, "invalidFilter");
+            return Results.Ok(MailTemplates.Preview(locale));
+        });
+        api.MapGet("/admin/mail/settings", (HttpContext c, MailSettingsStore store, string? locale) => {
+            if (currentUser(c) is not {} user) return Results.Unauthorized();
+            return !user.Roles.Contains("owner") ? Results.StatusCode(403) : Results.Ok(store.Read(locale));
+        });
+        api.MapPut("/admin/mail/settings", async (SaveMailSettings input, HttpContext c, MailSettingsStore store, string? locale) => {
+            if (currentUser(c) is not {} user) return Results.Unauthorized();
+            if (!user.Roles.Contains("owner")) return Results.StatusCode(403);
+            await store.Operations.WaitAsync(c.RequestAborted);
+            try {
+                var error = store.Save(input);
+                return error is null ? Results.Ok(store.Read(locale)) : SettingsFailure(c, error == "conflict" ? 409 : 400, error);
+            } catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException) {
+                return SettingsFailure(c, 503, "saveFailed");
+            } finally { store.Operations.Release(); }
+        });
+        api.MapPost("/admin/mail/test", async (MailTestRequest input, HttpContext c, MailSettingsStore store, IPlatformMailer mailer, string? locale) => {
+            if (currentUser(c) is not {} user) return Results.Unauthorized();
+            if (!user.Roles.Contains("owner")) return Results.StatusCode(403);
+            if (!await store.Operations.WaitAsync(0, c.RequestAborted)) return SettingsFailure(c, 409, "busy");
+            try {
+                var error = store.BeginTest(input.Revision, out var recipient);
+                if (error is not null) return SettingsFailure(c, error == "cooldown" ? 429 : 409, error);
+                var english = locale == "en-US";
+                await mailer.Send(recipient, english ? "Book Creative Portal — Email test" : "Book Creative Portal — 邮件测试",
+                    english ? "This is an email service test requested by your platform owner. No action is required." : "这是一封由平台负责人主动发送的邮件服务测试邮件，无需操作。", c.RequestAborted);
+                return Results.NoContent();
+            } catch (Exception exception) { return SettingsFailure(c, 502, MailFailureClassifier.Classify(exception)); }
+            finally { store.Operations.Release(); }
+        }).RequireRateLimiting("authentication");
         api.MapGet("/admin/mail/status", (HttpContext c, EmailRepository repository, string? status, string? kind, int? page) => {
             if (currentUser(c) is not {} user) return Results.Unauthorized();
             if (!user.Roles.Contains("owner")) return Results.StatusCode(403);
             if ((!string.IsNullOrEmpty(status) && !EmailRepository.QueueStates.Contains(status)) || (!string.IsNullOrEmpty(kind) && !EmailRepository.QueueKinds.Contains(kind)) || page is < 1 or > 100000) return Failure(c, 400, "invalidFilter");
             return Results.Ok(repository.QueueStatus(status, kind, page ?? 1));
         });
-        api.MapGet("/me/email", (HttpContext c, EmailRepository repository) => currentUser(c) is {} user ? Results.Ok(repository.Status(user.Id)) : Results.Unauthorized());
+        api.MapGet("/me/email", (HttpContext c, EmailRepository repository, string? locale) => {
+            if(currentUser(c) is not {} user) return Results.Unauthorized();
+            return locale is not (null or "zh-CN" or "en-US") ? Results.BadRequest() : Results.Ok(repository.Status(user.Id,locale));
+        });
         api.MapPost("/me/email/verify", (HttpContext c, EmailRepository repository, MailSettings settings) => {
             if (currentUser(c) is not {} user) return Results.Unauthorized();
             if (!settings.Ready) return Failure(c, 503, "unavailable");
@@ -25,7 +63,8 @@ internal static class EmailEndpoints
         }).RequireRateLimiting("authentication");
         api.MapPut("/me/email/preferences", (EmailPreferenceRequest input, HttpContext c, EmailRepository repository) => {
             if (currentUser(c) is not {} user) return Results.Unauthorized();
-            return repository.SavePreferences(user.Id, input.Notifications) ? Results.Ok(repository.Status(user.Id)) : Failure(c, 409, "verifyFirst");
+            if(input.Topics is {} topics && (topics.Length>EmailRepository.TopicIds.Length || topics.Any(topic=>!EmailRepository.TopicIds.Contains(topic)) || topics.Distinct().Count()!=topics.Length)) return Results.BadRequest();
+            return repository.SavePreferences(user.Id, input.Notifications,input.Topics) ? Results.Ok(repository.Status(user.Id)) : Failure(c, 409, "verifyFirst");
         });
         api.MapPost("/auth/password/forgot", async (ForgotPasswordRequest input, HttpContext c, EmailRepository repository, MailSettings settings) => {
             if (!settings.Ready) return Failure(c, 503, "unavailable");
@@ -42,4 +81,5 @@ internal static class EmailEndpoints
             repository.Consume("reset", input.Token, input.NewPassword) ? Results.NoContent() : Failure(c, 400, "invalidLink")).RequireRateLimiting("authentication");
     }
     private static IResult Failure(HttpContext c, int status, string code) => Results.Json(new ApiErrorDto("email." + code, "email.errors." + code, "Unable to complete email request.", null, false, c.TraceIdentifier), AppJsonContext.Default.ApiErrorDto, statusCode: status);
+    private static IResult SettingsFailure(HttpContext c, int status, string code) => Results.Json(new ApiErrorDto("mailService." + code, "mailService.errors." + code, "Unable to complete mail configuration request.", null, false, c.TraceIdentifier), AppJsonContext.Default.ApiErrorDto, statusCode: status);
 }

@@ -1,0 +1,14 @@
+.outbound-proxy-panel { margin-block: 16px; }
+.outbound-proxy-scopes { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.outbound-proxy-scopes li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #e8efeb; }
+.outbound-proxy-scopes li:last-child { border-bottom: 0; }
+.outbound-proxy-scopes li > div { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.outbound-proxy-scopes span { font-size: .875rem; color: #577067; }
+.outbound-proxy-scopes button { flex-shrink: 0; }
+.outbound-proxy-dialog { width: min(560px, calc(100vw - 32px)); }
+.outbound-proxy-dialog fieldset { display: grid; gap: 14px; border: 0; margin: 20px 0; padding: 0; min-width: 0; }
+.outbound-proxy-dialog label:not(.outbound-proxy-clear) { display: grid; gap: 8px; }
+.outbound-proxy-dialog input:not([type=checkbox]), .outbound-proxy-dialog select { width: 100%; min-width: 0; box-sizing: border-box; }
+.outbound-proxy-clear { display: flex; align-items: center; gap: 8px; }
+.outbound-proxy-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; align-items: center; }
+.outbound-proxy-actions > div { margin-right: auto; }

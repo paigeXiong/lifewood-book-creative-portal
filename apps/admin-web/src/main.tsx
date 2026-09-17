@@ -14,7 +14,9 @@ import { SettingsNavigationProvider } from "./SettingsTabs";
 import "./styles.css";
 import "./voice-config.css";
 import "./surface-theme.css";
+import "./pagination-layout.css";
 import "@lifewood/ui/account-menu.css";
+import "@lifewood/ui/overlay-motion.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000, refetchOnWindowFocus: false } } });
 const router = createBrowserRouter([{ path: "*", element: <SettingsNavigationProvider><App /></SettingsNavigationProvider> }], { basename: import.meta.env.BASE_URL.replace(/\/$/, "") || undefined });

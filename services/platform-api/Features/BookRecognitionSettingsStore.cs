@@ -85,7 +85,7 @@ internal sealed class BookRecognitionSettingsStore
                 var binding = Cover;
                 var provider = binding.Enabled ? document.Providers.FirstOrDefault(p => p.Id == binding.ProviderId) : null;
                 return provider is null ? new(false, null, "", "") : new(true, new Uri(provider.Endpoint), binding.Model,
-                    protector.Unprotect(provider.ProtectedKey), provider.Protocol);
+                    protector.Unprotect(provider.ProtectedKey), provider.Protocol, provider.Id);
             }
         }
     }

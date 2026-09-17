@@ -5,10 +5,10 @@ import {useNotificationLongPress} from "./useNotificationLongPress";
 import {emptyNotificationFilters,maxNotificationPages,notificationDate,notificationSearch,useNotificationListState} from "./notification-list-state";
 import {useNotificationActions} from "./useNotificationActions";
 import {useEffect,useId,useRef,useState,type ButtonHTMLAttributes} from "react";
-import {useInfiniteQuery,useMutation,useQuery,useQueryClient} from "@tanstack/react-query";
+import {useInfiniteQuery,useMutation,useMutationState,useQuery,useQueryClient} from "@tanstack/react-query";
 import {useNavigate,useParams,useLocation} from "react-router-dom";
 import {useTranslation} from "react-i18next";
-import {feedbackService,authService,notificationService as service,localizedApiError,type NotificationItem,type NotificationPreferences} from "@lifewood/api-client";
+import {captureAccountGuard,feedbackService,authService,notificationService as service,localizedApiError,type NotificationItem,type NotificationPreferences} from "@lifewood/api-client";
 import type {SupportedLocale} from "@lifewood/domain";
 import {showConfirmation} from "./confirmation";
 import "./notifications.css";
@@ -139,11 +139,72 @@ export function NotificationCenter({compact=false,admin=false,onNavigate}:{compa
  {pages>=maxNotificationPages&&(loaded>pages||feed.hasNextPage)&&<p>{t("notifications.listLimit")}</p>}
  </div>
  {detail&&<NoticeModal title={t("notifications.details")} onClose={()=>setDetail(undefined)}><h3>{detail.title}</h3><p>{detail.projectTitle}</p><p>{detail.actor?`${detail.actor} · `:""}{new Date(detail.createdAt).toLocaleString(locale)}</p><p>{t(`notifications.states.${detail.state}`)}</p>{linkFeedback}{update.error!=null&&<p role="alert">{localizedApiError(update.error,t)} <NoticeAction label={t("common.retry")} icon="refresh" disabled={actionsBusy} onClick={()=>{if(update.variables)update.retry();}}/></p>}{detail.kind==="feedback_reply"?<FeedbackNoticeContent id={detail.id} user={user} locale={locale}/>:<NoticeAction label={t(detail.kind.startsWith("backup_")?"notifications.openBackups":"notifications.openProject")} icon="center" disabled={actionsBusy} aria-busy={linkPending} onClick={()=>void go(detail)}/>}</NoticeModal>}
- {prefs&&<PreferenceEditor user={user} onClose={()=>setPrefs(false)}/>}
+ {prefs&&<PreferenceEditor key={user} user={user} onClose={()=>setPrefs(false)}/>}
  </section>;
 }
-export function NoticeModal({title,onClose,children}:{title:string;onClose:()=>void;children:React.ReactNode}){const {t}=useTranslation();const ref=useRef<HTMLDialogElement>(null);useEffect(()=>{const previous=document.activeElement as HTMLElement|null;const dialog=ref.current;dialog?.showModal();return()=>{dialog?.close();if(previous?.isConnected)previous.focus();};},[]);return <dialog ref={ref} onKeyDown={containDialogTab} className="notification-dialog" aria-label={title} onCancel={event=>{if(event.target!==event.currentTarget)return;event.preventDefault();onClose();}}><header><strong>{title}</strong><NoticeAction label={t("common.close")} icon="close" onClick={onClose}/></header>{children}</dialog>;}
-function PreferenceEditor({user,onClose}:{user:string;onClose:()=>void}){const {t}=useTranslation();const client=useQueryClient();const query=useQuery({queryKey:["notification-preferences",user],queryFn:service.preferences});const catalog=useQuery({queryKey:["notification-catalog"],queryFn:service.catalog});const [draft,setDraft]=useState<NotificationPreferences>();const value=draft??query.data;const save=useMutation({mutationFn:service.savePreferences,onSuccess:()=>{void client.invalidateQueries({queryKey:["notification-preferences",user]});onClose();}});return <NoticeModal title={t("notifications.preferences")} onClose={onClose}>{value?<form className="notification-form" onSubmit={e=>{e.preventDefault();if(!catalog.isSuccess||!catalog.data||save.isPending)return;save.mutate({...value,mutedKinds:(value.mutedKinds??[]).filter(k=>catalog.data?.items.some(r=>r.kind===k&&r.allowMute)),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});}}><label><input type="checkbox" checked={value.toast} onChange={e=>setDraft({...value,toast:e.target.checked})}/>{t("notifications.toast")}</label><label><input type="checkbox" checked={value.sound} onChange={e=>setDraft({...value,sound:e.target.checked})}/>{t("notifications.sound")}</label><label>{t("notifications.quietStart")}<input type="time" required={!!value.quietEnd} value={value.quietStart??""} onChange={e=>setDraft({...value,quietStart:e.target.value||null})}/></label><label>{t("notifications.quietEnd")}<input type="time" required={!!value.quietStart} value={value.quietEnd??""} onChange={e=>setDraft({...value,quietEnd:e.target.value||null})}/></label><div className="field-help-heading"><span>{t("notifications.preferences")}</span><HelpPopover label={t("notifications.preferences")}>{t("notifications.muteHint")}</HelpPopover></div>{catalog.isPending&&<p role="status">{t("common.loading")}</p>}{catalog.error&&<p role="alert">{localizedApiError(catalog.error,t)} <NoticeAction label={t("common.retry")} icon="refresh" disabled={catalog.isFetching} onClick={()=>void catalog.refetch()}/></p>}{catalog.data?.items.filter(r=>r.allowMute).map(r=><label key={r.kind}><input type="checkbox" checked={value.mutedKinds?.includes(r.kind)??false} onChange={e=>setDraft({...value,mutedKinds:e.target.checked?[...(value.mutedKinds??[]),r.kind]:(value.mutedKinds??[]).filter(k=>k!==r.kind)})}/>{t(`notifications.kinds.${r.kind}`)}</label>)}{save.error&&<p role="alert">{localizedApiError(save.error,t)}</p>}<NoticeAction label={t("notifications.save")} icon="save" type="submit" disabled={save.isPending||!catalog.isSuccess}/></form>:<p role={query.error?"alert":"status"}>{query.error?localizedApiError(query.error,t):t("common.loading")}{query.error&&<NoticeAction label={t("common.retry")} icon="refresh" onClick={()=>void query.refetch()}/>}</p>}</NoticeModal>;}
+export function NoticeModal({title,onClose,children,closeDisabled=false}:{title:string;onClose:()=>void;children:React.ReactNode;closeDisabled?:boolean}){const {t}=useTranslation();const ref=useRef<HTMLDialogElement>(null);useEffect(()=>{const previous=document.activeElement as HTMLElement|null;const dialog=ref.current;dialog?.showModal();return()=>{dialog?.close();if(previous?.isConnected)previous.focus();};},[]);return <dialog ref={ref} onKeyDown={containDialogTab} className="notification-dialog" aria-label={title} onCancel={event=>{if(event.target!==event.currentTarget)return;event.preventDefault();event.stopPropagation();if(!closeDisabled)onClose();}}><header><strong>{title}</strong><NoticeAction label={t("common.close")} icon="close" disabled={closeDisabled} onClick={onClose}/></header>{children}</dialog>;}
+function PreferenceEditor({user,onClose}:{user:string;onClose:()=>void}){
+ const {t}=useTranslation(), client=useQueryClient();
+ const queryKey=["notification-preferences",user], mutationKey=["notification-preferences-save",user];
+ const query=useQuery({queryKey,queryFn:service.preferences,retry:false});
+ const catalog=useQuery({queryKey:["notification-catalog"],queryFn:service.catalog});
+ const pending=useMutationState({filters:{mutationKey,status:"pending"},select:()=>true});
+ const [draft,setDraft]=useState<NotificationPreferences>(), [error,setError]=useState<unknown>(), [invalidated,setInvalidated]=useState(false);
+ type Lifetime={mounted:boolean;accountChanged:boolean};
+ const lifetime=useRef<Lifetime|null>(null), lock=useRef(false);
+ useEffect(()=>{
+  const token={mounted:true,accountChanged:false};lifetime.current=token;
+  const stop=()=>{token.accountChanged=true;setInvalidated(true);setError(undefined);setDraft(undefined);};
+  window.addEventListener("lw-account-changed",stop);
+  return()=>{token.mounted=false;lifetime.current=null;window.removeEventListener("lw-account-changed",stop);};
+ },[]);
+ const isSaving=()=>lock.current||client.getMutationCache().findAll({mutationKey,status:"pending"}).length>0;
+ const save=useMutation({mutationKey,retry:false,networkMode:"always",mutationFn:async({value,token,guard}:{
+  value:NotificationPreferences;token:Lifetime;guard:()=>void;
+ })=>{
+  const active=()=>lifetime.current===token&&token.mounted&&!token.accountChanged;
+  try{
+   if(!active())return;
+   guard();
+   const saved=await service.savePreferences(value);
+   guard();if(token.accountChanged)return;
+   // An older background read must not overwrite the acknowledged preferences.
+   await client.cancelQueries({queryKey,exact:true});guard();if(token.accountChanged)return;
+   client.setQueryData(queryKey,saved);
+   if(active())onClose();
+  }catch(reason){
+   if(!token.accountChanged){
+    try{guard();await client.invalidateQueries({queryKey,exact:true});}catch{/* The query exposes a read-only retry. */}
+   }
+   if(active())setError(reason);
+  }finally{if(active())lock.current=false;}
+ }});
+ const value=draft??query.data, busy=pending.length>0;
+ const disabled=busy||invalidated||query.fetchStatus!=="idle"||!query.isSuccess;
+ const close=()=>{if(invalidated||!isSaving())onClose();};
+ return <NoticeModal title={t("notifications.preferences")} onClose={close} closeDisabled={busy&&!invalidated}>
+  {value?<form className="notification-form" aria-busy={busy} onSubmit={event=>{
+   event.preventDefault();const token=lifetime.current;
+   if(!token||token.accountChanged||disabled||isSaving()||!catalog.isSuccess||!catalog.data)return;
+   const submitted={...value,mutedKinds:(value.mutedKinds??[]).filter(kind=>catalog.data.items.some(rule=>rule.kind===kind&&rule.allowMute)),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone};
+   lock.current=true;setError(undefined);setDraft(submitted);
+   save.mutate({value:submitted,token,guard:captureAccountGuard()});
+  }}>
+   <label><input disabled={disabled} type="checkbox" checked={value.toast} onChange={e=>setDraft({...value,toast:e.target.checked})}/>{t("notifications.toast")}</label>
+   <label><input disabled={disabled} type="checkbox" checked={value.sound} onChange={e=>setDraft({...value,sound:e.target.checked})}/>{t("notifications.sound")}</label>
+   <label>{t("notifications.quietStart")}<input disabled={disabled} type="time" required={!!value.quietEnd} value={value.quietStart??""} onChange={e=>setDraft({...value,quietStart:e.target.value||null})}/></label>
+   <label>{t("notifications.quietEnd")}<input disabled={disabled} type="time" required={!!value.quietStart} value={value.quietEnd??""} onChange={e=>setDraft({...value,quietEnd:e.target.value||null})}/></label>
+   <div className="field-help-heading"><span>{t("notifications.preferences")}</span><HelpPopover label={t("notifications.preferences")}>{t("notifications.muteHint")}</HelpPopover></div>
+   {catalog.isPending&&<p role="status">{t("common.loading")}</p>}
+   {catalog.error&&<p role="alert">{localizedApiError(catalog.error,t)} <NoticeAction label={t("common.retry")} icon="refresh" disabled={busy||invalidated||catalog.isFetching} onClick={()=>void catalog.refetch()}/></p>}
+   {catalog.data?.items.filter(rule=>rule.allowMute).map(rule=><label key={rule.kind}><input disabled={disabled} type="checkbox" checked={value.mutedKinds?.includes(rule.kind)??false} onChange={e=>setDraft({...value,mutedKinds:e.target.checked?[...(value.mutedKinds??[]),rule.kind]:(value.mutedKinds??[]).filter(kind=>kind!==rule.kind)})}/>{t(`notifications.kinds.${rule.kind}`)}</label>)}
+   {!invalidated&&error!=null&&<p role="alert">{localizedApiError(error,t)}</p>}
+   {busy&&<p role="status">{t("common.loading")}</p>}
+   <NoticeAction label={t("notifications.save")} icon="save" type="submit" disabled={disabled||!catalog.isSuccess}/>
+  </form>:!query.error&&<p role="status">{t("common.loading")}</p>}
+  {invalidated?<p role="alert">{t("accountSwitch.changed")}</p>:query.error&&<p role="alert">{localizedApiError(query.error,t)} <NoticeAction label={t("common.retry")} icon="refresh" disabled={busy||query.fetchStatus!=="idle"} onClick={()=>void query.refetch()}/></p>}
+ </NoticeModal>;
+}
 
 function FeedbackNoticeContent({id,user,locale}:{id:number;user:string;locale:SupportedLocale}) {
  const {t}=useTranslation();const data=useQuery({queryKey:["feedback-notice",user,id],queryFn:()=>feedbackService.notice(id)});

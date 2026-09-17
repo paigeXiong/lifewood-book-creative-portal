@@ -18,9 +18,13 @@ internal sealed class UserPresenceRepository(string connectionString, TimeProvid
             CREATE TABLE IF NOT EXISTS presence_session_activity(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,session_id TEXT NOT NULL,session_version INTEGER NOT NULL,last_active INTEGER NOT NULL,PRIMARY KEY(user_id,session_id));
             CREATE TABLE IF NOT EXISTS ended_presence_sessions(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,session_id TEXT NOT NULL,ended_at INTEGER NOT NULL,PRIMARY KEY(user_id,session_id));
             CREATE INDEX IF NOT EXISTS ix_presence_seen ON user_presence(last_seen);
+            CREATE TABLE IF NOT EXISTS user_activity_daily(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, day TEXT NOT NULL, logins INTEGER NOT NULL DEFAULT 0, active_periods INTEGER NOT NULL DEFAULT 0, last_slot INTEGER NOT NULL DEFAULT -1, PRIMARY KEY(user_id,day));
+            DELETE FROM user_activity_daily WHERE user_id IN (SELECT id FROM users WHERE closed_at IS NOT NULL);
+            CREATE TABLE IF NOT EXISTS activity_collection(id INTEGER PRIMARY KEY CHECK(id=1), started_at INTEGER NOT NULL);
+            INSERT OR IGNORE INTO activity_collection(id,started_at) VALUES(1,$now);
             DELETE FROM user_presence;
             """;
-        q.ExecuteNonQuery();
+        q.Parameters.AddWithValue("$now", Now); q.ExecuteNonQuery();
     }
     public bool Heartbeat(string userId, string sessionId, int version, PresenceHeartbeatRequest input)
     {
@@ -48,12 +52,39 @@ internal sealed class UserPresenceRepository(string connectionString, TimeProvid
             sessionActivity.Transaction=tx;sessionActivity.ExecuteNonQuery();
             using var activity=Command(c,"INSERT INTO user_activity(user_id,last_active) VALUES($user,$now) ON CONFLICT(user_id) DO UPDATE SET last_active=$now WHERE last_active IS NULL OR last_active<=$now-20",("$user",userId),("$now",now));
             activity.Transaction=tx;activity.ExecuteNonQuery();
+            using var daily=Command(c,"INSERT INTO user_activity_daily(user_id,day,active_periods,last_slot) VALUES($user,$day,1,$slot) ON CONFLICT(user_id,day) DO UPDATE SET active_periods=active_periods+CASE WHEN $slot>last_slot THEN 1 ELSE 0 END,last_slot=MAX(last_slot,$slot)",("$user",userId),("$day",ActivityDay(now)),("$slot",now/900));
+            daily.Transaction=tx;daily.ExecuteNonQuery();
         }
         tx.Commit(); return true;
     }
     public void Login(string userId)
     {
-        using var c=Open();using var q=Command(c,"INSERT INTO user_activity(user_id,last_login) SELECT $user,$now WHERE EXISTS(SELECT 1 FROM users WHERE id=$user AND is_active=1 AND closed_at IS NULL) ON CONFLICT(user_id) DO UPDATE SET last_login=$now",("$user",userId),("$now",Now));q.ExecuteNonQuery();
+        var now=Now;
+        using var c=Open();using var tx=c.BeginTransaction();
+        using var q=Command(c,"INSERT INTO user_activity(user_id,last_login) SELECT $user,$now WHERE EXISTS(SELECT 1 FROM users WHERE id=$user AND is_active=1 AND closed_at IS NULL) ON CONFLICT(user_id) DO UPDATE SET last_login=$now",("$user",userId),("$now",now));
+        q.Transaction=tx;
+        if(q.ExecuteNonQuery()>0){
+            using var daily=Command(c,"INSERT INTO user_activity_daily(user_id,day,logins) VALUES($user,$day,1) ON CONFLICT(user_id,day) DO UPDATE SET logins=logins+1",("$user",userId),("$day",ActivityDay(now)));
+            daily.Transaction=tx;daily.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+    private static string ActivityDay(long timestamp)=>DateTimeOffset.FromUnixTimeSeconds(timestamp).ToOffset(TimeSpan.FromHours(8)).ToString("yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
+    internal static MemberActivityCalendar ReadCalendar(SqliteConnection db, SqliteTransaction tx, string id, long now)
+    {
+        var today=DateOnly.ParseExact(ActivityDay(now),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
+        var start=new DateOnly(today.Year,today.Month,1).AddMonths(-2);
+        using var coverage=Command(db,"SELECT started_at FROM activity_collection WHERE id=1");coverage.Transaction=tx;
+        var tracked=ActivityDay(Convert.ToInt64(coverage.ExecuteScalar()));
+        using var command=Command(db,"SELECT day,logins,active_periods FROM user_activity_daily WHERE user_id=$id AND day >= $start AND day <= $end",("$id",id),("$start",start.ToString("yyyy-MM-dd")),("$end",today.ToString("yyyy-MM-dd")));command.Transaction=tx;
+        var stored=new Dictionary<string,(int Logins,int Periods)>();
+        using(var reader=command.ExecuteReader())while(reader.Read())stored[reader.GetString(0)]=(reader.GetInt32(1),reader.GetInt32(2));
+        var days=new List<MemberActivityDay>();
+        for(var day=start;day<=today;day=day.AddDays(1)){
+            var date=day.ToString("yyyy-MM-dd");stored.TryGetValue(date,out var data);
+            days.Add(new(date,string.CompareOrdinal(date,tracked)>=0,data.Logins,data.Periods));
+        }
+        return new(tracked,days.ToArray());
     }
     public void EndSession(string userId,string sessionId)
     {
@@ -110,6 +141,13 @@ internal sealed class UserPresenceRepository(string connectionString, TimeProvid
             FROM projects p WHERE status='submitted' OR EXISTS(SELECT 1 FROM revision_rounds r WHERE r.project_id=p.id)
             """,("$id",id));count.Transaction=tx;
         using var counts=count.ExecuteReader();counts.Read();var result=new AdminUserDetailsDto(user,counts.GetInt32(0),counts.GetInt32(1));counts.Close();tx.Commit();return result;
+    }
+    internal static UserPresenceDto? ReadPresence(SqliteConnection connection, SqliteTransaction transaction, string id, long now)
+    {
+        using var command = Command(connection, Source + "SELECT presence_status,last_active,last_login FROM directory WHERE id=$id", ("$now", now), ("$id", id));
+        command.Transaction = transaction;
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new(reader.GetString(0), Date(reader, 1), Date(reader, 2)) : null;
     }
     private static AdminUserDto Read(SqliteDataReader r)=>new(r.GetString(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetInt32(4)==1,r.IsDBNull(5)||r.IsDBNull(6)?null:new(r.GetString(5),r.GetString(6)),DateTimeOffset.Parse(r.GetString(7)),DateTimeOffset.Parse(r.GetString(8)),r.IsDBNull(9)?null:r.GetString(9),new(r.GetString(10),Date(r,11),Date(r,12)));
     private static DateTimeOffset? Date(SqliteDataReader r,int index)=>r.IsDBNull(index)?null:DateTimeOffset.FromUnixTimeSeconds(r.GetInt64(index));

@@ -5,17 +5,8 @@ using Lifewood.PlatformApi.Persistence;
 
 namespace Lifewood.PlatformApi.Features;
 
-internal sealed class MailSettings(IConfiguration configuration)
+internal sealed record MailConfiguration(bool Enabled, string Host, int Port, string From, string Username, string Password, string PublicUrl)
 {
-    public string Host { get; } = configuration["Lifewood:Mail:Host"] ?? "";
-    public int Port { get; } = ParsePort(configuration["Lifewood:Mail:Port"]);
-    public string From { get; } = configuration["Lifewood:Mail:From"] ?? "";
-    public string Username { get; } = configuration["Lifewood:Mail:Username"] ?? "";
-    public string Password { get; } = configuration["Lifewood:Mail:Password"] ?? "";
-    public string PublicUrl { get; } = (configuration["Lifewood:Mail:PublicUrl"] ?? "").TrimEnd('/');
-    private bool Enabled { get; } = bool.TryParse(configuration["Lifewood:Mail:Enabled"], out var enabled) && enabled;
-    private static int ParsePort(string? value) => string.IsNullOrWhiteSpace(value) ? 587 : int.TryParse(value, out var port) ? port : 0;
-    // Only stable check codes and outcomes may leave the owner-only status endpoint.
     public IReadOnlyList<MailConfigurationCheck> ConfigurationChecks => [
         new("enabled", Enabled),
         new("host", !string.IsNullOrWhiteSpace(Host) && Host == Host.Trim() && Uri.CheckHostName(Host) != UriHostNameType.Unknown),
@@ -27,15 +18,48 @@ internal sealed class MailSettings(IConfiguration configuration)
     ];
     public bool Ready => ConfigurationChecks.All(check => check.Passed);
 }
-internal interface IPlatformMailer { Task Send(string address, string subject, string body, CancellationToken cancellation); }
+internal sealed class MailSettings
+{
+    private MailConfiguration current;
+    public MailSettings(IConfiguration configuration)
+    {
+        var port = configuration["Lifewood:Mail:Port"];
+        current = new(bool.TryParse(configuration["Lifewood:Mail:Enabled"], out var enabled) && enabled,
+            configuration["Lifewood:Mail:Host"] ?? "", string.IsNullOrWhiteSpace(port) ? 587 : int.TryParse(port, out var parsed) ? parsed : 0,
+            configuration["Lifewood:Mail:From"] ?? "", configuration["Lifewood:Mail:Username"] ?? "",
+            configuration["Lifewood:Mail:Password"] ?? "", (configuration["Lifewood:Mail:PublicUrl"] ?? "").TrimEnd('/'));
+    }
+    public MailConfiguration Current => Volatile.Read(ref current);
+    public void Apply(MailConfiguration value) => Volatile.Write(ref current, value);
+    public string Host => Current.Host;
+    public int Port => Current.Port;
+    public string From => Current.From;
+    public string Username => Current.Username;
+    public string Password => Current.Password;
+    public string PublicUrl => Current.PublicUrl;
+    public bool Ready => Current.Ready;
+    public IReadOnlyList<MailConfigurationCheck> ConfigurationChecks => Current.ConfigurationChecks;
+}
+internal interface IPlatformMailer {
+    Task Send(string address, string subject, string body, CancellationToken cancellation);
+    Task SendContent(string address, string subject, MailBody body, CancellationToken cancellation) => Send(address, subject, body.Text, cancellation);
+}
 internal sealed class SmtpPlatformMailer(MailSettings settings) : IPlatformMailer
 {
-    public async Task Send(string address, string subject, string body, CancellationToken cancellation)
+    public Task Send(string address, string subject, string body, CancellationToken cancellation) => SendContent(address, subject, new(body), cancellation);
+    internal static MailMessage CreateMessage(string from, string address, string subject, MailBody body)
     {
-        if (!settings.Ready) throw new InvalidOperationException("Mail is not configured.");
-        using var message = new MailMessage(settings.From, address, subject, body) { IsBodyHtml = false };
-        using var smtp = new SmtpClient(settings.Host, settings.Port) { EnableSsl = true, UseDefaultCredentials = false };
-        if (settings.Username.Length > 0) smtp.Credentials = new NetworkCredential(settings.Username, settings.Password);
+        var message = new MailMessage(from, address, subject, body.Text) { IsBodyHtml = false, BodyEncoding = System.Text.Encoding.UTF8, SubjectEncoding = System.Text.Encoding.UTF8 };
+        if (body.Html is not null) message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(body.Html, System.Text.Encoding.UTF8, "text/html"));
+        return message;
+    }
+    public async Task SendContent(string address, string subject, MailBody body, CancellationToken cancellation)
+    {
+        var configuration = settings.Current;
+        if (!configuration.Ready) throw new InvalidOperationException("Mail is not configured.");
+        using var message = CreateMessage(configuration.From, address, subject, body);
+        using var smtp = new SmtpClient(configuration.Host, configuration.Port) { EnableSsl = true, UseDefaultCredentials = false };
+        if (configuration.Username.Length > 0) smtp.Credentials = new NetworkCredential(configuration.Username, configuration.Password);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
         await smtp.SendMailAsync(message, timeout.Token);

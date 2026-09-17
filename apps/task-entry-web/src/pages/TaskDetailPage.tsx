@@ -1,3 +1,4 @@
+import { SubmittedMaterials, MaterialsControls, MaterialsLink, MaterialSection } from "../components/SubmittedMaterials";
 import { canRetainQueryData, RefreshNotice } from "../components/RefreshNotice";
 import "../project-progress.css";
 import { safeLinkUrl } from "@lifewood/domain";
@@ -131,7 +132,7 @@ export function TaskDetailPage() {
         </div>
         <FinalDeliverySection projectId={task.data.id} locale={validLocale} />
       </section>
-      <div className="detail-layout" id="submitted-materials">
+      <SubmittedMaterials key={task.data.id} ids={[...detailGroups.map(group => group.id), ...task.data.creative.characters.map(character => `character-${character.id}`)]}>
         <aside className="detail-cover">
           {bookCover && <a className="detail-cover-preview" href={safeLinkUrl(bookCover.url,true)} target="_blank" rel="noreferrer" aria-label={t("taskDetail.previewCover")}>
             <ProjectCoverImage className="detail-cover-image" coverUrl={bookCover.url} coverAlt={t("sourceFiles.coverAlt",{title:task.data.book.title})} placeholderAlt={t("taskDetail.previewCover")} width={200} height={144}/>
@@ -160,12 +161,12 @@ export function TaskDetailPage() {
             </div>
           </dl>
           <nav className="detail-contents" aria-label={t("taskDetail.contents")}>
-            {detailGroups.map(group=><a key={group.id} href={`#details-${group.id}`}><DetailGroupIcon path={group.path}/><span>{t(group.key)}</span></a>)}
+            {detailGroups.map(group=><MaterialsLink key={group.id} id={group.id}><DetailGroupIcon path={group.path}/><span>{t(group.key)}</span></MaterialsLink>)}
           </nav>
+          <MaterialsControls />
         </aside>
         <div className="detail-sections">
-          <section className="form-panel detail-section" id="details-project" tabIndex={-1} aria-labelledby="details-project-title">
-            <h2 id="details-project-title"><DetailGroupIcon path={detailGroups[0].path}/>{t("taskDetail.project")}</h2>
+          <MaterialSection id="project" title={<><DetailGroupIcon path={detailGroups[0].path}/>{t("taskDetail.project")}</>}>
             <dl className="data-grid">
               <div>
                 <dt>{t("wizard.fields.clientName")}</dt>
@@ -226,9 +227,8 @@ export function TaskDetailPage() {
                 </dd>
               </div>
             </dl>
-          </section>
-          <section className="form-panel detail-section" id="details-book" tabIndex={-1} aria-labelledby="details-book-title">
-            <h2 id="details-book-title"><DetailGroupIcon path={detailGroups[1].path}/>{t("taskDetail.book")}</h2>
+          </MaterialSection>
+          <MaterialSection id="book" title={<><DetailGroupIcon path={detailGroups[1].path}/>{t("taskDetail.book")}</>}>
             <dl className="data-grid">
               <div>
                 <dt>{t("wizard.fields.bookTitle")}</dt>
@@ -299,9 +299,8 @@ export function TaskDetailPage() {
                 </dd>
               </div>
             </dl>
-          </section>
-          <section className="form-panel detail-section" id="details-creative" tabIndex={-1} aria-labelledby="details-creative-title">
-            <h2 id="details-creative-title"><DetailGroupIcon path={detailGroups[2].path}/>{t("taskDetail.creative")}</h2>
+          </MaterialSection>
+          <MaterialSection id="creative" title={<><DetailGroupIcon path={detailGroups[2].path}/>{t("taskDetail.creative")}</>}>
             <dl className="data-grid">
               <div>
                 <dt>{t("creative.fields.visualStyle")}</dt>
@@ -350,47 +349,28 @@ export function TaskDetailPage() {
               </div>
               {task.data.creative.characters.map((character, index) => (
                 <div className="data-wide receipt-character" key={character.id}>
-                  <dt>{t("taskDetail.character", { index: index + 1 })}</dt>
+                  <dt className="sr-only">{t("taskDetail.character", { index: index + 1 })}</dt>
                   <dd>
-                    <>{(character.presetImageUrl ?? character.presetId) && <img src={character.presetImageUrl ?? `/character-presets/${character.presetId}.png`} alt={t("bookIntake.presetImage", { name: character.name })} width="96" height="96" loading="lazy" />}</><strong>{character.name || "—"}</strong> ·{" "}
-                    {optionLabel(catalog.roleTypes, character.roleTypeId)}
-                    <br />
-                    {character.storyRole || "—"}
-                    <br />
-                    {character.personality || "—"}
-                    <br />
-                    {character.appearance || "—"}
-                    <br />
-                    {t("creative.fields.ageRange")}:{" "}
-                    {optionLabel(catalog.ageRanges, character.ageRangeId)} ·{" "}
-                    {t("creative.fields.gender")}:{" "}
-                    {optionLabel(catalog.genders, character.genderId)}
-                    <br />
-                    {t("creative.fields.clothing")}: {character.clothing || "—"}
-                    <br />
-                    {t("creative.fields.emotion")}: {character.emotion || "—"}
-                    <br />
-                    {t("creative.fields.voiceHint")}:{" "}
-                    {character.voiceHint || "—"}
-                    {character.referenceImages?.length ||
-                    character.referenceImageUrls.length ? (
-                      <>
-                        <br />
-                        {t("creative.fields.referenceImages")}:{" "}
-                        <ReferenceLinks
-                          assets={character.referenceImages}
-                          urls={character.referenceImageUrls}
-                          empty={false}
-                        />
-                      </>
-                    ) : null}
+                    <MaterialSection character id={`character-${character.id}`} title={<><span>{character.name || t("taskDetail.character", { index: index + 1 })}</span><small>{optionLabel(catalog.roleTypes, character.roleTypeId)}</small></>}>
+                      {(character.presetImageUrl ?? character.presetId) && <img className="receipt-character-image" src={character.presetImageUrl ?? `/character-presets/${character.presetId}.png`} alt={t("bookIntake.presetImage", { name: character.name })} width="96" height="96" loading="eager" />}
+                      <dl className="data-grid">
+                        <div className="data-wide"><dt>{t("creative.fields.storyRole")}</dt><dd>{character.storyRole || "—"}</dd></div>
+                        <div className="data-wide"><dt>{t("creative.fields.personality")}</dt><dd>{character.personality || "—"}</dd></div>
+                        <div className="data-wide"><dt>{t("creative.fields.appearance")}</dt><dd>{character.appearance || "—"}</dd></div>
+                        <div><dt>{t("creative.fields.ageRange")}</dt><dd>{optionLabel(catalog.ageRanges, character.ageRangeId)}</dd></div>
+                        <div><dt>{t("creative.fields.gender")}</dt><dd>{optionLabel(catalog.genders, character.genderId)}</dd></div>
+                        <div><dt>{t("creative.fields.clothing")}</dt><dd>{character.clothing || "—"}</dd></div>
+                        <div><dt>{t("creative.fields.emotion")}</dt><dd>{character.emotion || "—"}</dd></div>
+                        <div className="data-wide"><dt>{t("creative.fields.voiceHint")}</dt><dd>{character.voiceHint || "—"}</dd></div>
+                        {(character.referenceImages?.length || character.referenceImageUrls.length) ? <div className="data-wide"><dt>{t("creative.fields.referenceImages")}</dt><dd><ReferenceLinks assets={character.referenceImages} urls={character.referenceImageUrls} empty={false} /></dd></div> : null}
+                      </dl>
+                    </MaterialSection>
                   </dd>
                 </div>
               ))}
             </dl>
-          </section>
-          <section className="form-panel detail-section" id="details-voice" tabIndex={-1} aria-labelledby="details-voice-title">
-            <h2 id="details-voice-title"><DetailGroupIcon path={detailGroups[3].path}/>{t("taskDetail.voice")}</h2>
+          </MaterialSection>
+          <MaterialSection id="voice" title={<><DetailGroupIcon path={detailGroups[3].path}/>{t("taskDetail.voice")}</>}>
             <dl className="data-grid">
               <div className="data-wide">
                 <dt>{t("voice.narration.question")}</dt>
@@ -528,9 +508,8 @@ export function TaskDetailPage() {
                 </dd>
               </div>
             </dl>
-          </section>
-          <section className="form-panel detail-section" id="details-direction" tabIndex={-1} aria-labelledby="details-direction-title">
-            <h2 id="details-direction-title"><DetailGroupIcon path={detailGroups[4].path}/>{t("taskDetail.direction")}</h2>
+          </MaterialSection>
+          <MaterialSection id="direction" title={<><DetailGroupIcon path={detailGroups[4].path}/>{t("taskDetail.direction")}</>}>
             <dl className="data-grid">
               <div className="data-wide">
                 <dt>{t("voice.fields.coreMessage")}</dt>
@@ -575,9 +554,9 @@ export function TaskDetailPage() {
                 </dd>
               </div>
             </dl>
-          </section>
+          </MaterialSection>
         </div>
-      </div>
+      </SubmittedMaterials>
     </div>
   );
 }

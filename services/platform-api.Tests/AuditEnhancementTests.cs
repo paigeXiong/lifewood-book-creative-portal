@@ -42,7 +42,17 @@ public sealed class AuditEnhancementTests : IDisposable
   File.WriteAllBytes(Path.Combine(root,"uploads","file"),new byte[17]);File.WriteAllBytes(Path.Combine(root,"deliveries","file"),new byte[23]);
   var monitor=new RuntimeMonitor(Connection,root,10000);var sample=monitor.Measure(CancellationToken.None);
   Assert.True(sample.DatabaseAvailable);Assert.True(sample.StorageComplete);Assert.Equal(17,sample.UploadBytes);Assert.Equal(23,sample.DeliveryBytes);Assert.Equal(1,sample.FailedNotifications);Assert.True(sample.UsedBytes>=40);
+  Assert.Equal(sample.UsedBytes,sample.UploadBytes+sample.DeliveryBytes+sample.DatabaseBytes+sample.AvatarBytes+sample.OtherBytes);
   var absent=new RuntimeMonitor(Connection,Path.Combine(root,"missing"),10000).Measure(CancellationToken.None);Assert.False(absent.StorageComplete);Assert.Null(absent.UsedBytes);
+ }
+ [Fact] public void StorageBreakdownKeepsBackupsSeparateAndMissingBackupScanUnknown(){
+  Sql("CREATE TABLE notification_events(status TEXT);");
+  var data=Path.Combine(root,"data");var backup=Path.Combine(root,"backups");Directory.CreateDirectory(data);Directory.CreateDirectory(backup);Directory.CreateDirectory(Path.Combine(data,"avatars"));
+  File.WriteAllBytes(Path.Combine(data,"platform.db"),new byte[11]);File.WriteAllBytes(Path.Combine(data,"platform.db-wal"),new byte[7]);
+  File.WriteAllBytes(Path.Combine(data,"avatars","one.png"),new byte[13]);File.WriteAllBytes(Path.Combine(data,"settings.json"),new byte[5]);File.WriteAllBytes(Path.Combine(backup,"backup.zip"),new byte[101]);
+  var sample=new RuntimeMonitor(Connection,data,1000,backup).Measure(CancellationToken.None);
+  Assert.Equal(36,sample.UsedBytes);Assert.Equal(18,sample.DatabaseBytes);Assert.Equal(13,sample.AvatarBytes);Assert.Equal(5,sample.OtherBytes);Assert.Equal(101,sample.BackupBytes);
+  var missing=new RuntimeMonitor(Connection,data,1000,Path.Combine(root,"absent")).Measure(CancellationToken.None);Assert.True(missing.StorageComplete);Assert.Null(missing.BackupBytes);
  }
  public void Dispose(){SqliteConnection.ClearAllPools();Directory.Delete(root,true);}
 }

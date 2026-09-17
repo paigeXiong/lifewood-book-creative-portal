@@ -18,6 +18,35 @@ export interface CurrentUser {
   taskBackgroundMotion?: boolean;
 }
 
+export interface OrganizationMemberProfile {
+  id: string;
+  displayName: string;
+  roleLabel: string;
+  organizationName: string;
+  avatarUrl: string;
+  labels: { name: string; organization: string; role: string };
+}
+export interface OrganizationMemberActivity {
+  calendar: { trackedFrom: string; days: Array<{ date: string; collected: boolean; logins: number; activePeriods: number }> };
+  presence: { status: string; lastActiveAt?: string; lastLoginAt?: string };
+  presenceLabel: string;
+  counts: { submitted: number; inProgress: number; actionRequired: number; completed: number };
+  projects: Array<{ id: string; name: string; statusLabel: string; status: string; submittedAt?: string; canOpen: boolean }>;
+  total: number;
+  page: number;
+  pageSize: number;
+  labels: Record<string, string>;
+}
+
+export interface MyOrganizationPage {
+  organization?: { name: string; active: boolean; memberCount: number };
+  items: Array<{ id: string; displayName: string; roleLabel: string; active: boolean; isSelf: boolean; avatarUrl: string }>;
+  page: number;
+  pageSize: number;
+  total: number;
+  labels: { members: string; search: string; empty: string; unassigned: string; active: string; inactive: string; you: string };
+}
+
 export interface ConfigOption {
   id: string;
   label: string;
@@ -148,6 +177,7 @@ export interface FormOptions {
   /** Display-only labels for retired selections; never offer as new choices. */
   legacyImageStyleTags?: ConfigOption[];
   bookRecognitionEnabled?: boolean;
+  projectCopyEnabled?: boolean;
   paceTags: ConfigOption[];
   narrationTones: ConfigOption[];
   speechRates: ConfigOption[];
@@ -347,6 +377,13 @@ export interface AdminOverview {
   priorities: AdminCountMetric[];
 }
 
+export interface AdminAnalytics {
+  days: number; timeZone: string; generatedAt: string; trackingStartedAt: string;
+  submitted: number; completed: number; durationSamples: number; averageDays?: number | null; medianDays?: number | null;
+  untrackedCompleted: number; queues: AdminCountMetric[]; aging: AdminCountMetric[];
+  trend: Array<{ date: string; submitted: number; completed: number }>;
+}
+
 export interface AuditEvent {
   id: string;
   actorUserId: string;
@@ -464,7 +501,7 @@ export interface AnnouncementItem { id: string; sequence: number; title: string;
 export interface AnnouncementFeed { items: AnnouncementItem[]; nextCursor: number | null }
 export interface AnnouncementPage { items: AnnouncementDocument[]; nextCursor: number | null }
 
-export interface RuntimeHealth { startedAt:string; measuredAt?:string; databaseAvailable?:boolean; usedBytes?:number; uploadBytes?:number; deliveryBytes?:number; freeBytes?:number; quotaBytes:number; failedNotifications?:number; pendingAudit?:boolean; storageComplete:boolean; }
+export interface RuntimeHealth { startedAt:string; measuredAt?:string; databaseAvailable?:boolean; usedBytes?:number; uploadBytes?:number; deliveryBytes?:number; freeBytes?:number; quotaBytes:number; failedNotifications?:number; pendingAudit?:boolean; storageComplete:boolean; databaseBytes?:number; avatarBytes?:number; otherBytes?:number; backupBytes?:number; }
 
 export interface BackupPolicy { enabled: boolean; frequency: "daily" | "weekly"; hour: number; dayOfWeek: number; timeZoneId: "Asia/Shanghai" | "UTC"; retainDays: number; retainCount: number; }
 export interface BackupRecord { id: string; createdAt: string; source: "manual" | "scheduled" | "safety"; status: string; size?: number; fileCount?: number; errorCode?: string; verificationStatus?: string; verifiedAt?: string; }

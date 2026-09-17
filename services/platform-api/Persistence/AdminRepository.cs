@@ -300,7 +300,7 @@ internal sealed class AdminRepository(string connectionString)
         command.Parameters.AddWithValue("$id", id);
         if (command.ExecuteNonQuery() == 1)
         {
-            if(previousStatus!=request.WorkflowStatus)NotificationRepository.Capture(connection,transaction,"workflow:"+id+":"+command.Parameters["$now"].Value,"workflow",id,actorId);
+            if(previousStatus!=request.WorkflowStatus)NotificationRepository.Capture(connection,transaction,"workflow:"+id+":"+command.Parameters["$now"].Value,request.WorkflowStatus=="completed"?"completed":"workflow",id,actorId);
             transaction.Commit();
             return new(AdminWriteOutcome.Saved);
         }

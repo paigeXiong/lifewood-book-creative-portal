@@ -1,3 +1,5 @@
+import { HelpPopover } from "@lifewood/ui/help-popover";
+import { customerStatusId, customerStatusLabel } from "../customerProjectStatus";
 import { TaskMoreActions } from "../components/TaskMoreActions";
 import { TaskEmptyIllustration } from "../components/TaskEmptyIllustration";
 import {personalWorkspaceService} from "@lifewood/api-client";
@@ -79,6 +81,7 @@ export function TaskListPage() {
   const stats = useQuery({ queryKey: ["project-stats"], queryFn: projectService.getStats });
   const account = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
   const hasOrganization = Boolean(account.data?.organization?.id && account.data.organization.name.trim());
+  const supportsCopy = options.data?.projectCopyEnabled === true;
   const canCreate = account.isSuccess && hasOrganization;
   const organizationNotice = account.isSuccess && !hasOrganization ? "task-organization-required" : undefined;
   const createDraft = useMutation({
@@ -93,6 +96,21 @@ export function TaskListPage() {
       ]);
       navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
     },
+  });
+  const copyAccount = useRef(account.data?.id); copyAccount.current=account.data?.id;
+  const copyMounted = useRef(true);
+  useEffect(() => { copyMounted.current=true; return () => { copyMounted.current=false; }; }, []);
+  const copyKeys = useRef(new Map<string,string>());
+  const copying = useRef(false);
+  const copyDraft = useMutation({
+    mutationFn: ({id, requestId}: {id:string; requestId:string; userId:string}) => projectService.copyDraft(id,requestId,validLocale),
+    retry: false,
+    onSuccess: async (draft, variables) => {
+      if(!copyMounted.current || copyAccount.current!==variables.userId)return;
+      await Promise.all([queryClient.invalidateQueries({queryKey:["projects"]}),queryClient.invalidateQueries({queryKey:["project-stats"]})]);
+      if(copyMounted.current && copyAccount.current===variables.userId)navigate(localizedPath(validLocale, `/tasks/${draft.id}/edit/project`));
+    },
+    onSettled: () => { copying.current=false; },
   });
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; version: number; title: string; returned: boolean } | null>(null);
   const deletingRef = useRef(false);
@@ -170,7 +188,7 @@ export function TaskListPage() {
   const sortHeader = (field: TaskSortField, label: string) => {
     const active = sort === field;
     const nextDirection: SortDirection = active ? (direction === "asc" ? "desc" : "asc") : (field === "updated" ? "desc" : "asc");
-    return <th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+    return <th scope="col" aria-label={label} aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
       <button className={`table-sort${active ? " active" : ""}`} type="button" title={t("tasks.sort.change", { column: label, direction: t(`tasks.sort.${nextDirection}`) })} onClick={() => changeSort(field)}>
         <span>{label}</span>
         <svg className="table-sort-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
@@ -182,7 +200,10 @@ export function TaskListPage() {
     </th>;
   };
 
-  const statusLabel = status === "action_required" ? t("clientUx.actionRequired") : statusMap.get(status)?.label ?? t("tasks.filterLabel");
+  const statusId = status.startsWith("stage:") ? status.slice(6) : status;
+  const statusLabel = status === "action_required" ? t("clientUx.actionRequired") : customerStatusLabel(statusId, statusMap.get(statusId)?.label, t("clientUx.returnedStatus")) || t("tasks.filterLabel");
+  const filterStatuses = [...(options.data?.taskStatuses ?? [])];
+  if (status.startsWith("stage:") && statusMap.has(statusId)) filterStatuses.push({ ...statusMap.get(statusId)!, id: status, label: t("dashboard.statusFilter", { status: statusLabel }) });
   const filtered = Boolean(search || status);
   // The attention tab already represents this status; do not repeat it below the toolbar.
   const chipStatus = status && status !== "action_required";
@@ -210,6 +231,7 @@ export function TaskListPage() {
       <section className="task-surface main-panel reference-table-panel" aria-busy={tasks.isPending}>
         {organizationNotice && <p id={organizationNotice} className="task-creation-note" role="status">{t("errors.project.organizationRequired")}</p>}
         {account.isError && <div className="inline-error" role="alert">{localizedApiError(account.error, t)} <button className="button button-secondary" type="button" onClick={() => void account.refetch()}>{t("common.retry")}</button></div>}
+        {copyDraft.isError && <div className="inline-error" role="alert">{localizedApiError(copyDraft.error,t)}</div>}
         {createDraft.isError && <div className="inline-error" role="alert">{localizedApiError(createDraft.error, t)}</div>}
         {options.isError && <div className="inline-error" role="alert">{localizedApiError(options.error, t)} <button className="button button-secondary" type="button" onClick={() => void options.refetch()}>{t("common.retry")}</button></div>}
         {tasks.isPending && <span className="sr-only" role="status">{t("common.loading")}</span>}
@@ -223,11 +245,13 @@ export function TaskListPage() {
             <span className="task-result-count" role="status">{tasks.data && t("tasks.count", { count: tasks.data.total })}</span>
 
           </div>
+            <div className="task-search-tools">
             <form className="task-search" role="search" aria-label={t("tasks.searchLabel")} onSubmit={event => { event.preventDefault(); if (!composingSearch) updateFilters({ q: searchDraft.trim(), page: 1 }); }}>
               <input type="search" aria-label={t("tasks.searchLabel")} placeholder={t("tasks.searchPlaceholder")} value={searchDraft} onCompositionStart={() => setComposingSearch(true)} onCompositionEnd={event => { setComposingSearch(false); setSearchDraft(event.currentTarget.value); }} onChange={event => { setSearchDraft(event.target.value); if (!event.target.value.trim() && !composingSearch) updateFilters({ q: "", page: 1 }); }} />
             </form>
+              <TaskFilters status={status} statuses={filterStatuses} onApply={updateFilters} />
+            </div>
             <div className="task-table-controls">
-              <TaskFilters status={status} statuses={options.data?.taskStatuses ?? []} onApply={updateFilters} />
 
             <label className="task-mobile-sort">
               <span className="sr-only">{t("tasks.listUx.sortLabel")}</span>
@@ -271,21 +295,25 @@ export function TaskListPage() {
                 )}
                 {tasks.data?.items.map((task) => {
                 const returned = task.status === "draft" && task.workflowStatus === "awaiting_customer";
-                const statusId = returned ? "awaiting_customer" : task.status === "draft" ? task.status : (task.workflowStatus ?? task.status);
+                const statusId = customerStatusId(task);
                 const statusOption = statusMap.get(statusId);
                 const target = task.status === "draft" ? `/tasks/${task.id}/edit/${resume.data?.find(item=>item.projectId===task.id)?.step??"project"}` : `/tasks/${task.id}`;
                 const projectTitle = presentValue(task.bookTitle) ?? presentValue(task.projectName) ?? t("tasks.untitledDraft");
                 const projectContext = presentValue(task.clientName) ?? presentValue(task.projectName) ?? t("tasks.pendingInput");
                 const authorName = presentValue(task.authorName) ?? t("tasks.pendingInput");
-                return <tr key={task.id}>
+                return <tr key={task.id} className="task-project-row">
                   <td><Link className="task-identity" to={localizedPath(locale, target)}>
                     <ProjectCover coverUrl={task.coverUrl} pendingLabel={t("tasks.coverPending")} />
                     <span><strong>{projectTitle}</strong><small>{projectContext}</small></span>
                   </Link></td>
                   <td data-label={t("tasks.columns.book")}>{authorName}</td>
-                  <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${returned ? "danger" : statusOption?.tone ?? "neutral"}`}>{returned ? t("clientUx.returnedStatus") : statusOption?.label ?? statusId}</span></td>
+                  <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${returned ? "danger" : statusOption?.tone ?? "neutral"}`}>{customerStatusLabel(statusId, statusOption?.label, t("clientUx.returnedStatus"))}</span></td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.status === "draft" && <TaskMoreActions label={t("clientUx.more")}><button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle, returned }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t(returned ? "tasks.deleteReturned" : "tasks.deleteDraft")}</button></TaskMoreActions>}</div></td>
+                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{(supportsCopy || task.status === "draft") && <TaskMoreActions label={t("clientUx.more")}>{supportsCopy && <><button className="button button-quiet button-small task-copy" type="button" title={t("tasks.copyHelp")} disabled={!canCreate || copyDraft.isPending} onClick={() => {
+                    if(copying.current || !account.data?.id)return;copying.current=true;
+                    const key=`${account.data.id}:${task.id}`;const requestId=copyKeys.current.get(key)??crypto.randomUUID();copyKeys.current.set(key,requestId);
+                    copyDraft.mutate({id:task.id,requestId,userId:account.data.id});
+                  }}>{t(copyDraft.isPending && copyDraft.variables?.id===task.id ? "tasks.copying" : "tasks.copyDraft")}</button><HelpPopover label={t("tasks.copyDraft")}>{t("tasks.copyHelp")}</HelpPopover></>}{task.status === "draft" && <button className="button button-quiet button-small task-delete" type="button" disabled={deleteDraft.isPending && deleteDraft.variables?.id === task.id} onClick={() => { deleteDraft.reset(); setDeleteTarget({ id: task.id, version: task.version, title: projectTitle, returned }); }}>{deleteDraft.isPending && deleteDraft.variables?.id === task.id ? t("tasks.deletingDraft") : t(returned ? "tasks.deleteReturned" : "tasks.deleteDraft")}</button>}</TaskMoreActions>}</div></td>
                 </tr>;
               })}</tbody>
             </table>

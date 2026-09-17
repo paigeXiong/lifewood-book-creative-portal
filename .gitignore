@@ -28,3 +28,6 @@ playwright-report/
 # Private managed restore staging and rollback directories.
 **/*.restore-*/
 **/*.rollback-*/
+
+# .NET test results and diagnostic attachments
+**/TestResults/

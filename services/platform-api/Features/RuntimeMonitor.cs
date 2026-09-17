@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 using Lifewood.PlatformApi.Contracts;
 namespace Lifewood.PlatformApi.Features;
 
-internal sealed class RuntimeMonitor(string connectionString, string directory, long quota) : BackgroundService
+internal sealed class RuntimeMonitor(string connectionString, string directory, long quota, string? backupDirectory = null) : BackgroundService
 {
     private readonly DateTimeOffset startedAt = DateTimeOffset.UtcNow;
     private RuntimeHealthDto? snapshot;
@@ -19,7 +19,7 @@ internal sealed class RuntimeMonitor(string connectionString, string directory, 
     }
     internal RuntimeHealthDto Measure(CancellationToken token)
     {
-        bool? database = null; long? free = null, used = 0, uploads = 0, deliveries = 0, failed = null; bool complete = true;
+        bool? database = null; long? free = null, used = 0, uploads = 0, deliveries = 0, failed = null; bool complete = true; long? databaseBytes=0, avatars=0, other=0, backups=null;
         try
         {
             using var c = new SqliteConnection(connectionString); c.Open();
@@ -47,14 +47,28 @@ internal sealed class RuntimeMonitor(string connectionString, string directory, 
                 var size = new FileInfo(path).Length; used += size;
                 var first = Path.GetRelativePath(directory, path).Split(Path.DirectorySeparatorChar)[0];
                 if (first == "uploads") uploads += size;
-                if (first == "deliveries") deliveries += size;
+                else if (first == "deliveries") deliveries += size;
+                else if (first == "avatars") avatars += size;
+                else if (first is "platform.db" or "platform.db-wal" or "platform.db-shm") databaseBytes += size;
+                else other += size;
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { complete = false; }
-        if (!complete) used = uploads = deliveries = null;
+        if (!complete) used = uploads = deliveries = databaseBytes = avatars = other = null;
+        if(backupDirectory is not null) {
+            try {
+                backups=0;var count=0;
+                var options=new EnumerationOptions { RecurseSubdirectories=true,IgnoreInaccessible=false,AttributesToSkip=FileAttributes.ReparsePoint };
+                foreach(var path in Directory.EnumerateFiles(backupDirectory,"*",options)) {
+                    token.ThrowIfCancellationRequested();
+                    if(++count>100_000){backups=null;break;}
+                    backups+=new FileInfo(path).Length;
+                }
+            } catch(Exception ex) when(ex is IOException or UnauthorizedAccessException){backups=null;}
+        }
         bool? pending = null;
         try { pending = new FileInfo(Path.Combine(directory, "audit-pending.ndjson")) is { Exists: true, Length: >0 }; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-        return new(startedAt, DateTimeOffset.UtcNow, database, used, uploads, deliveries, free, quota, failed, pending, complete);
+        return new(startedAt, DateTimeOffset.UtcNow, database, used, uploads, deliveries, free, quota, failed, pending, complete, databaseBytes, avatars, other, backups);
     }
 }

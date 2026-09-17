@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Lifewood.PlatformApi.Contracts;
 using Lifewood.PlatformApi.Features;
 using Lifewood.PlatformApi.Persistence;
 using Microsoft.AspNetCore.DataProtection;
@@ -37,6 +38,30 @@ public sealed class EmailTests : IDisposable
         return Regex.Match(mailer.Messages.Last().Body, "token=([A-F0-9]{64})").Groups[1].Value;
     }
     private async Task Verify() { Assert.True(emails.Consume("verify", await Link("verify"))); }
+    [Fact] public async Task RichQueueAndLegacyProtectedBodiesBothDeliver()
+    {
+        var protection = new EphemeralDataProtectionProvider();
+        var repository = new EmailRepository(connection, protection, Settings(), users, new NotificationRepository(connection));
+        Assert.True(repository.Request("verify", owner));
+        var rich = new RichMailer();
+        await repository.DeliverOne(rich, CancellationToken.None);
+        Assert.Contains("href=", rich.Body!.Html);
+        Assert.Contains("token=", rich.Body.Text);
+        var legacy = "Previously queued plain text\nhttps://portal.example.test/#token=legacy";
+        using var db = new SqliteConnection(connection); db.Open();
+        using var command = db.CreateCommand();
+        command.CommandText = "UPDATE email_outbox SET status='pending',body=$body,next_attempt=0";
+        command.Parameters.AddWithValue("$body", protection.CreateProtector("BookCreativePortal.EmailOutbox.v1").Protect(legacy));
+        command.ExecuteNonQuery();
+        await repository.DeliverOne(rich, CancellationToken.None);
+        Assert.Equal(legacy, rich.Body.Text); Assert.Null(rich.Body.Html);
+        Assert.Equal("", Sql("SELECT body FROM email_outbox"));
+    }
+    private sealed class RichMailer : IPlatformMailer {
+        public MailBody? Body;
+        public Task Send(string address, string subject, string body, CancellationToken cancellation) => throw new InvalidOperationException("Rich content must use SendContent.");
+        public Task SendContent(string address, string subject, MailBody body, CancellationToken cancellation) { Body = body; return Task.CompletedTask; }
+    }
     [Fact] public void QueueStatusIsReadOnlyMaskedFilteredAndPaged() {
         Assert.True(emails.Request("verify", owner));
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -95,6 +120,47 @@ public sealed class EmailTests : IDisposable
         Assert.NotEqual(token, Sql("SELECT hash FROM email_tokens")); Assert.True(emails.Consume("verify", token));
     }
     private void Notify(string key, string kind = "account") => Sql($"INSERT INTO notification_events(event_key,kind,project_id,actor_id,target_id,status) VALUES('{key}','{kind}','','','', 'sent'); INSERT INTO notifications(event_id,user_id) VALUES(last_insert_rowid(),'{owner}');");
+    [Fact] public async Task PublishingDeliveryNotifiesCompletionSubscribersWithoutDuplicateCompletion() {
+        await Verify();Assert.True(emails.SavePreferences(owner,true,["completed"]));
+        var admin=new AdminRepository(connection);Assert.Equal(AdminWriteOutcome.Saved,admin.CreateUser(new("Publisher","publisher@example.test","password-123","admin",null),out var publisher).Outcome);
+        var projects=new ProjectRepository(connection);var draft=projects.Create(owner);
+        projects.Submit(owner,draft.Id,draft.Version,Guid.NewGuid().ToString(),null);
+        var deliveries=new DeliveryRepository(connection);
+        Assert.Equal(AdminWriteOutcome.Saved,deliveries.Publish("delivery-one",draft.Id,publisher!.Id,"final.mp4","video/mp4",100,null,out _).Outcome);
+        new NotificationRepository(connection).Dispatch();emails.QueueNotifications();await emails.DeliverOne(mailer,CancellationToken.None);
+        Assert.Equal(2,mailer.Messages.Count);
+        Assert.Equal(1L,Sql($"SELECT COUNT(*) FROM notification_events WHERE project_id='{draft.Id}' AND kind='completed'"));
+        Assert.Equal(AdminWriteOutcome.Saved,deliveries.Revoke(draft.Id,"delivery-one").Outcome);
+        Assert.Equal(AdminWriteOutcome.Saved,deliveries.Publish("delivery-two",draft.Id,publisher.Id,"new.mp4","video/mp4",100,null,out _).Outcome);
+        // Revoking a delivery reopens production, so publishing again is a new completion.
+        Assert.Equal(2L,Sql($"SELECT COUNT(*) FROM notification_events WHERE project_id='{draft.Id}' AND kind='completed'"));
+        var alreadyDone=projects.Create(owner);projects.Submit(owner,alreadyDone.Id,alreadyDone.Version,Guid.NewGuid().ToString(),null);
+        var before=admin.GetProject(alreadyDone.Id)!;
+        Assert.Equal(AdminWriteOutcome.Saved,admin.UpdateWorkflow(alreadyDone.Id,new("completed","normal",null,before.WorkflowUpdatedAt),publisher.Id).Outcome);
+        Assert.Equal(AdminWriteOutcome.Saved,deliveries.Publish("delivery-three",alreadyDone.Id,publisher.Id,"done.mp4","video/mp4",100,null,out _).Outcome);
+        Assert.Equal(1L,Sql($"SELECT COUNT(*) FROM notification_events WHERE project_id='{alreadyDone.Id}' AND kind='completed'"));
+    }
+    [Fact] public async Task TopicSelectionFiltersQueueAndRechecksPendingMessagesWithoutInboxPageLimit() {
+        await Verify(); Assert.True(emails.SavePreferences(owner,true,["completed","returned"]));
+        var project=new ProjectRepository(connection).Create(owner);
+        void ProjectNotice(string key,string kind){Notify(key,kind);Sql($"UPDATE notification_events SET project_id='{project.Id}' WHERE event_key='{key}'");}
+        Notify("excluded-account");ProjectNotice("excluded-progress","workflow");emails.QueueNotifications();
+        Assert.Equal(0L,Sql("SELECT COUNT(*) FROM email_outbox WHERE kind='notice'"));
+        ProjectNotice("completed-event","completed");
+        for(var i=0;i<40;i++)Notify("excluded-newer-"+i);
+        emails.QueueNotifications();Assert.Equal(1L,Sql("SELECT COUNT(*) FROM email_outbox WHERE kind='notice'"));
+        Assert.True(emails.SavePreferences(owner,true,["returned"]));
+        await emails.DeliverOne(mailer,CancellationToken.None);Assert.Single(mailer.Messages);
+        Assert.Equal("cancelled",Sql("SELECT status FROM email_outbox WHERE kind='notice'"));
+        ProjectNotice("return-event","returned");emails.QueueNotifications();await emails.DeliverOne(mailer,CancellationToken.None);
+        Assert.Equal(2,mailer.Messages.Count);
+        Assert.True(emails.SavePreferences(owner,true,[]));ProjectNotice("silent-return","returned");emails.QueueNotifications();
+        Assert.Equal(0L,Sql("SELECT COUNT(*) FROM email_outbox WHERE kind='notice' AND status='pending'"));
+        Assert.False(emails.SavePreferences(owner,true,["invalid"]));
+        Assert.False(emails.SavePreferences(owner,true,["returned","returned"]));
+        Assert.All(emails.Status(owner).Topics!,topic=>Assert.False(topic.Enabled));
+        Assert.True(emails.SavePreferences(owner,false));Assert.All(emails.Status(owner).Topics!,topic=>Assert.False(topic.Enabled));
+    }
     [Fact] public async Task NoticesOnlySendNewVisibleUnreadEventsAndOptOutCancelsQueue() {
         await Verify(); Notify("old"); Assert.True(emails.SavePreferences(owner, true)); emails.QueueNotifications();
         Assert.Equal(0L, Sql("SELECT COUNT(*) FROM email_outbox WHERE kind='notice'"));

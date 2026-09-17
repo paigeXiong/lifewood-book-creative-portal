@@ -43,6 +43,53 @@ for (const locale of ["zh-CN", "en-US"] as const) {
       clearUserProjectQueries(client); expect(client.getQueryCache().findAll({ queryKey: ["customer-dashboard"] })).toHaveLength(0);
     } finally { await act(async () => root.unmount()); client.clear(); host.remove(); }
   });
+  it(`uses customer status wording for both distribution and recent projects (${locale})`, async () => {
+    await i18n.changeLanguage(locale);
+    vi.spyOn(optionService, "getFormOptions").mockResolvedValue({ taskStatuses: [{ id: "draft", label: "Draft label" }], workflowStatuses: [{ id: "awaiting_customer", label: "Administrative wording" }, { id: "new", label: "Follow-up label" }] } as unknown as FormOptions);
+    vi.spyOn(projectService, "getDashboard").mockImplementation(async params => ({ ...response(params.month, params.day), statuses: [{ id: "awaiting_customer", count: 1 }, { id: "draft", count: 1 }], recentProjects: [{ ...project, id: "returned", status: "draft", workflowStatus: "awaiting_customer" }, { ...project, id: "draft", status: "draft", workflowStatus: "new" }, { ...project, id: "submitted" }] }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const host = document.createElement("div"); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/overview`]}><Routes><Route path="/:locale" element={<Outlet context={{ user: { id: "account" } }} />}><Route path="overview" element={<DashboardPage />} /></Route></Routes></MemoryRouter></QueryClientProvider>)); await settle();
+      expect(host.querySelector(".dashboard-distribution")?.textContent).toContain(i18n.t("clientUx.returnedStatus"));
+      const rows = host.querySelectorAll(".dashboard-recent li");
+      expect(rows[0].textContent).toContain(i18n.t("clientUx.returnedStatus"));
+      expect(rows[1].textContent).toContain("Draft label");
+      expect(rows[2].textContent).toContain("Follow-up label");
+      expect(host.textContent).not.toContain("Administrative wording");
+    } finally { await act(async () => root.unmount()); client.clear(); host.remove(); }
+  });
+  it(`links chart dates to daily activity and status segments to exact project filters (${locale})`, async () => {
+    await i18n.changeLanguage(locale);
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+    vi.spyOn(optionService, "getFormOptions").mockResolvedValue({ taskStatuses: [{ id: "draft", label: "Draft label" }], workflowStatuses: [{ id: "awaiting_customer", label: "Admin label" }, { id: "new", label: "Follow-up" }] } as unknown as FormOptions);
+    const get = vi.spyOn(projectService, "getDashboard").mockImplementation(async params => {
+      const result = response(params.month, params.day);
+      return { ...result, statuses: [{ id: "awaiting_customer", count: 1 }, { id: "draft", count: 1 }, { id: "new", count: 1 }], activities: { ...result.activities, page: params.page, total: 41 } };
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/overview`]}><Routes><Route path="/:locale" element={<Outlet context={{ user: { id: "account" } }} />}><Route path="overview" element={<DashboardPage />} /></Route></Routes></MemoryRouter></QueryClientProvider>)); await settle();
+      await act(async () => host.querySelector<HTMLButtonElement>(".dashboard-pagination button:last-child")!.click()); await settle();
+      expect(get.mock.calls.at(-1)![0].page).toBe(2);
+      const point = host.querySelector<SVGGElement>(".dashboard-trend-point")!;
+      expect(point.getAttribute("role")).toBe("button");
+      await act(async () => point.dispatchEvent(new MouseEvent("click", { bubbles: true }))); await settle();
+      expect(get.mock.calls.at(-1)![0]).toMatchObject({ day: 1, page: 1 });
+      expect(document.activeElement).toBe(host.querySelector(".dashboard-day-details"));
+      expect(host.querySelector('.dashboard-day[aria-pressed="true"]')?.textContent).toMatch(/^1/);
+      for (const key of ["Enter", " "]) {
+        await act(async () => point.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }))); await settle();
+        expect(document.activeElement).toBe(host.querySelector(".dashboard-day-details"));
+      }
+      const links = host.querySelectorAll<HTMLAnchorElement>(".dashboard-distribution li a");
+      expect([...links].map(link => link.getAttribute("href"))).toEqual(["awaiting_customer", "draft", "new"].map(id => `/${locale}/tasks?status=stage%3A${id}`));
+      expect(host.querySelectorAll(".dashboard-status-segment")).toHaveLength(3);
+      expect(links[0].textContent).toContain(i18n.t("clientUx.returnedStatus"));
+      expect(links[0].getAttribute("aria-label")).not.toContain("Admin label");
+    } finally { await act(async () => root.unmount()); client.clear(); host.remove(); }
+  });
   it(`keeps a refresh failure distinct from an empty report and hides data on denied access (${locale})`, async () => {
     await i18n.changeLanguage(locale); vi.spyOn(optionService, "getFormOptions").mockResolvedValue({ taskStatuses: [], workflowStatuses: [] } as unknown as FormOptions);
     const get = vi.spyOn(projectService, "getDashboard").mockImplementation(async params => response(params.month, params.day));

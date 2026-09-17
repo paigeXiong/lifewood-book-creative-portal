@@ -13,7 +13,7 @@ import { TaskListPage } from "./pages/TaskListPage";
 async function mount(locale: SupportedLocale, query = "", total = 30, items: TaskSummary[] = [], withOrganization = true) {
   await i18n.changeLanguage(locale);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  client.setQueryData(["form-options", locale], { taskStatuses: [{ id: "draft", label: locale === "zh-CN" ? "草稿" : "Draft" }], workflowStatuses: [] });
+  client.setQueryData(["form-options", locale], { taskStatuses: [{ id: "draft", label: locale === "zh-CN" ? "草稿" : "Draft" }], workflowStatuses: [], projectCopyEnabled:true });
   client.setQueryData(["current-user"], { id: "customer", displayName: "Customer", roles: ["customer"], permissions: ["tasks.write"], organization: withOrganization ? { id: "org", name: "Organization" } : null });
   client.setQueryData(["project-stats"], { total, drafts: total, active: 0, completed: 0, actionRequired: 0 });
   const list = vi.spyOn(projectService, "listProjects").mockImplementation(async params => ({ items, page: params.page ?? 1, pageSize: 10, total }));
@@ -36,6 +36,42 @@ async function mount(locale: SupportedLocale, query = "", total = 30, items: Tas
 
 for (const locale of ["zh-CN", "en-US"] as const) {
   describe(`project list (${locale})`, () => {
+    it("copies submitted projects and reuses the request key after a failed response", async () => {
+      const item: TaskSummary = { id: "submitted", version: 1, status: "submitted", projectName: "Project", bookTitle: "Book", authorName: "Author", clientName: "Client", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
+      const copy = vi.spyOn(projectService,"copyDraft").mockRejectedValue(new Error("offline"));
+      const page=await mount(locale,"",1,[item]);
+      try {
+        expect(page.container.querySelector('.task-copy')?.textContent).toBe(i18n.t("tasks.copyDraft"));
+        await page.click('.task-copy');expect(copy).toHaveBeenCalledTimes(1);
+        const first=copy.mock.calls[0];expect(first[0]).toBe(item.id);expect(first[2]).toBe(locale);
+        await page.click('.task-copy');expect(copy).toHaveBeenCalledTimes(2);expect(copy.mock.calls[1][1]).toBe(first[1]);
+        expect(page.container.querySelector('.task-delete')).toBeNull();
+        await act(async()=>{page.client.setQueryData(["form-options",locale],{taskStatuses:[],workflowStatuses:[]});});await page.settle();
+        expect(page.container.querySelector('.task-copy')).toBeNull();
+      } finally { await page.close();copy.mockRestore(); }
+    });
+    it("keeps returned status localized and mobile sorting connected to the query", async () => {
+      const item: TaskSummary = { id: "returned", version: 1, status: "draft", workflowStatus: "awaiting_customer", projectName: "Project", bookTitle: "Book", authorName: "Author", clientName: "Client", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
+      const page = await mount(locale, "", 1, [item]);
+      try {
+        expect(page.container.querySelector(".status-badge")?.textContent).toBe(i18n.t("clientUx.returnedStatus"));
+        const select = page.container.querySelector<HTMLSelectElement>(".task-mobile-sort select")!;
+        await act(async () => { select.value = "project:asc"; select.dispatchEvent(new Event("change", { bubbles: true })); }); await page.settle();
+        expect(page.params().get("sort")).toBe("project"); expect(page.params().get("direction")).toBe("asc");
+        expect(page.container.querySelector(".task-create-button")?.textContent).toContain(i18n.t("common.createTask"));
+      } finally { await page.close(); }
+    });
+    it("preserves a dashboard stage filter with a localized chip and reset", async () => {
+      const page = await mount(locale, "?status=stage%3Adraft");
+      try {
+        expect(page.list.mock.calls.at(-1)![0].status).toBe("stage:draft");
+        expect(page.container.querySelector(".task-filter-chip")?.textContent).toContain(locale === "zh-CN" ? "草稿" : "Draft");
+        expect(page.container.textContent).not.toContain("stage:draft");
+        expect(page.container.querySelector('option[value="stage:draft"]')).not.toBeNull();
+        await page.click(".task-filter-chip");
+        expect(page.params().get("status")).toBeNull();
+      } finally { await page.close(); }
+    });
     it("blocks creation without an organization and unlocks after assignment", async () => {
       const page = await mount(locale, "", 0, [], false);
       const create = vi.spyOn(projectService, "createDraft");

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { OverviewAnalytics } from "./OverviewAnalytics";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -132,15 +133,11 @@ export function OverviewPage({ locale }: { locale: SupportedLocale }) {
           </small>
         </div>
         <div>
-          <span>{t("admin.overview.updatedProjects")}</span>
-          <strong>
-            {recent.isPending || recent.isError
-              ? "—"
-              : (recent.data?.items.length ?? 0)}
-          </strong>
-          <small>{t("admin.overview.latestRecords")}</small>
+          <span>{t("adminAnalytics.completedTotal")}</span>
+          <strong>{data.workflowStatuses.find(item => item.id === "completed")?.count ?? 0}</strong>
         </div>
       </section>
+      <OverviewAnalytics locale={locale} />
       <div className="overview-grid">
         <Breakdown
           title={t("admin.overview.workflowDistribution")}

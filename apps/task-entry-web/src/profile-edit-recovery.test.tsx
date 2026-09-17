@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
@@ -8,7 +8,7 @@ import { i18n } from "@lifewood/i18n";
 import { ProfilePage } from "./pages/ProfilePage";
 
 vi.mock("@lifewood/ui/login-sessions", () => ({ LoginSessions: () => null }));
-vi.mock("@lifewood/ui/email", () => ({ EmailSettingsPanel: () => null }));
+vi.mock("@lifewood/ui/email", () => ({ EmailSettingsPanel: ({ layout }: { layout?: (sections: { verification: ReactNode; notifications: ReactNode }) => ReactNode }) => layout?.({ verification: null, notifications: null }) ?? null }));
 vi.mock("@lifewood/ui/oidc", () => ({ OidcBinding: () => null }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 type User = Awaited<ReturnType<typeof authService.getCurrentUser>>;

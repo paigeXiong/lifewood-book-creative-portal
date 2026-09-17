@@ -1,20 +1,25 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { HelpPopover } from "./HelpPopover";
 import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { captureAccountGuard, emailService, localizedApiError } from "@lifewood/api-client";
 import "./email.css";
 
-export function EmailSettingsPanel({ userId }: { userId: string }) {
-  return <EmailSettingsContent key={userId} userId={userId} />;
+export type EmailSettingsSections = { verification: ReactNode; notifications: ReactNode };
+type EmailSettingsProps = { userId: string; layout?: (sections: EmailSettingsSections) => ReactNode };
+type EmailSettingsAction = "verify" | boolean | { notifications: boolean; topics: string[] };
+export function EmailSettingsPanel({ userId, layout }: EmailSettingsProps) {
+  return <EmailSettingsContent key={userId} userId={userId} layout={layout} />;
 }
-function EmailSettingsContent({ userId }: { userId: string }) {
+function EmailSettingsContent({ userId, layout }: EmailSettingsProps) {
   const notificationId = useId();
-  const { t } = useTranslation(), client = useQueryClient();
-  const query = useQuery({ queryKey: ["email-settings", userId], queryFn: emailService.settings, retry: false, refetchOnWindowFocus: "always", refetchInterval: q => q.state.data?.deliveryStatus === "pending" ? 5000 : false });
+  const { t, i18n } = useTranslation(), client = useQueryClient();
+  const locale = i18n.resolvedLanguage === "en-US" ? "en-US" : "zh-CN";
+  const query = useQuery({ queryKey: ["email-settings", userId, locale], queryFn: () => emailService.settings(locale), retry: false, refetchOnWindowFocus: "always", refetchInterval: q => q.state.data?.deliveryStatus === "pending" ? 5000 : false });
   const mutationKey = ["email-settings-action", userId];
   const pending = useMutationState({ filters: { mutationKey, status: "pending" }, select: () => true });
   const [message, setMessage] = useState<string>(), [error, setError] = useState<unknown>(), [invalidated, setInvalidated] = useState(false);
+  const [actionSection, setActionSection] = useState<keyof EmailSettingsSections>("verification");
   type Lifetime = { mounted: boolean; accountChanged: boolean };
   const lock = useRef(false), lifetime = useRef<Lifetime | null>(null);
   useEffect(() => {
@@ -24,14 +29,14 @@ function EmailSettingsContent({ userId }: { userId: string }) {
     return () => { token.mounted = false; lifetime.current = null; window.removeEventListener("lw-account-changed", stop); };
   }, []);
   const operation = useMutation({ mutationKey, retry: false, mutationFn: async ({ action, token, guard }: {
-    action: "verify" | boolean; token: Lifetime; guard: () => void;
+    action: EmailSettingsAction; token: Lifetime; guard: () => void;
   }) => {
     const active = () => lifetime.current === token && token.mounted && !token.accountChanged;
     let requested = false;
     try {
       if (!active()) return;
       guard(); requested = true;
-      if (action === "verify") await emailService.verify(); else await emailService.preferences(action);
+      if (action === "verify") await emailService.verify(); else if(typeof action === "boolean") await emailService.preferences(action); else await emailService.preferences(action.notifications, action.topics);
       guard(); if (active()) setMessage(action === "verify" ? "email.queued" : "email.saved");
     } catch (reason) { if (active()) setError(reason); }
     finally {
@@ -44,26 +49,40 @@ function EmailSettingsContent({ userId }: { userId: string }) {
     }
   } });
   const busy = pending.length > 0 || query.fetchStatus !== "idle";
-  function run(action: "verify" | boolean) {
+  function run(action: EmailSettingsAction) {
     const token = lifetime.current;
     if (!token || token.accountChanged || query.fetchStatus !== "idle" || lock.current || client.getMutationCache().findAll({ mutationKey, status: "pending" }).length > 0) return;
     lock.current = true; setError(undefined); setMessage(undefined);
+    setActionSection(action === "verify" ? "verification" : "notifications");
     operation.mutate({ action, token, guard: captureAccountGuard() });
   }
   const data = query.data;
-  return <div className="email-settings" aria-busy={busy}>
-    {query.isPending ? <p role="status">{t("common.loading")}</p> : query.error ? <p role="alert">{localizedApiError(query.error, t)} <button type="button" onClick={() => void query.refetch()}>{t("common.retry")}</button></p> : data && <>
-      <div className="email-setting-row"><span><strong>{t("email.verification")}</strong><small>{t(data.verified ? "email.verified" : "email.unverified")}</small></span>
-        {!data.verified && <button type="button" disabled={busy || invalidated || !data.available || data.deliveryStatus === "pending"} onClick={() => run("verify")}>{t("email.sendVerification")}</button>}
-      </div>
-      {!data.available && <p>{t("email.errors.unavailable")}</p>}
-      {data.deliveryStatus && !data.verified && <p role="status">{t("email.delivery." + data.deliveryStatus)}</p>}
-      <div className="email-setting-row"><span className="field-help-heading"><label htmlFor={notificationId}><strong>{t("email.notifications")}</strong></label><HelpPopover label={t("email.notifications")}>{t("email.notificationHint")}</HelpPopover></span><input id={notificationId} type="checkbox" role="switch" checked={data.notifications} disabled={busy || invalidated || (!data.notifications && (!data.verified || !data.available))} onChange={e => run(e.target.checked)} /></div>
-      {!data.verified && <small>{t("email.errors.verifyFirst")}</small>}
-    </>}
+  const readState = query.isPending ? <p role="status">{t("common.loading")}</p> : query.error ? <p role="alert">{localizedApiError(query.error, t)} <button type="button" onClick={() => void query.refetch()}>{t("common.retry")}</button></p> : null;
+  const verification = data && <>
+    <div className="email-setting-row"><span><strong>{t("email.verification")}</strong><small>{t(data.verified ? "email.verified" : "email.unverified")}</small></span>
+      {!data.verified && <button type="button" disabled={busy || invalidated || !data.available || data.deliveryStatus === "pending"} onClick={() => run("verify")}>{t("email.sendVerification")}</button>}
+    </div>
+    {!data.available && <p>{t("email.errors.unavailable")}</p>}
+    {data.deliveryStatus && !data.verified && <p role="status">{t("email.delivery." + data.deliveryStatus)}</p>}
+  </>;
+  const notifications = data && <>
+    <div className="email-setting-row"><span className="field-help-heading"><label htmlFor={notificationId}><strong>{t("email.notifications")}</strong></label><HelpPopover label={t("email.notifications")}>{t("email.notificationHint")}</HelpPopover></span><label className="email-toggle-control"><input id={notificationId} type="checkbox" role="switch" checked={data.notifications} disabled={busy || invalidated || (!data.notifications && (!data.verified || !data.available))} onChange={e => run(e.target.checked)} /></label></div>
+    {!data.verified && <small>{t("email.errors.verifyFirst")}</small>}
+    {!!data.topics?.length && <fieldset className="email-topic-options" disabled={busy || invalidated || !data.notifications}>
+      <legend>{t("email.scope")}</legend>
+      <div>{data.topics.map(topic => <label key={topic.id}><input type="checkbox" checked={topic.enabled} onChange={event => run({ notifications: data.notifications, topics: data.topics!.filter(item => item.id === topic.id ? event.target.checked : item.enabled).map(item => item.id) })} /><span>{topic.label}</span></label>)}</div>
+    </fieldset>}
+  </>;
+  const feedback = <>
     {message && <p role="status">{t(message)}</p>}
     {invalidated ? <p role="alert">{t("accountSwitch.changed")}</p> : error != null && <p role="alert">{localizedApiError(error, t)}</p>}
-  </div>;
+  </>;
+  // Both placements share one query, operation lock, and account lifetime.
+  if (layout) return layout({
+    verification: <div className="email-settings email-verification" aria-busy={busy}>{readState ?? verification}{actionSection === "verification" && feedback}</div>,
+    notifications: <div className="email-settings email-notifications" aria-busy={busy}>{readState ?? notifications}{actionSection === "notifications" && feedback}</div>,
+  });
+  return <div className="email-settings" aria-busy={busy}>{readState ?? <>{verification}{notifications}</>}{feedback}</div>;
 }
 
 export function ForgotPasswordButton() {

@@ -15,7 +15,7 @@ internal enum PasswordUpdateOutcome { Updated, Invalid, NotFound }
 internal sealed record PasswordUpdateResult(PasswordUpdateOutcome Outcome, string? Field = null);
 internal sealed record StoredAvatar(FileStream Stream, string ContentType);
 
-internal sealed class UserRepository
+internal sealed partial class UserRepository
 {
     private const int LockoutThreshold = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);

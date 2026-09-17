@@ -95,3 +95,13 @@ The full center stores filters and the loaded page count in the URL. Refresh and
 # 邮件提醒扩展（2026-09-16）
 
 用户可在个人设置验证登录邮箱，并主动开启邮件提醒。邮件默认关闭，部署 SMTP 配置完成后才可使用；不影响站内通知。新提醒按用户汇总，发送前再次检查未读状态与当前访问权限，已读或失去权限的待发提醒会取消。参见 [邮箱验证与邮件配置](./email.md)。
+
+## 通知偏好保存恢复（2026-09-16，v0.3.16 后续工作区）
+
+客户与管理端共用的通知偏好编辑器在保存期间锁定输入和关闭操作，使用同步重复提交保护及账号操作锁；离开再打开时仍等待同一账号的未完成保存。保存成功只更新对应账号缓存并关闭原弹窗，迟到响应不会关闭新弹窗或刷新另一个账号。成功写入前取消旧读取，防止旧缓存覆盖已确认的偏好。
+
+响应失败后重新读取服务器偏好，保留本次编辑供手动重试；读取失败时禁用保存，只提供读取重试，不自动重发写请求。保存请求不进入离线等待队列：断网失败后可以关闭窗口，重新联网不会自动重放保存。嵌套弹窗的 Esc 仅处理当前窗口，避免保存中的偏好窗口把底层通知窗口一起关闭。补充说明继续保留在问号浮层，状态与错误使用现有中英文文案。
+
+Notification preference saves block duplicate writes and protect in-flight edits across both portals. Late responses cannot affect replacement dialogs or other accounts. Failed responses trigger read reconciliation while retaining the draft for an explicit retry. Offline saves fail without queuing a later write, and the dialog remains closable after failure. Nested Escape handling is isolated to the active dialog.
+
+验证：通知偏好、动作生命周期、筛选与历史恢复相关 104 项前端回归通过（新增偏好专项 32 项，覆盖两端及中英文）；客户与管理端 TypeScript 和生产构建通过。未修改真实账号的通知偏好，本地三个预览服务继续运行。

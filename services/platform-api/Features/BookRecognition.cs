@@ -7,7 +7,7 @@ using Lifewood.PlatformApi.Contracts;
 namespace Lifewood.PlatformApi.Features;
 
 internal sealed record RecognitionImage(string ContentType, byte[] Bytes);
-internal sealed record BookRecognitionSettings(bool Enabled, Uri? Endpoint, string Model, string ApiKey, string Protocol = "openai")
+internal sealed record BookRecognitionSettings(bool Enabled, Uri? Endpoint, string Model, string ApiKey, string Protocol = "openai", string? ProviderId = null)
 {
     public static BookRecognitionSettings FromConfiguration(IConfiguration config)
     {
@@ -56,6 +56,7 @@ internal sealed class BookRecognitionService(HttpClient client, BookRecognitionS
         if (anthropic) payload["max_tokens"] = 2000;
         else { payload["response_format"] = new JsonObject { ["type"] = "json_object" }; payload["max_completion_tokens"] = 2000; }
         using var request = new HttpRequestMessage(HttpMethod.Post, settings.Endpoint);
+        request.Options.Set(OutboundProxyHandler.Scope, settings.ProviderId is null ? "global" : "ai:" + settings.ProviderId);
         if (anthropic) { request.Headers.Add("x-api-key", settings.ApiKey); request.Headers.Add("anthropic-version", "2023-06-01"); }
         else request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey);
         request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");

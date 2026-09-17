@@ -18,6 +18,7 @@ internal sealed partial class NotificationRepository(string connectionString)
   new("customer_reply","客户有新回复：{project}","Customer replied: {project}","normal"),
   new("admin_reply","管理员有新回复：{project}","Administrator replied: {project}","normal"),
   new("workflow","项目进度已更新：{project}","Project progress updated: {project}","important"),
+  new("completed","项目已完成：{project}","Project completed: {project}","important",true,false),
   new("delivery","成品已交付：{project}","Final delivery available: {project}","important",true,false),
   new("account","账号权限或组织信息已更新","Account access or organization updated","important",true,false)
  ];
@@ -41,7 +42,7 @@ internal sealed partial class NotificationRepository(string connectionString)
   WHERE u.is_active=1 AND u.id<>NEW.actor_id AND (
    (NEW.kind IN ('submitted','resubmitted','customer_reply','followup_due','followup_overdue') AND (u.role IN ('admin','owner') OR (u.role='operator' AND u.id=p.assignee_user_id)) AND
     (COALESCE((SELECT json_extract(document,'$.audience') FROM notification_rules WHERE kind=NEW.kind),'responsible')='allAdmins' OR p.assignee_user_id IS NULL OR NOT EXISTS(SELECT 1 FROM users a WHERE a.id=p.assignee_user_id AND a.is_active=1 AND a.role IN ('admin','owner','operator')) OR u.id=p.assignee_user_id))
-   OR (NEW.kind IN ('returned','admin_reply','workflow','delivery') AND u.id=p.owner_id))
+   OR (NEW.kind IN ('returned','admin_reply','workflow','completed','delivery') AND u.id=p.owner_id))
   AND COALESCE((SELECT json_extract(document,'$.enabled') FROM notification_rules WHERE kind=NEW.kind),1)=1;
  END;
  CREATE TRIGGER IF NOT EXISTS notification_backup_snapshot AFTER INSERT ON notification_events WHEN NEW.kind IN ('backup_failed','backup_damaged','backup_stale') BEGIN

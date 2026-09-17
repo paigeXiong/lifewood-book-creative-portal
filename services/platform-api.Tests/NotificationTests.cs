@@ -15,6 +15,12 @@ public sealed class NotificationTests:IDisposable {
  CREATE TABLE project_deliveries(id TEXT PRIMARY KEY,project_id TEXT,uploader_user_id TEXT,revoked_at TEXT);
  """);Sql("ALTER TABLE projects ADD COLUMN followup_due_at TEXT;ALTER TABLE projects ADD COLUMN followup_version INTEGER NOT NULL DEFAULT 0");repo=new(connection);repo.Initialize();}
  void Sql(string sql){using var c=new SqliteConnection(connection);c.Open();using var q=c.CreateCommand();q.CommandText=sql;q.ExecuteNonQuery();}
+ [Fact] public void CompletionIsDeliveredToProjectOwnerAndRespectsEmailScope(){
+  Capture("completed","completed");repo.Dispatch();Assert.Equal("completed",Assert.Single(Feed("customer").Items).Kind);
+  Assert.True(repo.HasEmailCandidate("customer",0,long.MaxValue,["completed"]));
+  Assert.False(repo.HasEmailCandidate("customer",0,long.MaxValue,["progress"]));
+  Assert.False(repo.HasEmailCandidate("other",0,long.MaxValue,["completed"]));
+ }
  NotificationPage Feed(string user="admin",long? before=null,string? state=null)=>repo.List(user,"zh-CN",before,null,null,state,null,null,null);
  void Capture(string key,string kind="workflow",string actor="admin",string target=""){using var c=new SqliteConnection(connection);c.Open();using var tx=c.BeginTransaction();NotificationRepository.Capture(c,tx,key,kind,"p",actor,target);tx.Commit();}
  [Fact] public void BackupAlertsAreOwnerOnlyDeduplicatedDurableAndResolved(){

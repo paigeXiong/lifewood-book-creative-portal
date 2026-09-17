@@ -1,0 +1,36 @@
+/* Results scroll independently; pagination stays in normal flow below them.
+   The outer panel can scroll when a wrapped toolbar fills a short viewport. */
+.workspace-main .pagination-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
+.pagination-layout > * { flex-shrink: 0; }
+.pagination-layout > .pagination-scroll {
+  flex: 1 1 0;
+  min-height: 120px;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.pagination-layout > .pagination-footer {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.pagination-layout > .pagination-surface {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 320px;
+  height: auto;
+  min-height: 0;
+  overflow: auto;
+}
+.pagination-layout > .pagination-surface > .pagination-scroll { flex-basis: 0; }
+.pagination-layout > .pagination-surface > .pagination-footer { margin-top: auto; padding-top: 12px; }
+/* Management tables already pin their pager; remove the mobile 70vh floor. */
+.users-content > .table-card,
+.organizations-content > .table-card { min-height: 0; }

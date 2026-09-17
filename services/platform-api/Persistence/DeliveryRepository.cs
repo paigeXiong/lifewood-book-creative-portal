@@ -168,6 +168,11 @@ internal sealed class DeliveryRepository(string connectionString)
             return new(AdminWriteOutcome.Conflict, "activeDelivery");
         }
 
+        using var previousWorkflow = connection.CreateCommand();
+        previousWorkflow.Transaction = transaction;
+        previousWorkflow.CommandText = "SELECT workflow_status FROM projects WHERE id=$id";
+        previousWorkflow.Parameters.AddWithValue("$id",projectId);
+        if(previousWorkflow.ExecuteScalar() as string != "completed") NotificationRepository.Capture(connection,transaction,"completed-delivery:"+deliveryId,"completed",projectId,uploaderUserId);
         using var update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = "UPDATE projects SET workflow_status = 'completed', workflow_updated_at = $now WHERE id = $id;";

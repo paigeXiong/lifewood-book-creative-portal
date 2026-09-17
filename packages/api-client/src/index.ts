@@ -5,6 +5,7 @@ import type {
   AuditEvent,
   ConfigOption,
   AdminOverview,
+  AdminAnalytics,
   AdminOrganization,
   AdminProjectDetail,
   AdminProjectSummary,
@@ -15,6 +16,9 @@ import type {
   ProjectPriority,
   WorkflowStatus,
   CurrentUser,
+  MyOrganizationPage,
+  OrganizationMemberProfile,
+  OrganizationMemberActivity,
   FormOptions,
   RuntimeAction,
   BackupPage, BackupPolicy, BackupRecord, BackupSchedule, RestorePreview, RestoreState, RestoreOverview, RestoreHistoryPage,
@@ -273,7 +277,7 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
 }
 
 export interface LoginCredentials { email: string; password: string; rememberMe: boolean }
-export interface EmailSettings { available: boolean; email: string; verified: boolean; notifications: boolean; deliveryStatus?: string }
+export interface EmailSettings { available: boolean; email: string; verified: boolean; notifications: boolean; deliveryStatus?: string; topics?: Array<{ id: string; label: string; enabled: boolean }> }
 export interface MailQueuePage {
   configurationChecks?: { code: string; passed: boolean }[];
   available: boolean; checkedAt: number; counts: { status: string; count: number }[]; kinds: string[];
@@ -283,6 +287,29 @@ export interface MailQueuePage {
 export const mailQueueService = {
   list: (status: string, kind: string, page: number, signal?: AbortSignal) => request<MailQueuePage>(`/admin/mail/status?${new URLSearchParams({ status, kind, page: String(page) })}`, { signal }),
 };
+export interface MailServiceSettings {
+  revision: string; enabled: boolean; host: string; port: number; from: string; username: string;
+  hasPassword: boolean; publicUrl: string; available: boolean; labels: Record<string, string>;
+}
+export interface MailServiceInput {
+  revision: string; enabled: boolean; host: string; port: number; from: string; username: string;
+  password: string; clearPassword: boolean; publicUrl: string;
+}
+export interface ProxyScope { id: string; label: string; mode: string; effectiveMode: string; address: string; username: string; hasPassword: boolean }
+export interface ProxySettings { revision: string; scopes: ProxyScope[]; modes: { id: string; label: string }[]; labels: Record<string, string> }
+export interface ProxyInput { revision: string; scope: string; mode: string; address: string; username: string; password: string; clearPassword: boolean }
+export const outboundProxyService = {
+  get: (locale: SupportedLocale, signal?: AbortSignal) => request<ProxySettings>(`/admin/outbound-proxy?locale=${locale}`, { signal }),
+  save: (input: ProxyInput, locale: SupportedLocale) => request<ProxySettings>(`/admin/outbound-proxy?locale=${locale}`, { method: "PUT", body: JSON.stringify(input) }),
+  test: (revision: string, scope: string) => request<{ status: number }>("/admin/outbound-proxy/test", { method: "POST", body: JSON.stringify({ revision, scope }) }),
+};
+export const mailSettingsService = {
+  templates: (locale: SupportedLocale, signal?: AbortSignal) => request<MailTemplatePreview[]>(`/admin/mail/templates?locale=${locale}`, { signal }),
+  get: (locale: SupportedLocale, signal?: AbortSignal) => request<MailServiceSettings>(`/admin/mail/settings?locale=${locale}`, { signal }),
+  save: (input: MailServiceInput, locale: SupportedLocale) => request<MailServiceSettings>(`/admin/mail/settings?locale=${locale}`, { method: "PUT", body: JSON.stringify(input) }),
+  test: (revision: string, locale: SupportedLocale) => request<void>(`/admin/mail/test?locale=${locale}`, { method: "POST", body: JSON.stringify({ revision }) }),
+};
+export interface MailTemplatePreview { kind: string; subject: string; body: { text: string; html: string } }
 export interface OidcConfiguration { id: string; version: number; nameZh: string; nameEn: string; issuer: string; clientId: string; publicOrigin: string; adminOrigin: string; enabled: boolean; hasSecret: boolean }
 export interface OidcBindingStatus { id: string; available: boolean; bound: boolean; nameZh: string; nameEn: string }
 export type OidcInput = Omit<OidcConfiguration, "hasSecret"> & { secret?: string };
@@ -298,15 +325,21 @@ export const oidcService = {
 };
 export const emailService = {
   availability: () => request<{ available: boolean }>("/auth/email-status", { publicEmailAction: true }),
-  settings: () => request<EmailSettings>("/me/email"),
+  settings: (locale?: SupportedLocale) => request<EmailSettings>(`/me/email${locale ? `?locale=${locale}` : ""}`, { locale }),
   verify: () => request<void>("/me/email/verify", { method: "POST" }),
-  preferences: (notifications: boolean) => request<EmailSettings>("/me/email/preferences", { method: "PUT", body: JSON.stringify({ notifications }) }),
+  preferences: (notifications: boolean, topics?: string[]) => request<EmailSettings>("/me/email/preferences", { method: "PUT", body: JSON.stringify({ notifications, topics }) }),
   forgot: (email: string) => request<void>("/auth/password/forgot", { publicEmailAction: true, method: "POST", body: JSON.stringify({ email }) }),
   consume: (purpose: "verify" | "reset", token: string, newPassword?: string) => request<void>(purpose === "verify" ? "/auth/email/verify" : "/auth/password/reset", { publicEmailAction: true, method: "POST", body: JSON.stringify({ token, newPassword }) }),
 };
 export interface BootstrapAccount { displayName: string; email: string; password: string; phone?: string; organizationName?: string; locale?: SupportedLocale }
 
 export const authService = {
+  getOrganizationMemberActivity: ({ id, locale, search = "", page = 1, signal }: { id: string; locale: SupportedLocale; search?: string; page?: number; signal?: AbortSignal }) =>
+    request<OrganizationMemberActivity>(`/me/organization/members/${encodeURIComponent(id)}/activity?${new URLSearchParams({ locale, search, page: String(page) })}`, { locale, signal }),
+  getOrganizationMember: ({ id, locale, signal }: { id: string; locale: SupportedLocale; signal?: AbortSignal }) =>
+    request<OrganizationMemberProfile>(`/me/organization/members/${encodeURIComponent(id)}?${new URLSearchParams({ locale })}`, { locale, signal }),
+  getMyOrganization: ({ locale, search = "", page = 1, signal }: { locale: SupportedLocale; search?: string; page?: number; signal?: AbortSignal }) =>
+    request<MyOrganizationPage>(`/me/organization?${new URLSearchParams({ locale, search, page: String(page) })}`, { locale, signal }),
   getStatus: () => request<{ requiresBootstrap: boolean }>("/auth/status"),
   getCurrentUser: async () => { const user=await request<CurrentUser>("/me"); boundAccount=user.id; return user; },
   savedAccounts: () => request<{items: Array<{id:string;displayName:string;email?:string;current:boolean;expiresAt:string}>;limit:number}>("/auth/accounts"),
@@ -372,6 +405,7 @@ export const projectService = {
   getStats: () => request<ProjectStats>("/projects/stats"),
   getDashboard: (params: { month: string; timeZone: string; day: number; page: number }, signal?: AbortSignal) =>
     request<CustomerDashboard>(`/projects/dashboard?${new URLSearchParams({ month: params.month, timeZone: params.timeZone, day: String(params.day), page: String(params.page) })}`, { signal }),
+  copyDraft: (id: string, requestId: string, locale: SupportedLocale) => request<TaskDraft>(`/projects/${encodeURIComponent(id)}/copy`, { method: "POST", locale, body: JSON.stringify({ requestId }) }),
   createDraft: (locale: SupportedLocale) =>
     request<TaskDraft>("/projects", { method: "POST", locale, body: "{}" }),
   getProject: (projectId: string, locale: SupportedLocale, signal?: AbortSignal) =>
@@ -574,6 +608,7 @@ export const adminService = {
   deleteAiProvider: (id: string, locale: SupportedLocale) =>
     request<AiSettings>('/admin/ai-settings/providers/' + encodeURIComponent(id), { method: "DELETE", locale }),
   getOverview: () => request<AdminOverview>("/admin/overview"),
+  getOverviewAnalytics: (days: number, timeZone: string, signal?: AbortSignal) => request<AdminAnalytics>(`/admin/overview/analytics?${new URLSearchParams({ days: String(days), timeZone })}`, { signal }),
   restoreHistory: (page: number, status: string, signal?: AbortSignal) => request<RestoreHistoryPage>("/admin/backups/restore/history?"+new URLSearchParams({page:String(page),status}), {signal}),
   restoreOverview: () => request<RestoreOverview>("/admin/backups/restore"),
   preflightRestore: (id: string, signal?: AbortSignal) => request<RestorePreview>(`/admin/backups/${encodeURIComponent(id)}/preflight`, {method:"POST",body:"{}",signal}),

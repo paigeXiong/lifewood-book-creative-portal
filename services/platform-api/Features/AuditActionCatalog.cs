@@ -11,6 +11,10 @@ internal static class AuditActionCatalog
 
     private static readonly Definition[] Definitions =
     [
+        new("mail.settings_update", "更新邮件服务", "Updated email service"),
+        new("proxy.settings_update", "更新出站代理", "Updated outbound proxy"),
+        new("proxy.test", "检查出站连接", "Checked outbound connection"),
+        new("mail.test", "发送邮件服务测试", "Sent email service test"),
         new("backup.preflight", "校验恢复备份", "Checked restore backup"),
         new("backup.restore", "恢复平台备份", "Requested platform restore"),
         new("backup.verify", "请求备份校验", "Requested backup verification"),
@@ -65,6 +69,10 @@ internal static class AuditActionCatalog
         var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments is null || segments.Length < 3 || segments[0] != "api" || segments[1] != "admin") return null;
         string? Value(int index) => segments.Length > index ? Uri.UnescapeDataString(segments[index]) : null;
+        if (method == "PUT" && segments is ["api", "admin", "mail", "settings"]) return new("mail.settings_update", "mail_settings", "smtp");
+        if (method == "PUT" && segments is ["api", "admin", "outbound-proxy"]) return new("proxy.settings_update", "proxy_settings", "outbound");
+        if (method == "POST" && segments is ["api", "admin", "outbound-proxy", "test"]) return new("proxy.test", "proxy_settings", "outbound");
+        if (method == "POST" && segments is ["api", "admin", "mail", "test"]) return new("mail.test", "mail_settings", "smtp");
 
         if (segments.Length >= 4 && segments[2] == "notifications" && method == "PUT") return new("notification.config", "notification", Value(3));
         if (segments.Length >= 5 && segments[2] == "notifications" && method == "POST") return new("notification.retry", "notification", Value(4));

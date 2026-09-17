@@ -11,7 +11,8 @@
 .profile-page .profile-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .profile-page .profile-side-stack { display: contents; }
 .profile-page .profile-form { grid-column: 1; grid-row: 1; }
-.profile-page .profile-account { grid-column: 2; grid-row: 1 / 3; }
+.profile-page .profile-account { grid-column: 2; grid-row: 1; }
+.profile-page .profile-security { grid-column: 2; grid-row: 2; display: grid; gap: 12px; min-width: 0; }
 .profile-page .profile-preferences { grid-column: 1; grid-row: 2; }
 .profile-page .profile-surface { padding: 20px; border-radius: 12px; box-shadow: 0 4px 16px #173a2d05; }
 .profile-page .profile-section-heading { align-items: center; gap: 10px; margin-bottom: 4px; min-height: 36px; }
@@ -20,6 +21,7 @@
 .profile-page .profile-edit-button { margin-left: auto; min-height: 34px; padding: 6px 12px; font-size: 12px; }
 .profile-page .profile-contact-list, .profile-page .profile-account-list { display: grid; gap: 8px; margin: 0; }
 .profile-page .profile-contact-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.profile-page .profile-account-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .profile-page .profile-contact-list > div, .profile-page .profile-account-list > div { min-width: 0; padding: 12px; background: #f6f7f4; border-radius: 8px; }
 .profile-page :is(.profile-contact-list, .profile-account-list) dt { color: var(--ink-muted); font-size: 12px; font-weight: 400; }
 .profile-page :is(.profile-contact-list, .profile-account-list) dd { margin: 6px 0 0; color: var(--ink); font-size: 14px; font-weight: 550; overflow-wrap: anywhere; }
@@ -40,7 +42,7 @@
 @media (max-width: 700px) {
   .page.profile-page { width: calc(100% - 24px); padding-top: 14px; }
   .profile-page .profile-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .profile-page .profile-form, .profile-page .profile-account, .profile-page .profile-preferences { grid-column: auto; grid-row: auto; }
+  .profile-page .profile-form, .profile-page .profile-account, .profile-page .profile-preferences, .profile-page .profile-security { grid-column: auto; grid-row: auto; }
   .profile-page .profile-surface { padding: 16px; }
   .profile-page .profile-identity { padding: 16px; margin-bottom: 12px; }
   .profile-page .profile-fields { grid-template-columns: minmax(0, 1fr); }
@@ -48,3 +50,18 @@
 }
 
 .profile-page .profile-success { padding: 0; background: none; font-size: 12px; font-weight: 500; }
+.profile-page .email-settings { margin: 0; padding: 0; border: 0; min-width: 0; }
+.profile-page .email-setting-row { margin: 0; padding: 10px 12px; min-height: 56px; gap: 10px; border-radius: 8px; background: #f6f7f4; flex-wrap: wrap; }
+.profile-page .email-setting-row strong { font-size: 13px; font-weight: 550; }
+.profile-page .email-setting-row small, .profile-page .email-settings > small, .profile-page .email-settings p { font-size: 12px; }
+.profile-page .email-settings > small { display: block; margin-top: 8px; }
+.profile-page .email-setting-row > button { min-height: 44px; font-size: 12px; max-width: 100%; white-space: normal; }
+.profile-page .email-notifications .email-setting-row { flex-wrap: nowrap; }
+.profile-page .profile-security-action, .profile-page .login-devices-trigger { min-height: 44px; }
+.profile-page .email-toggle-control { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; margin: -4px 0; cursor: pointer; }
+.profile-page .email-toggle-control input { appearance: none; flex: none; width: 36px; height: 22px; margin: 0; padding: 2px; border: 0; border-radius: 12px; background: #acbab2; cursor: pointer; }
+.profile-page .email-toggle-control input::before { content: ""; display: block; width: 18px; height: 18px; border-radius: 50%; background: white; }
+.profile-page .email-toggle-control input:checked { background: var(--green-900); }
+.profile-page .email-toggle-control input:checked::before { transform: translateX(14px); }
+.profile-page .email-toggle-control input:focus-visible { outline: 2px solid var(--green-900); outline-offset: 3px; }
+.profile-page .email-toggle-control input:disabled { opacity: .5; cursor: default; }

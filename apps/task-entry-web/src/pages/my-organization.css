@@ -1,0 +1,113 @@
+.page.my-org-page { display:flex; flex:1; min-width:0; padding-block:20px; }
+.my-org-panel { display:flex; flex-direction:column; flex:1; min-width:0; min-height:calc(100dvh - 120px); padding:20px; border-radius:16px; background:#fff; gap:16px; }
+.my-org-summary { display:flex; align-items:center; gap:12px; }
+.my-org-emblem { display:grid; place-items:center; width:40px; height:40px; flex:none; border-radius:10px; color:#235846; background:#edf3ef; }
+.my-org-emblem svg { width:23px; height:23px; }
+.my-org-name { flex:1; min-width:0; }
+.my-org-name h1 { font-size:18px; margin:0 0 3px; overflow-wrap:anywhere; }
+.my-org-name>span,.my-org-member-copy>span,.my-org-pager>span { color:#697a73; font-size:14px; }
+:is(.my-org-panel,.member-dashboard) .my-org-icon { display:grid; place-items:center; padding:0; width:36px; min-width:36px; height:36px; min-height:36px; border:0; border-radius:9px; background:transparent; color:#356452; box-shadow:none; flex:none; }
+.my-org-icon svg { width:20px; height:20px; }
+:is(.my-org-panel,.member-dashboard) .my-org-icon:hover { background:#edf3ef; transform:none; }
+.my-org-search { display:flex; align-items:center; gap:8px; width:360px; max-width:100%; }
+.my-org-search input { width:100%; min-width:0; height:40px; padding:8px 12px; border:1px solid #cbd8d1; border-radius:9px; font:inherit; background:#fff; color:inherit; }
+.my-org-search input:focus-visible { outline:2px solid #498570; outline-offset:2px; }
+.my-org-panel .my-org-search { width:300px; }
+.my-org-panel .my-org-search input { height:36px; font-size:14px; padding:7px 10px; }
+.my-org-name>span,.my-org-member-copy>span { font-size:13px; }
+.my-org-results { flex:1; }
+.my-org-members { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:0; padding:0; list-style:none; }
+.my-org-members li { display:flex; min-width:0; border-radius:10px; background:#f5f7f5; }
+.my-org-member-link { display:flex; align-items:center; gap:10px; width:100%; min-width:0; padding:12px; border-radius:10px; color:inherit; text-decoration:none; transition:background-color .18s ease; }
+.my-org-member-link .my-org-avatar { width:36px; height:36px; font-size:13px; }
+.my-org-member-link:hover { background:#eaf1ed; }
+.my-org-member-link .my-org-avatar { transition:transform .18s ease; }
+.my-org-member-link:hover .my-org-avatar { transform:scale(1.07); }
+.my-org-member-link:focus-visible { outline:2px solid #498570; outline-offset:3px; }
+.my-org-avatar { display:grid; place-items:center; width:44px; height:44px; flex:none; border-radius:50%; overflow:hidden; color:#235846; background:#e3ede7; font-weight:700; }
+.my-org-avatar img { width:100%; height:100%; object-fit:cover; }
+.my-org-member-copy { flex:1; min-width:0; display:grid; gap:3px; }
+.my-org-member-copy strong { overflow-wrap:anywhere; font-size:15px; }
+.my-org-member-copy small { display:inline-block; margin-inline-start:6px; color:#507264; font-size:11px; font-weight:500; }
+.my-org-empty { text-align:center; padding:48px 12px; color:#697a73; }
+.my-org-pager { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:auto; padding-top:12px; }
+.my-org-pager>div { display:flex; gap:8px; }
+.my-org-unassigned { align-items:center; justify-content:center; }
+.page.organization-member-page { padding-block:24px; display:grid; gap:16px; align-content:start; }
+.organization-member-back { display:inline-flex; align-items:center; gap:8px; justify-self:start; color:#285b47; text-decoration:none; padding:8px 0; }
+.organization-member-back svg { width:18px; height:18px; }
+.organization-member-profile { background:#fff; border-radius:18px; padding:24px; min-width:0; }
+.organization-member-identity { display:flex; align-items:center; gap:16px; margin-bottom:24px; }
+.organization-member-identity>div { min-width:0; overflow-wrap:anywhere; }
+.organization-member-identity .my-org-avatar { width:76px; height:76px; font-size:24px; }
+.organization-member-identity h1 { margin:0 0 6px; font-size:24px; }
+.organization-member-identity>div>span { color:#697a73; }
+.organization-member-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:0; }
+.organization-member-fields>div { background:#f5f7f5; border-radius:12px; padding:16px; min-width:0; overflow-wrap:anywhere; }
+.organization-member-fields dt { color:#697a73; font-size:14px; margin-bottom:8px; }
+.organization-member-fields dd { margin:0; font-weight:600; }
+@media(prefers-reduced-motion:reduce) { .my-org-member-link,.my-org-member-link .my-org-avatar { transition:none; } .my-org-member-link:hover .my-org-avatar { transform:none; } }
+@media(max-width:640px) { .organization-member-profile { padding:16px; } .organization-member-fields { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:1100px) { .my-org-members { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:900px) { .my-org-members { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:640px) { .page.my-org-page { padding-block:16px; } .my-org-panel { padding:16px; min-height:calc(100dvh - 160px); gap:16px; } .my-org-members { grid-template-columns:minmax(0,1fr); } .my-org-summary { gap:10px; flex-wrap:wrap; } .my-org-search,.my-org-panel .my-org-search { order:1; width:100%; } .my-org-pager { flex-wrap:wrap; } .my-org-pager>div { margin-inline-start:auto; } }
+
+.member-dashboard { display:grid; gap:16px; min-width:0; }
+.member-presence header,.member-requests header { display:flex; align-items:center; gap:10px; }
+.member-dashboard h2 { margin:0; font-size:17px; }
+.member-presence header>.my-org-icon { margin-inline-start:auto; }
+.member-presence-badge { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#718078; }
+.member-presence-badge::before { content:""; width:7px; height:7px; border-radius:50%; background:#a1aaa5; }
+.member-presence-badge.is-online::before { background:#358361; }
+.member-presence-badge.is-away::before { background:#b19756; }
+.member-presence dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:16px 0 0; }
+.member-presence dt { font-size:14px; color:#697a73; margin-bottom:6px; }
+.member-presence dd { margin:0; }
+.member-calendar-layout { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(220px,.7fr); gap:24px; margin-top:16px; }
+.member-calendar { min-width:0; }
+.member-calendar-toolbar,.member-calendar-toolbar>div { display:flex; align-items:center; gap:6px; }
+.member-calendar-toolbar { justify-content:space-between; margin-bottom:8px; }
+.member-calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
+.member-calendar-weekday { text-align:center; color:#697a73; font-size:12px; padding-bottom:4px; }
+.member-calendar-grid .member-calendar-day { display:grid; place-items:center; width:100%; min-width:0; height:34px; min-height:34px; padding:0; border:0; border-radius:6px; font:inherit; font-size:13px; box-shadow:none; transform:none; color:#305648; transition:background-color .18s ease; }
+.member-calendar-day span { transition:transform .18s ease; }
+.member-calendar-day:hover span { transform:scale(1.12); }
+.member-calendar-day[aria-pressed="true"] { outline:2px solid #28634c; outline-offset:1px; }
+.member-calendar-day:focus-visible { outline:2px solid #b78a24; outline-offset:2px; }
+.member-calendar-day[aria-current="date"] span { text-decoration:underline; text-underline-offset:4px; }
+.member-calendar .level-0 { background:#f0f2f0; }
+.member-calendar .level-1 { background:#d9eadf; }
+.member-calendar .level-2 { background:#aacfb8; }
+.member-calendar .level-3 { background:#6ea98a; color:#123b29; }
+.member-calendar .level-4 { background:#28634c; color:#fff; }
+.member-calendar-grid .is-unknown,.member-calendar-legend .unknown-key { background:repeating-linear-gradient(135deg,#f5f6f4 0px,#f5f6f4 3px,#e7ebe6 3px,#e7ebe6 4px); color:#78837c; }
+.member-calendar-grid .is-future { background:transparent; color:#aeb7b1; opacity:1; cursor:default; }
+.member-calendar-legend { display:flex; align-items:center; gap:5px; margin-top:12px; color:#697a73; font-size:12px; flex-wrap:wrap; }
+.member-calendar-legend i,.member-calendar-legend .unknown-key { display:inline-block; width:12px; height:12px; border-radius:3px; }
+.member-calendar-scale { margin-inline-start:auto; display:flex; align-items:center; gap:4px; }
+.member-calendar-detail { align-self:stretch; border-radius:12px; background:#f5f7f5; padding:20px; display:flex; flex-direction:column; justify-content:center; gap:12px; min-width:0; }
+.member-calendar-detail>strong { font-size:15px; }
+.member-calendar-detail p { color:#697a73; margin:0; }
+.member-presence .member-calendar-detail dl { margin:0; gap:12px; }
+.member-calendar-detail dd { font-size:30px; color:#285b47; font-weight:650; font-variant-numeric:tabular-nums; }
+.member-presence .member-presence-recent { padding-top:16px; font-size:13px; }
+.member-presence-recent>div { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+.member-presence-recent dt { margin:0; font-size:13px; }
+@media(max-width:760px) { .member-calendar-layout { grid-template-columns:minmax(0,1fr); gap:16px; } .member-calendar-detail { padding:14px; } .member-presence .member-calendar-detail dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(prefers-reduced-motion:reduce) { .member-calendar-day span,.member-calendar-grid .member-calendar-day { transition:none; } .member-calendar-day:hover span { transform:none; } }
+.member-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.member-metrics>div { padding:18px 20px; border-radius:14px; background:#fff; display:grid; gap:10px; min-width:0; }
+.member-metrics span { color:#697a73; font-size:14px; }
+.member-metrics strong { font-size:28px; color:#285b47; font-variant-numeric:tabular-nums; }
+.member-requests { display:flex; flex-direction:column; min-height:320px; gap:18px; }
+.member-requests header { flex-wrap:wrap; }
+.member-requests .my-org-search { margin-inline-start:auto; }
+.member-requests-content { flex:1; min-width:0; overflow:auto; }
+.member-requests table { width:100%; border-collapse:collapse; text-align:start; }
+.member-requests th { background:#edf3ef; font-size:13px; color:#507264; font-weight:600; }
+.member-requests th,.member-requests td { padding:12px; text-align:start; }
+.member-requests td { font-size:14px; border-bottom:1px solid #edf1ee; }
+.member-requests td:first-child { overflow-wrap:anywhere; min-width:140px; }
+.member-requests td:nth-child(2) { min-width:120px; }
+.member-requests td:last-child { white-space:nowrap; color:#697a73; }
+@media(max-width:640px) { .member-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .member-metrics>div { padding:14px; } .member-presence dl { grid-template-columns:minmax(0,1fr); } .member-requests .my-org-search { width:100%; } }

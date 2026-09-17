@@ -29,6 +29,37 @@ public sealed class CustomerDashboardTests : IDisposable
     {var task=projects.Create(id??owner.Id);return projects.Submit(id??owner.Id,task.Id,task.Version,Guid.NewGuid().ToString(),null).Draft!;}
 
     [Fact]
+    public void StatusDrilldownMatchesDashboardGroupsAndPreservesSearchPaginationAndOwnership()
+    {
+        projects.Create(owner.Id);
+        var returned = projects.Create(owner.Id);
+        var returned2 = projects.Create(owner.Id);
+        foreach (var task in new[] { returned, returned2 })
+            Sql("UPDATE projects SET workflow_status='awaiting_customer',project_json=json_set(project_json,'$.projectName','needle') WHERE id=$id", ("$id",task.Id));
+        Submit();
+        var completed = Submit();
+        Sql("UPDATE projects SET workflow_status='completed' WHERE id=$id",("$id",completed.Id));
+        var other = projects.Create("other-owner");
+        Sql("UPDATE projects SET workflow_status='awaiting_customer' WHERE id=$id",("$id",other.Id));
+        var report = Read();
+        foreach (var group in report.Statuses)
+        {
+            var result = projects.List(owner.Id, "stage:" + group.Id, null, 1, 100);
+            Assert.Equal(group.Count, result.Total);
+            Assert.Equal(group.Count, result.Items.Length);
+            Assert.DoesNotContain(result.Items,item=>item.Id==other.Id);
+        }
+        Assert.Equal(1, projects.List(owner.Id,"stage:draft",null,1,10).Total);
+        Assert.Equal(3, projects.List(owner.Id,"draft",null,1,10).Total);
+        var page1 = projects.List(owner.Id,"stage:awaiting_customer","needle",1,1);
+        var page2 = projects.List(owner.Id,"stage:awaiting_customer","needle",2,1);
+        Assert.Equal(2,page1.Total); Assert.Equal(2,page2.Total);
+        Assert.NotEqual(Assert.Single(page1.Items).Id,Assert.Single(page2.Items).Id);
+        Assert.Empty(projects.List(owner.Id,"stage:awaiting_customer","missing",1,10).Items);
+        Assert.Empty(projects.List(owner.Id,"stage:' OR 1=1 --",null,1,10).Items);
+    }
+
+    [Fact]
     public void ActualSubmissionsAreIdempotentAndOwnershipIsAppliedToEveryResult()
     {
         var draft=projects.Create(owner.Id); var key=Guid.NewGuid().ToString();

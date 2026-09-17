@@ -1531,3 +1531,39 @@ td {
 .organization-brand-preview .organization-wordmark { width: 100%; max-width: 360px; }
 
 .delivery-attempt{padding:10px 12px;background:var(--surface-muted,#f3f7f4);border-radius:8px;overflow-wrap:anywhere;font-size:14px}.delivery-attempt small{display:block;margin-top:4px;white-space:pre-wrap;color:var(--text-muted,#526b61)}
+
+button.organization-expand { display:inline-flex; align-items:center; gap:8px; padding:6px 0; min-height:40px; border:0; background:transparent; box-shadow:none; color:inherit; text-align:start; transform:none; }
+button.organization-expand:hover { background:transparent; transform:none; color:#267754; }
+.organization-expand>svg { width:16px; height:16px; flex:none; transition:transform 180ms ease; }
+.organization-expand[aria-expanded=true]>svg { transform:rotate(90deg); }
+.organizations-table .organization-members-row>td { padding:0 12px 12px; }
+.organization-members-panel { padding:14px; border-radius:10px; background:#f0f5f2; }
+.organization-members-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.organization-members-toolbar>.muted { white-space:nowrap; font-size:13px; }
+.organization-members-actions { display:flex; gap:4px; align-items:center; margin-inline-start:auto; }
+.organization-members-panel .organization-members-search { display:flex; align-items:center; flex:0 1 260px; max-width:260px; gap:0; margin:0; position:relative; }
+.organization-members-panel .organization-members-search input { width:100%; min-width:0; min-height:40px; padding-inline-end:40px; font-size:13px; }
+.organization-members-panel .organization-member-action,.organization-members-search button { display:inline-flex; align-items:center; justify-content:center; flex:none; width:40px; height:40px; min-width:40px; min-height:40px; padding:0; border:0; border-radius:8px; background:transparent; color:#335c4a; box-shadow:none; text-decoration:none; transform:none; cursor:pointer; }
+.organization-members-search button { position:absolute; inset-inline-end:0; }
+.organization-members-panel .organization-member-action:hover,.organization-members-search button:hover { background:#dfeae4; color:#174b36; transform:none; }
+.organization-member-action svg,.organization-members-search button svg { width:19px; height:19px; transition:transform 160ms ease; }
+.organization-member-action:hover svg { transform:scale(1.12); }
+.organization-member-action:focus-visible,.organization-members-search button:focus-visible { outline:2px solid #267754; outline-offset:2px; }
+.organization-member-list { list-style:none; padding:0; margin:0; }
+.organization-member-list li { display:flex; align-items:center; gap:16px; padding:10px 4px; border-bottom:1px solid #dce6e0; }
+.organization-member-list .organization-member-identity { flex:1; min-width:0; display:flex; align-items:center; gap:10px; }
+.organization-member-identity>div { display:grid; gap:3px; min-width:0; overflow-wrap:anywhere; }
+.organization-member-identity>div>span { color:#5a7165; font-size:13px; }
+.organization-member-avatar { display:inline-flex; align-items:center; justify-content:center; flex:none; width:40px; height:40px; overflow:hidden; border-radius:50%; background:#dfeae4; color:#24523d; font-size:13px; font-weight:600; }
+.organization-member-avatar img { width:100%; height:100%; object-fit:cover; }
+.organization-members-panel .pager { margin-top:10px; }
+@media(prefers-reduced-motion:no-preference) { .organization-members-panel { animation:lw-overlay-enter 180ms ease-out; transform-origin:top center; } }
+@media(prefers-reduced-motion:reduce) { .organization-expand>svg,.organization-member-action svg,.organization-members-search button svg { transition:none; }.organization-member-action:hover svg { transform:none; } }
+@media(max-width:640px) {
+  .organization-members-panel .organization-members-search { order:2; flex-basis:100%; max-width:100%; }
+  .organization-members-panel .organization-member-action { width:44px; height:44px; }
+  .organization-member-list li { flex-wrap:wrap; gap:8px; }
+  .organization-member-list li>div { flex-basis:100%; }
+  .organizations-table .organization-members-row>td { display:block; padding:8px; }
+  .organizations-table .organization-members-row>td::before { display:none; }
+}

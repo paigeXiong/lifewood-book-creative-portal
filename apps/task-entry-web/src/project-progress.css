@@ -67,3 +67,25 @@
 }
 @media(prefers-reduced-motion:reduce){.detail-page .detail-contents a{transition:none}}
 @media(max-height:720px) and (min-width:701px){.detail-page .detail-cover{position:static}}
+
+.detail-page .detail-display-controls{display:flex;justify-content:space-between;gap:4px;flex-wrap:wrap;grid-column:1/-1;margin-top:8px}
+.detail-page .detail-display-controls .button{min-height:44px;padding:6px 10px;font-size:13px}
+.detail-page .detail-section>h2,.detail-page .material-character>h3{margin:0}
+.detail-page .material-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:4px 0;border:0;background:transparent;color:inherit;text-align:start;font:inherit;cursor:pointer}
+.detail-page .material-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0;overflow-wrap:anywhere}
+.detail-page .material-title small{font-size:12px;font-weight:400;color:var(--lw-text-secondary)}
+.detail-page .material-chevron{flex:none;transition:transform .18s ease}
+.detail-page .material-toggle[aria-expanded="true"]>.material-chevron{transform:rotate(180deg)}
+.detail-page .material-toggle:focus-visible{outline:2px solid var(--lw-castleton);outline-offset:3px;border-radius:4px}
+.detail-page .material-section-body{padding-top:8px;min-width:0}
+.detail-page .material-section-body[hidden]{display:none}
+.detail-page .data-grid>.receipt-character{display:block;padding:4px 0}
+.detail-page .material-character{padding:4px 12px;border-radius:8px;background:#f3f7f4;scroll-margin-top:120px}
+.detail-page .material-character>h3{font-size:14px;font-weight:600}
+.detail-page .receipt-character-image{display:block;margin:0 0 8px;border-radius:8px;object-fit:contain}
+@media(prefers-reduced-motion:reduce){.detail-page .material-chevron{transition:none}}
+@media print{
+ .detail-page .material-section-body[hidden]{display:block}
+ .detail-page .detail-display-controls,.detail-page .detail-contents,.detail-page .material-chevron{display:none}
+ .detail-page .detail-cover{position:static}
+}

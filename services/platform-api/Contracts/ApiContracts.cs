@@ -213,7 +213,8 @@ public sealed record FormOptionsDto(
     ConfigOptionDto[] WorkflowStatuses,
     ConfigOptionDto[] ProjectPriorities,
     ConfigOptionDto[]? LegacyImageStyleTags = null,
-    bool BookRecognitionEnabled = false);
+    bool BookRecognitionEnabled = false,
+    bool ProjectCopyEnabled = true);
 
 public sealed record ProjectInfoDto(
     string ClientName,
@@ -393,6 +394,7 @@ public sealed record SaveCreativeRequest(int Version, CreativeInfoDto Creative);
 public sealed record SaveVoiceAndReferencesRequest(int Version, VoiceAndReferencesInfoDto VoiceAndReferences, bool RequireComplete = false, ProjectInfoDto? Project = null);
 
 public sealed record ValidateProjectRequest(int Version);
+public sealed record CopyProjectRequest(Guid RequestId);
 
 public sealed record ValidationResultDto(bool Valid, FieldErrorDto[] FieldErrors);
 
@@ -421,4 +423,4 @@ public sealed record UpsertCharacterPresetRequest(CharacterInfoDto ZhCn, Charact
 public sealed record AuditChangeDto(string Field, string? Before, string? After);
 public sealed record AuditContextDto(string? LabelZh, string? LabelEn, string Source, string? Path, AuditChangeDto[]? Changes = null);
 
-public sealed record RuntimeHealthDto(DateTimeOffset StartedAt, DateTimeOffset? MeasuredAt, bool? DatabaseAvailable, long? UsedBytes, long? UploadBytes, long? DeliveryBytes, long? FreeBytes, long QuotaBytes, long? FailedNotifications, bool? PendingAudit, bool StorageComplete);
+public sealed record RuntimeHealthDto(DateTimeOffset StartedAt, DateTimeOffset? MeasuredAt, bool? DatabaseAvailable, long? UsedBytes, long? UploadBytes, long? DeliveryBytes, long? FreeBytes, long QuotaBytes, long? FailedNotifications, bool? PendingAudit, bool StorageComplete, long? DatabaseBytes = null, long? AvatarBytes = null, long? OtherBytes = null, long? BackupBytes = null);

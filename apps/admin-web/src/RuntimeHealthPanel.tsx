@@ -1,3 +1,4 @@
+import { HelpPopover } from "./HelpPopover";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { adminService, localizedApiError } from "@lifewood/api-client";
@@ -20,7 +21,7 @@ export function RuntimeHealthPanel({locale,userId}:{locale:SupportedLocale;userI
     <div><span>{t("runtimeHealth.free")}</span><strong className={data.freeBytes!=null&&data.freeBytes<1024**3?"runtime-warning":""}>{bytes(data.freeBytes)}</strong></div>
     <div><span>{t("runtimeHealth.uptime")}</span><strong title={new Intl.DateTimeFormat(locale,{dateStyle:"short",timeStyle:"short"}).format(new Date(data.startedAt))}>{t("runtimeHealth.uptimeValue",{hours:Math.floor(minutes/60),minutes:minutes%60})}</strong></div>
    </div>
-   <details><summary>{t("runtimeHealth.details")}</summary><dl className="runtime-health-details"><div><dt>{t("runtimeHealth.uploads")}</dt><dd>{bytes(data.uploadBytes)}</dd></div><div><dt>{t("runtimeHealth.deliveries")}</dt><dd>{bytes(data.deliveryBytes)}</dd></div><div><dt>{t("runtimeHealth.failed")}</dt><dd>{data.failedNotifications??t("runtimeHealth.unknown")}</dd></div><div><dt>{t("runtimeHealth.audit")}</dt><dd>{data.pendingAudit==null?t("runtimeHealth.unknown"):t(data.pendingAudit?"runtimeHealth.pending":"runtimeHealth.clear")}</dd></div></dl><p className="muted">{t("runtimeHealth.scope")}</p>{!data.storageComplete&&data.measuredAt&&<p role="status">{t("runtimeHealth.partial")}</p>}</details>
+   <details><summary>{t("runtimeHealth.details")}</summary><dl className="runtime-health-details"><div><dt>{t("runtimeHealth.uploads")}</dt><dd>{bytes(data.uploadBytes)}</dd></div><div><dt>{t("runtimeHealth.deliveries")}</dt><dd>{bytes(data.deliveryBytes)}</dd></div>{([['databaseFiles',data.databaseBytes],['avatars',data.avatarBytes],['otherFiles',data.otherBytes],['backups',data.backupBytes]] as const).map(([key,value])=><div key={key}><dt>{t(`runtimeHealth.${key}`)}</dt><dd>{bytes(value)}</dd></div>)}<div><dt>{t("runtimeHealth.failed")}</dt><dd>{data.failedNotifications??t("runtimeHealth.unknown")}</dd></div><div><dt>{t("runtimeHealth.audit")}</dt><dd>{data.pendingAudit==null?t("runtimeHealth.unknown"):t(data.pendingAudit?"runtimeHealth.pending":"runtimeHealth.clear")}</dd></div></dl><HelpPopover label={t("runtimeHealth.details")}>{t("runtimeHealth.breakdownHelp")}</HelpPopover>{!data.storageComplete&&data.measuredAt&&<p role="status">{t("runtimeHealth.partial")}</p>}</details>
   </>}
  </section>;
 }

@@ -49,7 +49,7 @@ for (const locale of ["zh-CN", "en-US"] as const) {
       await settle();
       expect(submit.disabled).toBe(false);
       await act(async () => submit.click());
-      expect(save).toHaveBeenCalledWith(expect.objectContaining({ mutedKinds: ["workflow"] }), expect.anything());
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ mutedKinds: ["workflow"] }));
     } finally { await act(async () => root.unmount()); client.clear(); host.remove(); }
   });
 

@@ -31,6 +31,8 @@ internal static class AuditTargets
         var id = action.TargetId ?? "";
         switch (action.TargetType)
         {
+            case "mail_settings": return new("邮件服务", "Email service", "settings/mail");
+            case "proxy_settings": return new("出站代理", "Outbound proxy", "settings/runtime");
             case "project":
                 sql = "SELECT COALESCE(NULLIF(json_extract(book_json,'$.title'),''),NULLIF(json_extract(project_json,'$.projectName'),''),task_number), task_number FROM projects WHERE id=$id AND first_submitted_at IS NOT NULL";
                 path = "projects?project=" + Uri.EscapeDataString(id); break;

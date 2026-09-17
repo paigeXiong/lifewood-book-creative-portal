@@ -57,6 +57,7 @@ try {
     $start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production"
     $start.Environment["Lifewood__DataDirectory"] = $dataDirectory
     $start.Environment["Lifewood__RequireWebAssets"] = "false"
+    $start.Environment["Lifewood__Mail__Enabled"] = "false"
     $process = [Diagnostics.Process]::Start($start)
     if ($null -eq $process) { throw "Native AOT process did not start." }
 
@@ -94,7 +95,27 @@ try {
     if ($oidc.items.Count -ne 0) { throw "AOT default enterprise login state was invalid." }
     $mailQueue = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/admin/mail/status?status=failed&page=1" -WebSession $session
     if ($mailQueue.available -or $mailQueue.total -ne 0 -or $mailQueue.counts.Count -ne 7 -or $mailQueue.pageSize -ne 25 -or $mailQueue.configurationChecks.Count -ne 6) { throw "AOT mail queue status returned an invalid default state." }
+    foreach ($mailLocale in @("zh-CN", "en-US")) {
+        $templates = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/admin/mail/templates?locale=$mailLocale" -WebSession $session
+        if ($templates.Count -ne 4) { throw "AOT mail template catalog was incomplete." }
+        foreach ($template in $templates) {
+            if ([string]::IsNullOrWhiteSpace($template.body.text) -or $template.body.html -notmatch '<html lang=' -or $template.body.html -match 'href=') {
+                throw "AOT mail template preview was invalid."
+            }
+        }
+        $verifyTemplate = $templates | Where-Object { $_.kind -eq "verify" }
+        $expectedSubject = if ($mailLocale -eq "zh-CN") { "验证邮箱" } else { "Verify your email" }
+        if ($verifyTemplate.subject -ne $expectedSubject -or $verifyTemplate.body.text -notmatch 'preview-only') { throw "AOT localized mail template content was invalid." }
+    }
     $binding = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/me/oidc" -WebSession $session
+    foreach ($proxyLocale in @("zh-CN", "en-US")) {
+        $proxySettings = Invoke-RestMethod -Uri "$baseUrl/api/admin/outbound-proxy?locale=$proxyLocale" -WebSession $session
+        if ($proxySettings.scopes.Count -ne 1 -or $proxySettings.scopes[0].mode -ne "system" -or $proxySettings.modes.Count -ne 4) { throw "AOT proxy defaults were invalid." }
+    }
+    $proxyCsrf = (Invoke-RestMethod -Uri "$baseUrl/api/auth/csrf" -WebSession $session).token
+    $proxyInput = @{ revision = $proxySettings.revision; scope = "global"; mode = "direct"; address = ""; username = ""; password = ""; clearPassword = $false } | ConvertTo-Json
+    $proxySaved = Invoke-RestMethod -Method Put -Uri "$baseUrl/api/admin/outbound-proxy" -WebSession $session -Headers @{ "X-CSRF-TOKEN" = $proxyCsrf } -ContentType "application/json" -Body $proxyInput
+    if ($proxySaved.scopes[0].mode -ne "direct" -or $proxySaved.revision -eq $proxySettings.revision) { throw "AOT proxy save failed." }
     if ($binding.items.Count -ne 0) { throw "AOT default identity binding state was invalid." }
 
     $csrf = (Invoke-RestMethod -Method Get -Uri "$baseUrl/api/auth/csrf" -WebSession $session).token

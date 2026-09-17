@@ -112,6 +112,7 @@ const resources = {
         edit: "编辑",
         contactDescription: "所属组织名称、联系人和电话会自动填入之后新建的项目草稿。",
         accountTitle: "账户与归属",
+        securityTitle: "账号安全",
         accountDescription: "查看登录身份、组织归属与安全设置。",
         displayName: "姓名",
         clientName: "默认客户名称",
@@ -283,6 +284,8 @@ const resources = {
         },
       },
       taskDetail: {
+        expandAll: "全部展开",
+        collapseAll: "全部收起",
         title: "项目提交记录",
         project: "项目资料",
         book: "书籍资料",
@@ -730,6 +733,7 @@ const resources = {
         edit: "Edit",
         contactDescription: "Your organization name, contact name, and phone number will be added to new project drafts.",
         accountTitle: "Account & organization",
+        securityTitle: "Account security",
         accountDescription: "Review your sign-in identity, organization, and security settings.",
         displayName: "Name",
         clientName: "Default client name",
@@ -909,6 +913,8 @@ const resources = {
         },
       },
       taskDetail: {
+        expandAll: "Expand all",
+        collapseAll: "Collapse all",
         title: "Project submission record",
         project: "Project details",
         book: "Book details",
@@ -1570,14 +1576,14 @@ i18n.addResourceBundle("en-US", "translation", { mailQueue: { configuration: {
 } } }, true, true);
 
 i18n.addResourceBundle("zh-CN", "translation", { mailQueue: {
-  title: "邮件状态", ownerOnly: "仅平台负责人可以查看邮件发送状态。", available: "发件配置已就绪", unavailable: "邮件未启用或配置未就绪", refresh: "刷新", checked: "更新于 {{time}}",
+  title: "邮件服务", ownerOnly: "仅平台负责人可以配置邮件服务和查看发送状态。", available: "发件配置已就绪", unavailable: "邮件未启用或配置未就绪", refresh: "刷新", checked: "更新于 {{time}}",
   help: "这里显示当前保留的队列记录，不是完整邮件历史；超过发送有效期 7 天的记录不计入。统计不随筛选变化。已交给邮件服务器不代表已送达收件箱。失败会自动重试，最多 5 次；暂停表示发件配置或收件账号暂不可用。邮箱已脱敏，不展示邮件正文、链接和密钥。",
   status: "状态", kind: "邮件类型", all: "全部", clear: "清除筛选", empty: "没有符合条件的邮件记录", recipient: "收件邮箱", failures: "失败次数", next: "计划尝试时间", expires: "发送有效期至", page: "第 {{page}} / {{pages}} 页 · 共 {{count}} 条", previous: "上一页", nextPage: "下一页",
   states: { pending: "待发送", retrying: "等待重试", sent: "已交给邮件服务器", failed: "重试已耗尽", expired: "已过期", cancelled: "已取消", paused: "已暂停" },
   kinds: { verify: "邮箱验证", reset: "密码重置", notice: "通知提醒", security: "账号安全提醒" }
 }, email: { errors: { invalidFilter: "筛选条件无效，请清除筛选后重试。" } } }, true, true);
 i18n.addResourceBundle("en-US", "translation", { mailQueue: {
-  title: "Email status", ownerOnly: "Only the platform owner can view email delivery status.", available: "Sender configuration ready", unavailable: "Email disabled or not configured", refresh: "Refresh", checked: "Updated {{time}}",
+  title: "Email service", ownerOnly: "Only the platform owner can configure email and view delivery status.", available: "Sender configuration ready", unavailable: "Email disabled or not configured", refresh: "Refresh", checked: "Updated {{time}}",
   help: "This shows retained queue records, not a complete email history. Records more than 7 days past their send deadline are excluded. Counts are not affected by filters. Accepted by the mail server does not mean delivered to the inbox. Failed sends retry automatically, up to 5 attempts. Paused means sender configuration or the recipient account is unavailable. Addresses are masked; message bodies, links and secrets are not shown.",
   status: "Status", kind: "Email type", all: "All", clear: "Clear filters", empty: "No matching email records", recipient: "Recipient", failures: "Failed attempts", next: "Scheduled attempt", expires: "Send deadline", page: "Page {{page}} / {{pages}} · {{count}} records", previous: "Previous", nextPage: "Next",
   states: { pending: "Pending", retrying: "Waiting to retry", sent: "Accepted by mail server", failed: "Retries exhausted", expired: "Expired", cancelled: "Cancelled", paused: "Paused" },
@@ -1598,3 +1604,20 @@ i18n.addResourceBundle("en-US", "translation", { oidc: { errors: { conflict: "Th
   keepConfirm: "Keep the fields you changed and use server values for the others? Nothing will be saved yet. Any unsaved secret will be cleared; enter it again if you changed the issuer or Client ID.",
   ready: "Latest version loaded. Review before saving. Enter the secret again if replacing it or if you changed the issuer or Client ID.", same: "Visible fields match; the version or secret may have changed."
 } } }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { dashboard: { openDay: "查看当日活动：{{summary}}", openStatus: "查看{{status}}项目，共 {{count}} 项", statusFilter: "项目进展 · {{status}}" } }, true, true);
+i18n.addResourceBundle("en-US", "translation", { dashboard: { openDay: "View daily activity: {{summary}}", openStatus: "View {{status}} projects, {{count}} total", statusFilter: "Project stage · {{status}}" } }, true, true);
+
+i18n.addResource("zh-CN", "translation", "nav.myOrganization", "我的组织");
+i18n.addResource("en-US", "translation", "nav.myOrganization", "My organization");
+
+i18n.addResourceBundle("zh-CN", "translation", { common: { refresh: "刷新", search: "搜索" } }, true, true);
+i18n.addResourceBundle("en-US", "translation", { common: { refresh: "Refresh", search: "Search" } }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { organizationMember: { view: "查看 {{name}} 的个人资料", back: "返回我的组织", unavailable: "无法查看此成员，成员可能已离开当前组织。" } }, true, true);
+i18n.addResourceBundle("en-US", "translation", { organizationMember: { view: "View {{name}}’s profile", back: "Back to my organization", unavailable: "This member is unavailable. They may no longer belong to your organization." } }, true, true);
+i18n.addResourceBundle("zh-CN", "translation", { email: { scope: "通知范围", notificationHint: "仅对所选类型的新未读站内通知发送邮件，多条提醒可能合并。关闭邮件不影响站内通知、邮箱验证或密码安全邮件。新回复包括项目沟通和平台反馈回复。" }, notifications: { kinds: { completed: "项目完成" } } }, true, true);
+i18n.addResourceBundle("en-US", "translation", { email: { scope: "Notification types", notificationHint: "Email reminders cover new unread notifications of selected types and may be combined. Turning email off does not affect in-app notifications, verification or password security emails. Replies include project discussions and platform feedback." }, notifications: { kinds: { completed: "Project completed" } } }, true, true);
+
+i18n.addResourceBundle("zh-CN","translation",{tasks:{copyDraft:"复制为新草稿",copying:"正在复制…",copyHelp:"复用已保存的填写内容；附件、截止日期和授权需重新确认。不会复制进度、沟通或成品。"},runtimeHealth:{databaseFiles:"数据库及日志",avatars:"账号头像",otherFiles:"其他数据文件",backups:"备份目录（独立计量）",breakdownHelp:"按服务器文件实际大小统计，每分钟更新。数据目录分类合计等于已用容量；备份包含临时文件，位于独立目录，不计入数据目录配额。读取不完整时显示未知。"}},true,true);
+i18n.addResourceBundle("en-US","translation",{tasks:{copyDraft:"Copy to new draft",copying:"Copying…",copyHelp:"Reuse saved form content. Reconfirm attachments, deadline and consent. Progress, messages and deliverables are not copied."},runtimeHealth:{databaseFiles:"Database and journals",avatars:"Account avatars",otherFiles:"Other data files",backups:"Backup directory (separate)",breakdownHelp:"Actual server file sizes, refreshed every minute. Data categories sum to used storage. Backups include temporary files in a separate directory and do not count toward the data quota. Incomplete scans are shown as unknown."}},true,true);

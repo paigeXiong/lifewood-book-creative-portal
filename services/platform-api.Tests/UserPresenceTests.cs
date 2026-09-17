@@ -23,6 +23,33 @@ public sealed class UserPresenceTests : IDisposable
  }
  private PagedAdminUsersDto List(string? status=null,string? organization=null,string? enabled=null,string? search=null,int page=1,int size=20)=>presence.List(search,null,status,organization,enabled,page,size,clock.GetUtcNow().Date);
  private string Tab()=>Guid.NewGuid().ToString("D");
+ private MemberActivityCalendar Calendar(string id){using var db=new SqliteConnection(connection);db.Open();using var tx=db.BeginTransaction();return UserPresenceRepository.ReadCalendar(db,tx,id,clock.GetUtcNow().ToUnixTimeSeconds());}
+ [Fact] public void CalendarCountsRealActivityOncePerPeriodAndSeparatesUnknownHistory(){
+  var initial=Calendar(customer);Assert.Equal("2026-09-09",initial.TrackedFrom);
+  Assert.False(initial.Days.First().Collected);Assert.True(initial.Days.Last().Collected);Assert.Equal(0,initial.Days.Last().Logins);
+  presence.Login(customer);presence.Login(customer);
+  var tab=Tab();presence.Heartbeat(customer,"one",0,new(tab,true,true));
+  presence.Heartbeat(customer,"two",0,new(Tab(),true,true));
+  presence.Heartbeat(customer,"one",0,new(tab,true,true));
+  clock.Advance(900);presence.Heartbeat(customer,"one",0,new(tab,true,false));
+  presence.Heartbeat(customer,"two",0,new(Tab(),false,true));
+  Assert.Equal(1,Calendar(customer).Days.Last().ActivePeriods);
+  presence.Heartbeat(customer,"one",0,new(tab,true,true));
+  Assert.Equal(2,Calendar(customer).Days.Last().ActivePeriods);Assert.Equal(2,Calendar(customer).Days.Last().Logins);
+  presence.EndSession(customer,"one");Assert.False(presence.Heartbeat(customer,"one",0,new(tab,true,true)));
+  Assert.Equal(2,Calendar(customer).Days.Last().ActivePeriods);
+  clock.Advance(8*3600-900); // Midnight at UTC+8, rather than UTC midnight.
+  presence.Login(customer);presence.Heartbeat(customer,"new-day",0,new(Tab(),true,true));
+  var next=Calendar(customer);Assert.Equal("2026-09-10",next.Days.Last().Date);Assert.Equal(1,next.Days.Last().Logins);Assert.Equal(1,next.Days.Last().ActivePeriods);
+  presence.Initialize();var restarted=Calendar(customer);Assert.Equal(next.TrackedFrom,restarted.TrackedFrom);Assert.Equal(next.Days,restarted.Days);
+  Assert.Equal(0,Calendar(owner).Days.Sum(day=>day.Logins+day.ActivePeriods));
+ }
+ [Fact] public void CalendarDoesNotInventHistoryFromLastLoginAndRejectsDisabledSignIns(){
+  using(var db=new SqliteConnection(connection)){db.Open();using var q=db.CreateCommand();q.CommandText="INSERT INTO user_activity(user_id,last_login,last_active) VALUES($id,1,1)";q.Parameters.AddWithValue("$id",customer);q.ExecuteNonQuery();}
+  presence.Initialize();Assert.All(Calendar(customer).Days,day=>{Assert.Equal(0,day.Logins);Assert.Equal(0,day.ActivePeriods);});
+  admin.UpdateUser(customer,new("Customer","customer",false,null),out _);presence.Login(customer);
+  Assert.Equal(0,Calendar(customer).Days.Last().Logins);
+ }
  [Fact] public void PollingDoesNotKeepAnIdleUserOnlineOrMoveLastActive(){
   var tab=Tab();var first=clock.GetUtcNow();Assert.True(presence.Heartbeat(customer,"device",0,new(tab,true,true)));
   for(var i=0;i<4;i++){clock.Advance(60);presence.Heartbeat(customer,"device",0,new(tab,true,false));}Assert.Single(List("online").Items);

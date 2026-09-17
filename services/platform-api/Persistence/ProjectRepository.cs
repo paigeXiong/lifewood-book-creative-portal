@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Lifewood.PlatformApi.Persistence;
 
-internal sealed class ProjectRepository(string connectionString)
+internal sealed partial class ProjectRepository(string connectionString)
 {
     public void Initialize()
     {
@@ -46,6 +46,7 @@ internal sealed class ProjectRepository(string connectionString)
             );
             CREATE INDEX IF NOT EXISTS ix_projects_owner_updated
                 ON projects(owner_id, updated_at DESC);
+            CREATE TABLE IF NOT EXISTS project_copies(owner_id TEXT NOT NULL, request_id TEXT NOT NULL, source_id TEXT NOT NULL, draft_id TEXT NOT NULL, PRIMARY KEY(owner_id,request_id));
             INSERT OR IGNORE INTO schema_migrations(version, applied_at)
                 VALUES (1, $appliedAt);
             """;
@@ -254,7 +255,8 @@ internal sealed class ProjectRepository(string connectionString)
         var direction = string.Equals(sortDirection, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
         const string where = """
             WHERE owner_id = $ownerId
-              AND ($status = '' OR status = $status OR ($status = 'action_required' AND status = 'draft' AND workflow_status = 'awaiting_customer'))
+              AND ($status = '' OR status = $status OR ($status = 'action_required' AND status = 'draft' AND workflow_status = 'awaiting_customer')
+                   OR ($stage != '' AND CASE WHEN status = 'draft' AND workflow_status != 'awaiting_customer' THEN 'draft' ELSE workflow_status END = $stage))
               AND ($search = '' OR
                    json_extract(project_json, '$.projectName') LIKE '%' || $search || '%' COLLATE NOCASE OR
                    json_extract(book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE OR
@@ -667,6 +669,8 @@ internal sealed class ProjectRepository(string connectionString)
     {
         command.Parameters.AddWithValue("$ownerId", ownerId);
         command.Parameters.AddWithValue("$status", status?.Trim() ?? "");
+        var filter = status?.Trim() ?? "";
+        command.Parameters.AddWithValue("$stage", filter.StartsWith("stage:", StringComparison.Ordinal) ? filter[6..] : "");
         command.Parameters.AddWithValue("$search", search?.Trim() ?? "");
     }
 

@@ -125,6 +125,7 @@
 .runtime-card-heading h2 { margin: 0; font-size: .95rem; }
 .runtime-card-heading p { margin: .22rem 0 0; color: var(--muted); font-size: .76rem; line-height: 1.45; }
 .runtime-form { display: grid; grid-template-columns: minmax(7rem, .3fr) minmax(14rem, 1fr) minmax(9rem, .45fr); gap: .75rem; }
+.runtime-edit-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .runtime-form > label { min-width: 0; display: grid; align-content: start; gap: .3rem; font-size: .75rem; font-weight: 700; }
 .runtime-form > label small, .runtime-current small, .runtime-control-list small { color: var(--muted); font-size: .68rem; font-weight: 400; line-height: 1.4; }
 .runtime-current { grid-column: 1 / -1; display: grid; gap: .18rem; padding: .7rem; border-radius: .55rem; background: #f1f3ef; }

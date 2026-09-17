@@ -7,7 +7,7 @@ import { useConfirm } from "../useConfirm";
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, authService, captureAccountGuard, localizedApiError } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import type { SupportedLocale } from "@lifewood/domain";
@@ -165,7 +165,7 @@ function ProfileContent({ user, readReady }: { user: ProfileUser; readReady: boo
         </div>
       </header>
 
-      <div className="profile-layout">
+      <EmailSettingsPanel userId={user.id} layout={({ verification, notifications }) => <div className="profile-layout">
         <form className="profile-surface profile-form" onSubmit={submit} aria-labelledby="profile-contact-title" aria-busy={updateProfile.isPending}>
           <div className="profile-section-heading">
             <span className="profile-section-icon" aria-hidden="true">
@@ -206,14 +206,8 @@ function ProfileContent({ user, readReady }: { user: ProfileUser; readReady: boo
             </div>
             <dl className="profile-account-list">
               <div><dt>{t("profile.email")}</dt><dd>{user.email || t("profile.notSet")}</dd></div>
-              <div><dt>{t("profile.organization")}</dt><dd>{user.organization?.name || t("profile.notAssigned")}</dd></div>
+              <div><dt>{t("profile.organization")}</dt><dd>{user.organization ? <Link to={localizedPath(locale, "/organization")}>{user.organization.name}</Link> : t("profile.notAssigned")}</dd></div>
             </dl>
-            <div className="profile-security-row">
-              <span><strong>{t("profile.passwordTitle")}</strong></span>
-              <button className="profile-security-action" type="button" onClick={() => setPasswordOpen(true)}>{t("nav.changePassword")}</button>
-            </div>
-              <div className="profile-security-row"><LoginSessions key={user.id} userId={user.id}/></div>
-              <OidcBinding key={user.id} userId={user.id} />
           </aside>
 
           <section className="profile-surface profile-preferences" aria-labelledby="profile-preferences-title" aria-busy={updatePreferences.isPending}>
@@ -253,10 +247,23 @@ function ProfileContent({ user, readReady }: { user: ProfileUser; readReady: boo
               {updatePreferences.isSuccess ? <span>{t("profile.preferenceSaved")}</span> : null}
               {updatePreferences.isError ? <span className="field-error" role="alert">{localizedApiError(updatePreferences.error, t)}</span> : null}
             </div>
-            <EmailSettingsPanel key={user.id} userId={user.id} />
+            {notifications}
+          </section>
+          <section className="profile-surface profile-security" aria-labelledby="profile-security-title">
+            <div className="profile-section-heading">
+              <span className="profile-section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg></span>
+              <h2 id="profile-security-title">{t("profile.securityTitle")}</h2>
+            </div>
+            {verification}
+            <div className="profile-security-row">
+              <span><strong>{t("profile.passwordTitle")}</strong></span>
+              <button className="profile-security-action" type="button" onClick={() => setPasswordOpen(true)}>{t("nav.changePassword")}</button>
+            </div>
+              <div className="profile-security-row"><LoginSessions key={user.id} userId={user.id}/></div>
+              <OidcBinding key={user.id} userId={user.id} />
           </section>
         </div>
-      </div>
+      </div>} />
 
       {passwordOpen ? <ChangePasswordDialog userId={user.id} onClose={() => setPasswordOpen(false)} /> : null}
       {avatarOpen ? <Suspense fallback={null}><AvatarEditor

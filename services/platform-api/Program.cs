@@ -45,7 +45,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddOpenApi();
 
 builder.Services.AddHttpClient("book-recognition", client => client.Timeout = TimeSpan.FromSeconds(60))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+    .ConfigurePrimaryHttpMessageHandler(sp => new OutboundProxyHandler(sp.GetRequiredService<OutboundProxyStore>(), false));
 var trustedProxyAddresses = new HashSet<IPAddress>();
 foreach (var value in builder.Configuration.GetSection("Network:TrustedProxies")
              .GetChildren().Select(item => item.Value).Where(value => !string.IsNullOrWhiteSpace(value)))
@@ -78,6 +78,7 @@ var dataDirectory = string.IsNullOrWhiteSpace(configuredDataDirectory)
         ? configuredDataDirectory
         : Path.Combine(builder.Environment.ContentRootPath, configuredDataDirectory));
 builder.Services.AddSingleton(provider => new BookRecognitionSettingsStore(dataDirectory, builder.Configuration, provider.GetRequiredService<IDataProtectionProvider>()));
+builder.Services.AddSingleton(sp => new OutboundProxyStore(dataDirectory, sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<OidcStore>().List().Select(p => p.Id)));
 builder.Services.AddTransient(provider => new BookRecognitionService(provider.GetRequiredService<IHttpClientFactory>().CreateClient("book-recognition"), provider.GetRequiredService<BookRecognitionSettingsStore>().Current));
 var databaseConnection = $"Data Source={Path.Combine(dataDirectory, "platform.db")}";
 var voiceSampleDirectory = Path.Combine(dataDirectory, "voice-samples");
@@ -235,6 +236,8 @@ var deliveries = new DeliveryRepository(databaseConnection);
 deliveries.Initialize();
 var customerDashboard = new CustomerDashboardRepository(databaseConnection);
 customerDashboard.Initialize(); builder.Services.AddSingleton(customerDashboard);
+var adminAnalytics = new AdminAnalyticsRepository(databaseConnection);
+adminAnalytics.Initialize(); builder.Services.AddSingleton(adminAnalytics);
 builder.Services.AddSingleton(deliveries);
 var announcements = new AnnouncementRepository(databaseConnection);
 announcements.Initialize();
@@ -245,7 +248,8 @@ builder.Services.AddSingleton(savedAccounts);
 var notifications = new NotificationRepository(databaseConnection);
 notifications.Initialize();
 builder.Services.AddSingleton(notifications);
-builder.Services.AddSingleton<MailSettings>();
+builder.Services.AddSingleton(provider => new MailSettingsStore(dataDirectory, new MailSettings(builder.Configuration), provider.GetRequiredService<IDataProtectionProvider>()));
+builder.Services.AddSingleton(provider => provider.GetRequiredService<MailSettingsStore>().Settings);
 builder.Services.AddSingleton<IPlatformMailer, SmtpPlatformMailer>();
 builder.Services.AddSingleton(service => {
     var repository = new EmailRepository(databaseConnection, service.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(), service.GetRequiredService<MailSettings>(), users, notifications);
@@ -272,7 +276,7 @@ fileCategories.Initialize();
 builder.Services.AddSingleton(fileCategories);
 builder.Services.AddSingleton(platformLimits);
 builder.Services.AddSingleton(new StorageQuota(dataDirectory, platformLimits));
-builder.Services.AddSingleton(new RuntimeMonitor(databaseConnection, dataDirectory, platformLimits.MaxStoredBytes));
+builder.Services.AddSingleton(new RuntimeMonitor(databaseConnection, dataDirectory, platformLimits.MaxStoredBytes, backupDirectory));
 builder.Services.AddHostedService(provider => provider.GetRequiredService<RuntimeMonitor>());
 
 builder.Services.AddSingleton(provider => new BackupService(dataDirectory, backupDirectory, provider.GetRequiredService<BackupGate>(), provider.GetRequiredService<AuditRepository>(), provider.GetRequiredService<ILogger<BackupService>>()));
@@ -280,6 +284,7 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Backup
 builder.Services.AddSingleton(provider => new RestoreService(dataDirectory, backupDirectory, builder.Configuration["Lifewood:CoordinationDirectory"], !serviceMode && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("INVOCATION_ID")) && !string.IsNullOrEmpty(Environment.ProcessPath) && !Path.GetFileNameWithoutExtension(Environment.ProcessPath).Contains("testhost", StringComparison.OrdinalIgnoreCase), provider.GetRequiredService<RuntimeSettingsStore>(), provider.GetRequiredService<BackupService>(), provider.GetRequiredService<BackupGate>(), provider.GetRequiredService<AuditRepository>(), provider.GetRequiredService<IHostApplicationLifetime>(), provider.GetRequiredService<ILogger<RestoreService>>()));
 builder.Services.AddHostedService(provider => provider.GetRequiredService<RestoreService>());
 var app = builder.Build();
+_ = app.Services.GetRequiredService<OutboundProxyStore>();
 var configuredWebRoot = builder.Configuration["Lifewood:WebRoot"];
 var webRoot = string.IsNullOrWhiteSpace(configuredWebRoot)
     ? Path.Combine(AppContext.BaseDirectory, "web")
@@ -515,7 +520,9 @@ if (app.Environment.IsDevelopment()) app.MapOpenApi();
 var api = app.MapGroup("/api");
 api.MapBackups(CurrentUser);
 api.MapFeedback(CurrentUser);
+api.MapMyOrganization(CurrentUser);
 api.MapEmail(CurrentUser);
+api.MapOutboundProxy(CurrentUser);
 api.MapOidc(CurrentUser);
 api.MapGet("/portals/{portal}", (string portal, string? locale, HttpContext context, RuntimeSettingsStore settings) => {
     if (portal is not ("customer" or "admin" or "profile" or "backups")) return Results.NotFound();
@@ -919,6 +926,21 @@ api.MapGet("/admin/overview", (HttpContext context, AdminRepository admin) =>
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "admin.overview.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
     return Results.Ok(admin.GetOverview());
+});
+
+api.MapGet("/admin/overview/analytics", (HttpContext context, AdminAnalyticsRepository analytics, int days = 30, string? timeZone = null) =>
+{
+    var user = CurrentUser(context);
+    if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
+    if (!Can(user, "admin.overview.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Overview permission is required.", false);
+    if (days is not (7 or 30 or 90) || string.IsNullOrWhiteSpace(timeZone) || timeZone.Length > 100)
+        return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid analytics range.", false);
+    TimeZoneInfo zone;
+    try { zone = TimeZoneInfo.FindSystemTimeZoneById(timeZone); }
+    catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+    { return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid time zone.", false); }
+    context.Response.Headers.CacheControl = "private, no-store";
+    return Results.Ok(analytics.Get(days, zone));
 });
 
 api.MapGet("/admin/audit-actions", (HttpContext context) =>
@@ -1552,6 +1574,21 @@ api.MapGet("/projects/dashboard", (HttpContext context, CustomerDashboardReposit
     { return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid time zone.", false); }
     context.Response.Headers.CacheControl = "private, no-store";
     return Results.Ok(dashboard.Get(user.Id, start, zone, day, page));
+});
+
+api.MapPost("/projects/{id}/copy", async (string id, CopyProjectRequest request, HttpContext context, ProjectRepository projects, PlatformLimits limits) =>
+{
+    var user=CurrentUser(context);
+    if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in is required.",false);
+    if(!Can(user,"tasks.write"))return Error(context,403,"auth.forbidden","errors.auth.forbidden","Write permission is required.",false);
+    if(user.Organization is null || string.IsNullOrWhiteSpace(user.Organization.Name))return Error(context,403,"project.organization_required","errors.project.organizationRequired","An organization must be assigned.",false);
+    if(request.RequestId==Guid.Empty)return Results.BadRequest();
+    await using(await projectWriteLocks.AcquireAsync($"{user.Id}:create",context.RequestAborted)) {
+        var result=projects.Copy(user.Id,id,request.RequestId.ToString("N"),limits.MaxDraftsPerUser);
+        if(result.Outcome=="limit")return Error(context,409,"project.draft_limit","errors.project.draftLimit","Finish or delete an existing draft.",false);
+        if(result.Outcome=="conflict")return Error(context,409,"project.copy_conflict","errors.http.conflict","This request has already been used.",false);
+        return result.Draft is {} draft?Results.Ok(draft):Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    }
 });
 
 api.MapPost("/projects", async (HttpContext context, ProjectRepository projects, PlatformLimits limits) =>

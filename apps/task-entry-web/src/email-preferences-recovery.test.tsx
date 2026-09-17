@@ -38,7 +38,7 @@ for (const locale of ["zh-CN", "en-US"]) {
     await act(async () => onlineManager.setOnline(false));
     vi.mocked(api.emailService.settings).mockReturnValue(refresh.promise);
     await act(async () => write.reject(new Error("connection lost"))); await settle();
-    expect(client.getQueryState(["email-settings", "account"])?.fetchStatus).toBe("paused");
+    expect(client.getQueryState(["email-settings", "account", locale])?.fetchStatus).toBe("paused");
     expect(toggle().disabled).toBe(true); await act(async () => toggle().click());
     expect(api.emailService.preferences).toHaveBeenCalledTimes(1);
     await act(async () => onlineManager.setOnline(true)); await settle(); expect(toggle().disabled).toBe(true);
@@ -118,3 +118,26 @@ for (const locale of ["zh-CN", "en-US"]) {
     expect(host.textContent).toContain(i18n.t("email.delivery.pending"));
   });
 }
+
+for (const locale of ["zh-CN", "en-US"]) it(`saves selected email topics and preserves them while the master switch is off (${locale})`, async () => {
+  const topics = [{ id: "completed", label: locale === "en-US" ? "Project completed" : "项目完成", enabled: true }, { id: "returned", label: locale === "en-US" ? "Changes requested" : "退回修改", enabled: true }];
+  vi.mocked(api.emailService.settings).mockResolvedValue({ ...settings, notifications: true, topics });
+  await mount(locale);
+  const changed = topics.map(item => ({ ...item, enabled: item.id !== "completed" }));
+  vi.mocked(api.emailService.settings).mockResolvedValue({ ...settings, notifications: true, topics: changed });
+  await act(async () => host.querySelector<HTMLInputElement>('.email-topic-options input')!.click()); await settle();
+  expect(api.emailService.preferences).toHaveBeenCalledExactlyOnceWith(true, ["returned"]);
+  expect(host.querySelector<HTMLInputElement>('.email-topic-options input')!.checked).toBe(false);
+  vi.mocked(api.emailService.settings).mockResolvedValue({ ...settings, notifications: false, topics: changed });
+  await act(async () => toggle().click()); await settle();
+  expect(host.querySelector<HTMLFieldSetElement>('.email-topic-options')!.disabled).toBe(true);
+  expect(host.querySelectorAll<HTMLInputElement>('.email-topic-options input')[1].checked).toBe(true);
+});
+
+it("refreshes server topic labels when the mounted profile changes language", async () => {
+  vi.mocked(api.emailService.settings).mockImplementation(async locale => ({ ...settings, notifications: true, topics: [{ id: "completed", enabled: true, label: locale === "en-US" ? "Project completed" : "项目完成" }] }));
+  await mount("zh-CN"); expect(host.textContent).toContain("项目完成");
+  await act(async () => { await i18n.changeLanguage("en-US"); }); await settle();
+  expect(host.textContent).toContain("Project completed"); expect(host.textContent).not.toContain("项目完成");
+  expect(api.emailService.settings).toHaveBeenLastCalledWith("en-US");
+});

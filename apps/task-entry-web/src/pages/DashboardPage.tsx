@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { customerStatusId, customerStatusLabel } from "../customerProjectStatus";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -27,7 +28,25 @@ export function DashboardPage() {
   const today = calendarDate(new Date());
   const [selection, setSelection] = useState({ month: today.slice(0, 7), day: Number(today.slice(8)), page: 1 });
   const { month, day, page } = selection;
+  const detailsRef = useRef<HTMLElement>(null);
+  const revealDetails = useRef(false);
+  const selectDay = (date: string, reveal = false) => {
+    revealDetails.current = reveal;
+    setSelection(current => ({ ...current, day: Number(date.slice(8)), page: 1 }));
+  };
+  useEffect(() => {
+    if (!revealDetails.current) return;
+    revealDetails.current = false;
+    detailsRef.current?.focus({ preventScroll: true });
+    detailsRef.current?.scrollIntoView({ block: "start" });
+  }, [selection]);
   const [hiddenTooltip, setHiddenTooltip] = useState<string | null>(null);
+  const [refreshFeedback, setRefreshFeedback] = useState(false);
+  useEffect(() => {
+    if (!refreshFeedback) return;
+    const timer = window.setTimeout(() => setRefreshFeedback(false), 650);
+    return () => window.clearTimeout(timer);
+  }, [refreshFeedback]);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const report = useQuery({
     queryKey: ["customer-dashboard", user.id, language, month, timeZone, day, page],
@@ -51,6 +70,8 @@ export function DashboardPage() {
   const coverageDate = data ? calendarDate(new Date(data.historyCompleteFrom)) : today;
   const incomplete = (date: string) => date <= coverageDate;
   const labels = new Map([...(options.data?.taskStatuses ?? []), ...(options.data?.workflowStatuses ?? [])].map(item => [item.id, item.label]));
+  const statusLabel = (id: string) => customerStatusLabel(id, labels.get(id), t("clientUx.returnedStatus"));
+  const statusPath = (id: string) => `/${language}/tasks?${new URLSearchParams({ status: `stage:${id}` })}`;
   const dailySummary = (item: DashboardDay) => `${t("dashboard.daySummary", { date: fullDate(item.date), count: activityCount(item), projects: item.projects })}. ${t("dashboard.breakdown", { ...item })}${incomplete(item.date) ? `. ${t("dashboard.partial")}` : ""}`;
   const fatalError = report.error && (!data || !canRetainQueryData(report.error));
   const max = Math.max(1, ...((data?.days ?? []).flatMap(item => [item.submissions + item.resubmissions, item.deliveries])));
@@ -67,7 +88,7 @@ export function DashboardPage() {
         <button type="button" className="dashboard-icon" disabled={month >= today.slice(0, 7)} aria-label={t("dashboard.monthNext")} onClick={() => changeMonth(1)}><Arrow next /></button>
         <button type="button" className="dashboard-text-button" onClick={() => setSelection({ month: today.slice(0, 7), day: Number(today.slice(8)), page: 1 })}>{t("dashboard.thisMonth")}</button>
       </div>
-      <button type="button" className="dashboard-icon" disabled={report.isFetching} aria-label={t("dashboard.refresh")} title={t("dashboard.refresh")} onClick={() => void report.refetch()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M20 9A8 8 0 0 0 6 6L3 9m0-5v5h5M4 15a8 8 0 0 0 14 3l3-3m0 5v-5h-5" /></svg></button>
+      <button type="button" className="dashboard-icon dashboard-refresh" disabled={report.isFetching || refreshFeedback} aria-busy={report.isFetching} data-refreshing={report.isFetching || refreshFeedback} aria-label={t("dashboard.refresh")} title={t("dashboard.refresh")} onClick={() => { setRefreshFeedback(true); void report.refetch(); }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M20 9A8 8 0 0 0 6 6L3 9m0-5v5h5M4 15a8 8 0 0 0 14 3l3-3m0 5v-5h-5" /></svg></button>
     </div>
     {fatalError ? <ScreenError error={report.error} onRetry={() => report.refetch()} /> : !data ? <div className="dashboard-loading" role="status">{t("common.loading")}</div> : <>
       <RefreshNotice error={report.error} onRetry={() => report.refetch()} />
@@ -90,7 +111,7 @@ export function DashboardPage() {
                 <button type="button" className={`dashboard-day level-${activityLevel(count)}${item.date === today ? " is-today" : ""}${partial ? " is-partial" : ""}`} disabled={future}
                   aria-pressed={item.date === selectedDate} aria-label={future ? `${fullDate(item.date)} · ${t("dashboard.future")}` : dailySummary(item)}
                   onMouseEnter={() => setHiddenTooltip(null)} onFocus={() => setHiddenTooltip(null)} onKeyDown={event => { if (event.key === "Escape") setHiddenTooltip(item.date); }}
-                  onClick={() => setSelection(current => ({ ...current, day: Number(item.date.slice(8)), page: 1 }))}>
+                  onClick={() => selectDay(item.date)}>
                   <span>{Number(item.date.slice(8))}</span><strong aria-hidden="true">{future ? "" : partial && count === 0 ? "—" : count.toLocaleString(language)}</strong>
                 </button>
                 {!future && hiddenTooltip !== item.date && <span className="dashboard-day-tooltip" aria-hidden="true">{dailySummary(item)}</span>}
@@ -99,7 +120,7 @@ export function DashboardPage() {
           </div>
           <div className="dashboard-legend" aria-label={t("dashboard.legend")}>{["0", "1", "2–3", "4–7", "8+"].map((label, index) => <span key={label}><i className={`level-${index}`} />{label}</span>)}</div>
         </section>
-        <section className="dashboard-panel dashboard-day-details" aria-labelledby="dashboard-day-title" aria-busy={report.isPlaceholderData}>
+        <section ref={detailsRef} tabIndex={-1} className="dashboard-panel dashboard-day-details" aria-labelledby="dashboard-day-title" aria-busy={report.isPlaceholderData}>
           <h2 id="dashboard-day-title">{t("dashboard.dayDetails")}</h2><p className="dashboard-selected-date">{fullDate(selectedDate)}</p>
           {incomplete(selectedDate) && <p className="dashboard-partial-note">{t("dashboard.partial")}</p>}
           {report.isPlaceholderData ? <p role="status">{t("common.loading")}</p> : data.activities.items.length === 0 ? <p className="dashboard-empty">{t(incomplete(selectedDate) ? "dashboard.noKnownActivity" : "dashboard.noActivity")}</p> : <>
@@ -115,25 +136,31 @@ export function DashboardPage() {
         <section className="dashboard-panel dashboard-trend" aria-labelledby="dashboard-trend-title">
           <div className="dashboard-panel-heading"><h2 id="dashboard-trend-title">{t("dashboard.trend")}</h2><div className="dashboard-series"><span><i />{t("dashboard.submissions")}</span><span><i />{t("dashboard.deliveries")}</span></div></div>
           {incomplete(`${month}-01`) && <p className="dashboard-partial-note">{t("dashboard.partial")}</p>}
-          <svg className="dashboard-line-chart" viewBox="0 0 620 190" role="img" aria-label={t("dashboard.trend")}>
+          <svg className="dashboard-line-chart" viewBox="0 0 620 190" role="group" aria-label={t("dashboard.trend")}>
             <title>{t("dashboard.trend")}</title>
             {[0, Math.ceil(max / 2), max].filter((n, i, a) => a.indexOf(n) === i).map(n => <g key={n}><line x1="32" x2="588" y1={y(n)} y2={y(n)} stroke="#e6ede8" /><text x="22" y={y(n) + 4} textAnchor="end">{n.toLocaleString(language)}</text></g>)}
             <polyline points={points("submissions")} fill="none" stroke="#225b49" strokeWidth="2.5" strokeLinejoin="round" />
             <polyline points={points("deliveries")} fill="none" stroke="#aa8540" strokeWidth="2.5" strokeDasharray="5 4" strokeLinejoin="round" />
-            {data.days.map((item, index) => ({ item, index })).filter(({ item }) => item.date <= today && (!incomplete(item.date) || activityCount(item) > 0)).map(({ item, index }) => <g key={item.date}><title>{dailySummary(item)}</title>{(!incomplete(item.date) || item.submissions + item.resubmissions > 0) && <circle cx={x(index)} cy={y(item.submissions + item.resubmissions)} r="2.5" fill="#225b49" />}{(!incomplete(item.date) || item.deliveries > 0) && <circle cx={x(index)} cy={y(item.deliveries)} r="2.5" fill="#aa8540" />}</g>)}
+            {data.days.map((item, index) => ({ item, index })).filter(({ item }) => item.date <= today && (!incomplete(item.date) || activityCount(item) > 0)).map(({ item, index }) => <g key={item.date} className="dashboard-trend-point" role="button" tabIndex={0} aria-label={t("dashboard.openDay", { summary: dailySummary(item) })} aria-pressed={item.date === selectedDate}
+              onClick={() => selectDay(item.date, true)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectDay(item.date, true); } }}>
+              <title>{dailySummary(item)}</title>
+              <rect className="dashboard-point-hit" x={x(index) - 278 / Math.max(1, data.days.length - 1)} y="22" width={556 / Math.max(1, data.days.length - 1)} height="148" fill="transparent" />
+              {(!incomplete(item.date) || item.submissions + item.resubmissions > 0) && <circle cx={x(index)} cy={y(item.submissions + item.resubmissions)} r="4" fill="#225b49" />}
+              {(!incomplete(item.date) || item.deliveries > 0) && <circle cx={x(index)} cy={y(item.deliveries)} r="4" fill="#aa8540" />}
+            </g>)}
             {data.days.filter((_, index) => index % 7 === 0).map(item => <text key={item.date} x={x(Number(item.date.slice(8)) - 1)} y="183" textAnchor="middle">{Number(item.date.slice(8))}</text>)}
           </svg>
           {!data.days.some(item => activityCount(item) > 0) && <p className="dashboard-chart-empty">{t("dashboard.noTrend")}</p>}
-          <details className="dashboard-data-table"><summary>{t("dashboard.chartData")}</summary><div><table><thead><tr><th>{t("dashboard.date")}</th><th>{t("dashboard.submissions")}</th><th>{t("dashboard.deliveries")}</th></tr></thead><tbody>{data.days.filter(item => item.date <= today).map(item => <tr key={item.date}><td>{format(item.date)}{incomplete(item.date) && <span title={t("dashboard.partial")} aria-label={t("dashboard.partial")}> *</span>}</td><td>{incomplete(item.date) && item.submissions + item.resubmissions === 0 ? "—" : item.submissions + item.resubmissions}</td><td>{incomplete(item.date) && item.deliveries === 0 ? "—" : item.deliveries}</td></tr>)}</tbody></table></div></details>
+          <details className="dashboard-data-table"><summary>{t("dashboard.chartData")}</summary><div><table><thead><tr><th>{t("dashboard.date")}</th><th>{t("dashboard.submissions")}</th><th>{t("dashboard.deliveries")}</th></tr></thead><tbody>{data.days.filter(item => item.date <= today).map(item => <tr key={item.date}><td><button type="button" className="dashboard-date-link" onClick={() => selectDay(item.date, true)} aria-label={t("dashboard.openDay", { summary: dailySummary(item) })}>{format(item.date)}</button>{incomplete(item.date) && <span title={t("dashboard.partial")} aria-label={t("dashboard.partial")}> *</span>}</td><td>{incomplete(item.date) && item.submissions + item.resubmissions === 0 ? "—" : item.submissions + item.resubmissions}</td><td>{incomplete(item.date) && item.deliveries === 0 ? "—" : item.deliveries}</td></tr>)}</tbody></table></div></details>
         </section>
         <section className="dashboard-panel" aria-labelledby="dashboard-distribution-title"><h2 id="dashboard-distribution-title">{t("dashboard.distribution")}</h2>
-          <div className="dashboard-distribution"><svg viewBox="0 0 120 120" role="img" aria-label={t("dashboard.distribution")}><circle cx="60" cy="60" r="46" fill="none" stroke="#edf1ee" strokeWidth="12" />{data.statuses.map((item, index) => {const size = item.count / Math.max(1, data.counts.total) * 100, offset = segmentOffset; segmentOffset += size;return <circle key={item.id} cx="60" cy="60" r="46" fill="none" stroke={statusColors[index % statusColors.length]} strokeWidth="12" pathLength="100" strokeDasharray={`${size} ${100 - size}`} strokeDashoffset={-offset} transform="rotate(-90 60 60)" />;})}<text x="60" y="64" textAnchor="middle">{data.counts.total.toLocaleString(language)}</text></svg>
-            {options.isError ? <ScreenError error={options.error} onRetry={() => options.refetch()} /> : options.isPending ? <p role="status">{t("common.loading")}</p> : <ul>{data.statuses.map((item, index) => <li key={item.id}><i style={{ background: statusColors[index % statusColors.length] }} /><span>{labels.get(item.id) ?? item.id}</span><strong>{item.count.toLocaleString(language)}</strong><small>{Math.round(item.count / Math.max(1, data.counts.total) * 100)}%</small></li>)}</ul>}
+          <div className="dashboard-distribution"><svg viewBox="0 0 120 120" role="group" aria-label={t("dashboard.distribution")}><circle cx="60" cy="60" r="46" fill="none" stroke="#edf1ee" strokeWidth="12" />{data.statuses.map((item, index) => {const size = item.count / Math.max(1, data.counts.total) * 100, offset = segmentOffset; segmentOffset += size;return <Link key={item.id} to={statusPath(item.id)} className="dashboard-status-segment" aria-label={t("dashboard.openStatus", { status: statusLabel(item.id), count: item.count })}><title>{statusLabel(item.id)} · {item.count}</title><circle cx="60" cy="60" r="46" fill="none" stroke={statusColors[index % statusColors.length]} strokeWidth="12" pathLength="100" strokeDasharray={`${size} ${100 - size}`} strokeDashoffset={-offset} transform="rotate(-90 60 60)" /></Link>;})}<text x="60" y="64" textAnchor="middle">{data.counts.total.toLocaleString(language)}</text></svg>
+            {options.isError ? <ScreenError error={options.error} onRetry={() => options.refetch()} /> : options.isPending ? <p role="status">{t("common.loading")}</p> : <ul>{data.statuses.map((item, index) => <li key={item.id}><Link to={statusPath(item.id)} aria-label={t("dashboard.openStatus", { status: statusLabel(item.id), count: item.count })}><i style={{ background: statusColors[index % statusColors.length] }} /><span>{statusLabel(item.id)}</span><strong>{item.count.toLocaleString(language)}</strong><small>{Math.round(item.count / Math.max(1, data.counts.total) * 100)}%</small><Arrow next /></Link></li>)}</ul>}
           </div>
         </section>
       </div>
       <section className="dashboard-panel dashboard-recent" aria-labelledby="dashboard-recent-title"><div className="dashboard-panel-heading"><h2 id="dashboard-recent-title">{t("dashboard.recent")}</h2><Link to={`/${language}/tasks`}>{t("dashboard.allProjects")}</Link></div>
-        <ul>{data.recentProjects.map(project => <li key={project.id}><div><Link to={projectPath(project)}>{title(project)}</Link><small>{project.taskNumber || project.bookTitle}</small></div><span>{labels.get(project.status === "draft" && project.workflowStatus !== "awaiting_customer" ? "draft" : project.workflowStatus)}</span><time dateTime={project.updatedAt}>{format(project.updatedAt, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time></li>)}</ul>
+        <ul>{data.recentProjects.map(project => <li key={project.id}><div><Link to={projectPath(project)}>{title(project)}</Link><small>{project.taskNumber || project.bookTitle}</small></div><span>{statusLabel(customerStatusId(project))}</span><time dateTime={project.updatedAt}>{format(project.updatedAt, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time></li>)}</ul>
       </section>
       <details className="dashboard-method"><summary>{t("dashboard.rules")}</summary><p>{t("dashboard.rulesText")}</p><p>{t("dashboard.coverage", { date: format(data.historyCompleteFrom, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</p><p>{t("dashboard.timezone", { zone: timeZone })}</p></details>
     </>}

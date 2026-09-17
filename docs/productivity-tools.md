@@ -51,3 +51,15 @@ English: Paging, refresh failure, or disappearance of the target clears its sign
 2026-09-16 登录设备异常恢复：新增 14 项中英文回归及已有 2 项账号缓存隔离测试通过，覆盖翻页旧确认、列表失败/目标消失、重复点击与重开、响应丢失、离线恢复、账号切换及明确确认后退出其他设备。使用替代接口，未撤销真实设备会话。
 
 `ProductivityTests.cs` 覆盖筛选归属、上限和版本，草稿和退回范围，批量字段更新冲突，趋势时区/范围，以及设备撤销和不可恢复规则。HTTP 集成测试覆盖客户越权、批量部分成功、旧 cookie 失效以及滑动续期。隔离浏览器验证中英文、1366/390 像素布局、筛选应用/移除、续填链接、CSV 下载、批量保存与设备退出。
+
+## 复制项目为新草稿 / Copy to a new draft
+
+客户项目列表的更多操作可复制本人草稿或已提交项目。复制以服务器已保存内容为准，复用项目、书籍、角色、风格及配音选择，清空截止日期、附件及附件引用；生成新的草稿和角色标识，不继承编号、提交快照、授权确认、跟进状态、负责人、沟通、成品或历史记录。旧配置仍须通过当前提交校验，附件需重新上传。说明收在问号中，中英文适配。
+
+复制遵守现有组织要求和草稿数量上限。服务端事务校验所有权和上限；同一请求键只生成一个草稿。网络失败后在当前列表重试沿用请求键；已删除的复制结果不会被重试重建。重新进入列表后发起复制视为新操作。
+
+The existing project menu can copy the current user's saved project content into an independent draft. Attachments, deadline, submission consent, workflow and history are reset. Current validation still applies. Ownership and draft limits are enforced transactionally; retrying the same request does not create another draft or recreate a deleted result.
+
+## 存储分类 / Storage breakdown
+
+现有运行与网络的监控明细增加数据库及日志、账号头像、其他数据文件，与已有附件和成品分类合计为数据目录已用容量。独立备份目录单独计量（包括临时文件），不计入数据目录配额。沿用每分钟采样、最多十万文件和不跟随符号链接的限制；扫描不完整显示未知，不以零代替。 / Existing runtime details now break down data-directory usage and separately measure the managed backup directory. Backup usage is not included in the data quota; partial scans remain unknown.

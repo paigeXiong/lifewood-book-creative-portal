@@ -36,7 +36,7 @@ export function AuditPage({locale,userId}:{locale:SupportedLocale;userId:string}
  const pages=Math.max(1,Math.ceil((events.data?.total??0)/30));
  const download=()=>downloadState.run(signal=>adminService.exportAuditEvents(filters,locale,signal),"audit.csv");
  const value=(field:string,text?:string)=>text==null?t("auditTools.noValue"):["enabled","allowMute","allowsCustomValue","removed"].includes(field)?t(["1","True","true"].includes(text)?"auditTools.yes":"auditTools.no"):["level","audience"].includes(field)?t("auditTools.values."+text,{defaultValue:t("runtimeHealth.unknown")}):text;
- return <main className="content audit-content">
+ return <main className="content audit-content pagination-layout">
   <div className="audit-tools-toolbar">
    <form role="search" onSubmit={e=>{e.preventDefault();update("q",input.trim());}}><input type="search" value={input} onChange={e=>setInput(e.target.value)} aria-label={t("auditTools.search")} placeholder={t("auditTools.search")}/></form>
    <select aria-label={t("admin.audit.actionFilter")} value={actionId} onChange={e=>update("action",e.target.value)}><option value="">{t("admin.audit.allActions")}</option>{actions.data?.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select>
@@ -47,14 +47,14 @@ export function AuditPage({locale,userId}:{locale:SupportedLocale;userId:string}
   </div>
   {exportError!=null&&<p role="alert">{localizedApiError(exportError,t)}</p>}
   {events.isPending?<p role="status">{t("common.loading")}</p>:events.error?<p role="alert">{localizedApiError(events.error,t)}<button onClick={()=>void events.refetch()}>{t("common.retry")}</button></p>:<>
-   <table className="audit-readable-table"><thead><tr>{["actor","action","target","time"].map(key=><th key={key}>{t("admin.audit."+key)}</th>)}<th><span className="sr-only">{t("auditTools.details")}</span></th></tr></thead><tbody>{events.data?.items.map(event=><tr key={event.id}>
+   <div className="pagination-scroll"><table className="audit-readable-table"><thead><tr>{["actor","action","target","time"].map(key=><th key={key}>{t("admin.audit."+key)}</th>)}<th><span className="sr-only">{t("auditTools.details")}</span></th></tr></thead><tbody>{events.data?.items.map(event=><tr key={event.id}>
     <td data-label={t("admin.audit.actor")}><strong>{event.actorName}</strong></td><td data-label={t("admin.audit.action")}>{action(event)}</td>
     <td data-label={t("admin.audit.target")}>{event.context?.path?<Link to={`/${locale}/${event.context.path}`}>{label(event)}</Link>:label(event)}</td>
     <td data-label={t("admin.audit.time")}><time dateTime={event.occurredAt}>{date(event.occurredAt)}</time></td>
     <td><button className="audit-detail-button" aria-label={t("auditTools.detailsFor",{name:label(event)})} title={t("auditTools.details")} onClick={()=>setDetail(event)} data-icon-motion="press"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg></button></td>
    </tr>)}</tbody></table>
    {!events.data?.items.length&&<div className="empty">{t("admin.audit.empty")}</div>}
-   <nav className="pager"><button disabled={page<=1} onClick={()=>update("page",String(page-1))}>{t("common.previous")}</button><span>{t("common.pageOf",{page,pages})}</span><button disabled={page>=pages} onClick={()=>update("page",String(page+1))}>{t("common.next")}</button></nav>
+   </div><nav className="pager pagination-footer"><button disabled={page<=1} onClick={()=>update("page",String(page-1))}>{t("common.previous")}</button><span>{t("common.pageOf",{page,pages})}</span><button disabled={page>=pages} onClick={()=>update("page",String(page+1))}>{t("common.next")}</button></nav>
   </>}
   {detail&&<ModalFrame labelledBy="audit-detail-title" className="audit-detail" onClose={()=>setDetail(undefined)}><header><h2 id="audit-detail-title">{action(detail)}</h2><button className="audit-detail-button" aria-label={t("common.close")} onClick={()=>setDetail(undefined)} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></header>
    <dl><div><dt>{t("admin.audit.target")}</dt><dd>{label(detail)}</dd></div><div><dt>{t("admin.audit.actor")}</dt><dd>{detail.actorName}</dd></div><div><dt>{t("admin.audit.time")}</dt><dd>{date(detail.occurredAt)}</dd></div></dl>

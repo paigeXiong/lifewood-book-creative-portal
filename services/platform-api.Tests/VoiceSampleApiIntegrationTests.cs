@@ -1588,6 +1588,22 @@ public sealed partial class VoiceSampleApiIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProjectCopyRequiresOwnershipCsrfAndIdempotentRequest()
+    {
+        await BootstrapOwner();var csrf=await GetCsrf(ownerClient);
+        var created=await Send(ownerClient,HttpMethod.Post,"/api/projects",csrf,JsonContent.Create(new {}));created.EnsureSuccessStatusCode();
+        var source=(await created.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        var path=$"/api/projects/{source.Id}/copy";var request=new CopyProjectRequest(Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.BadRequest,(await ownerClient.PostAsJsonAsync(path,request)).StatusCode);
+        using var customer=await CreateCustomerClient(csrf);var otherCsrf=await GetCsrf(customer);
+        Assert.Equal(HttpStatusCode.NotFound,(await Send(customer,HttpMethod.Post,path,otherCsrf,JsonContent.Create(request))).StatusCode);
+        var response=await Send(ownerClient,HttpMethod.Post,path,csrf,JsonContent.Create(request));response.EnsureSuccessStatusCode();
+        var draft=(await response.Content.ReadFromJsonAsync<TaskDraftDto>())!;
+        var replay=await Send(ownerClient,HttpMethod.Post,path,csrf,JsonContent.Create(request));replay.EnsureSuccessStatusCode();
+        Assert.Equal(draft.Id,(await replay.Content.ReadFromJsonAsync<TaskDraftDto>())!.Id);Assert.NotEqual(source.Id,draft.Id);
+    }
+
+    [Fact]
     public async Task LoginDevicesRevokeOtherCookieAndSavedSwitchWithoutAffectingCurrent()
     {
         await BootstrapOwner();var csrf=await GetCsrf(ownerClient);var me=(await ownerClient.GetFromJsonAsync<CurrentUserDto>("/api/me"))!;

@@ -27,7 +27,7 @@ export function WorkbenchPage({locale,permissions,userId}: {locale: SupportedLoc
   function change(values: Record<string,string>) {const next=new URLSearchParams(params);next.set("page","1");for(const [key,value] of Object.entries(values))value?next.set(key,value):next.delete(key);setParams(next);}
   function submit(e:FormEvent){e.preventDefault();change({q:input.trim()});}
   const date=(value:string)=>new Intl.DateTimeFormat(locale,{dateStyle:"short",timeStyle:"short"}).format(new Date(value));
-  return <main className="operations-workbench" aria-label={t("operations.workbench")}>
+  return <main className="operations-workbench pagination-layout" aria-label={t("operations.workbench")}>
     <div className="operations-toolbar">
       <form role="search" onSubmit={submit}><input type="search" value={input} onChange={e=>setInput(e.target.value)} placeholder={t("admin.projects.search")} aria-label={t("admin.projects.search")}/></form>
       <Link to={`/${locale}/reports`}>{t("productivity.reports")}</Link>
@@ -42,7 +42,7 @@ export function WorkbenchPage({locale,permissions,userId}: {locale: SupportedLoc
       {query.data?.queues.map(item=><button key={item.id} className={item.id===queue?"selected":""} aria-pressed={item.id===queue} onClick={()=>change({queue:item.id})}><span>{item.label}</span><strong>{item.count}</strong></button>)}
     </div>
     {query.isError?<div className="message error" role="alert">{localizedApiError(query.error,t)}</div>:query.isPending?<p role="status">{t("common.loading")}</p>:<>
-      <div className="operations-table" aria-busy={query.isFetching}><table>
+      <div className="operations-table pagination-scroll" aria-busy={query.isFetching}><table>
         <thead><tr>{selecting&&<th><input type="checkbox" aria-label={t("productivity.selectPage")} checked={!!query.data.items.length&&query.data.items.every(item=>selected.includes(item.id))} onChange={e=>setSelected(e.target.checked?[...new Set([...selected,...query.data.items.map(item=>item.id)])].slice(0,50):selected.filter(id=>!query.data.items.some(item=>item.id===id)))}/></th>}<th>{t("operations.project")}</th><th>{t("admin.projects.workflow")}</th><th>{t("admin.projects.priority")}</th><th>{t("admin.projects.assignee")}</th><th>{t("operations.deadline")}</th><th>{t("operations.updated")}</th></tr></thead>
         <tbody>{query.data.items.map(item=><tr key={item.id}>
           {selecting&&<td><input type="checkbox" aria-label={t("productivity.selectNamed",{name:item.projectName||item.bookTitle})} checked={selected.includes(item.id)} disabled={!selected.includes(item.id)&&selected.length>=50} onChange={()=>toggle(item.id)}/></td>}
@@ -53,7 +53,7 @@ export function WorkbenchPage({locale,permissions,userId}: {locale: SupportedLoc
           <td className={item.dueAt&&Date.parse(item.dueAt)<=Date.parse(query.data.serverTime)?"operations-overdue":""}>{item.dueAt?date(item.dueAt):"—"}</td><td>{date(item.updatedAt)}</td>
         </tr>)}</tbody>
       </table>{!query.data.items.length&&<p className="operations-empty">{t("operations.empty")}</p>}</div>
-      <div className="operations-pagination"><button disabled={page<=1||query.isFetching} onClick={()=>change({page:String(page-1)})}>{t("operations.previous")}</button><span>{t("operations.page",{page,pages:Math.max(1,Math.ceil(query.data.total/query.data.pageSize))})}</span><button disabled={page*query.data.pageSize>=query.data.total||query.isFetching} onClick={()=>change({page:String(page+1)})}>{t("operations.next")}</button></div>
+      <div className="operations-pagination pagination-footer"><button disabled={page<=1||query.isFetching} onClick={()=>change({page:String(page-1)})}>{t("operations.previous")}</button><span>{t("operations.page",{page,pages:Math.max(1,Math.ceil(query.data.total/query.data.pageSize))})}</span><button disabled={page*query.data.pageSize>=query.data.total||query.isFetching} onClick={()=>change({page:String(page+1)})}>{t("operations.next")}</button></div>
     </>}
     {batch&&<BatchEditor initial={batch} locale={locale} permissions={permissions} onClose={closeBatch}/>}
   </main>;

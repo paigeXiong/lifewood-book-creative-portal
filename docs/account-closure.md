@@ -7,6 +7,7 @@
 ## 清除与保留
 
 - 清除账号姓名、邮箱、手机号、头像关联及头像文件、默认客户名称、组织归属、个人偏好、密码、快捷登录记录、在线/活跃记录和个人通知收件箱。所有既有登录失效。
+- 登录日历的每日登录次数及活跃时段也随注销清除；启动时补清旧版本可能遗留的已注销账号日历数据。临时停用的账号保留日历，其他成员的数据不受影响。 / Closure also removes daily sign-in and activity totals. Startup removes calendar data left for previously closed accounts; temporary deactivation and other members' history remain unaffected.
 - 保留匿名账号标记和原有项目、项目文件、消息及审计历史。项目资料和历史快照中原已包含的联系人信息不会随着账号注销被删除；确认弹窗明确说明这一点。
 - 已注销账号不再出现在用户列表、人数统计或负责人候选中。项目及引用当前账号姓名的内容显示“已注销账号 / Closed account”。历史快照保留原文。
 - 其负责项目释放为未分配，并更新工作流版本，避免旧页面覆盖分配变化。所属项目保留原所有者标识，不自动转交给新账号。

@@ -72,6 +72,7 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
   const batchDraft=readBatchDraft(location.state);
   const batchPicking=searchParams.get("pick")==="batch-assignee"&&!!batchDraft;
   const picking=searchParams.get("pick")==="assignee"&&!!workflowDraft||batchPicking;
+  const joinOrganizationId = !picking ? searchParams.get("joinOrganization") : null;
   const finishPicking=(user?:AdminUser)=>{if(batchPicking&&batchDraft){if(user&&(!user.active||user.role==="customer"))return;navigate(`/${locale}/workbench${batchDraft.returnSearch}`,{replace:true,state:{batchEditor:user?{...batchDraft,assigneeId:user.id,assigneeName:user.displayName}:batchDraft}});return;}if(!workflowDraft||user&&(!user.active||user.role==="customer"))return;navigate(workflowReturnPath(locale,workflowDraft),{replace:true,state:{workflowEditor:user?{...workflowDraft,assigneeUserId:user.id,assigneeName:user.displayName}:workflowDraft}});};
   const initialSearch = searchParams.get("q") ?? "";
   const [searchInput, setSearchInput] = useState(initialSearch);
@@ -107,13 +108,20 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
     queryKey: ["admin-organizations", "user-selector"],
     queryFn: () => loadAllOrganizations(),
   });
+  const joinOrganization = organizations.data?.find(item => item.id === joinOrganizationId && item.active);
+  const returnToOrganization = () => {
+    const savedSearch = typeof location.state?.organizationReturnSearch === "string" ? location.state.organizationReturnSearch : "";
+    const params = new URLSearchParams(savedSearch);
+    if (joinOrganizationId) params.set("members", joinOrganizationId);
+    navigate(`/${locale}/organizations?${params}`);
+  };
   const pages = Math.max(1, Math.ceil((users.data?.total ?? 0) / 20));
   const create = useMutation({
     mutationFn: adminService.createUser,
     onSuccess: async () => {
       setShowCreate(false);
       showAdminToast(t("admin.feedback.userCreated"));
-      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["admin-users"] }), queryClient.invalidateQueries({ queryKey: ["admin-organizations"] })]);
     },
   });
   const update = useMutation({
@@ -140,6 +148,7 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
         queryClient.invalidateQueries({ queryKey: ["admin-organizations"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-me"] }),
       ]);
+      if (joinOrganizationId) returnToOrganization();
     },
   });
   const submitSearch = (event: FormEvent) => {
@@ -162,6 +171,7 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
   useEffect(()=>{if(users.isSuccess&&page>pages){setPage(pages);setListState({page:pages>1?String(pages):undefined});}},[users.isSuccess,pages,page]);
   return (
     <main className="content users-content">
+      {joinOrganizationId && <section className="page-toolbar"><strong>{t("organizationMembers.pickTitle", { name: joinOrganization?.name ?? t("common.loading") })}</strong><button type="button" onClick={returnToOrganization}>{t("common.cancel")}</button>{organizations.isSuccess && !joinOrganization && <span role="alert">{t("organizationMembers.unavailable")}</span>}</section>}
       {picking?<section className="page-toolbar assignee-picker-toolbar"><strong>{t("workflowPicker.title")}</strong><button type="button" onClick={()=>finishPicking()}>{t("common.cancel")}</button></section>:<UserActivityStats statistics={users.data?.statistics}/>}
       <section className="page-toolbar">
         <form onSubmit={submitSearch} role="search">
@@ -202,9 +212,10 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
         <span className="result-count">
           {t("admin.users.count", { count: users.data?.total ?? 0 })}
         </span>
-        {!picking&&<button
+        {!picking&&!joinOrganizationId&&<button
           type="button"
           className="primary push-right"
+          disabled={organizations.isPending || organizations.isError}
           onClick={() => setShowCreate(true)}
         >
           {t("admin.users.create")}
@@ -213,6 +224,7 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
       {Boolean(users.error || organizations.error) && (
         <div className="message error" role="alert">
           {localizedApiError(users.error ?? organizations.error, t)}
+          {organizations.isError && <button type="button" onClick={() => void organizations.refetch()}>{t("common.retry")}</button>}
         </div>
       )}
       <section className="table-card">
@@ -263,7 +275,7 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
                 </td>
                 <td data-label={t("userActivity.lastActive")}><ActivityTime value={user.presence?.lastActiveAt} locale={locale}/></td>
                 <td data-label={t("admin.users.action")}>
-                  {picking?<button type="button" disabled={!user.active||user.role==="customer"} onClick={()=>finishPicking(user)}>{t(user.id===(batchPicking?batchDraft?.assigneeId:workflowDraft?.assigneeUserId)?"workflowPicker.current":"workflowPicker.select")}</button>:<div className="row-actions">
+                  {joinOrganizationId ? <button type="button" disabled={!joinOrganization || !!user.organization} onClick={() => { update.reset(); setEditUser(user); }}>{t(user.organization ? "organizationMembers.assigned" : "organizationMembers.addExisting")}</button> : picking?<button type="button" disabled={!user.active||user.role==="customer"} onClick={()=>finishPicking(user)}>{t(user.id===(batchPicking?batchDraft?.assigneeId:workflowDraft?.assigneeUserId)?"workflowPicker.current":"workflowPicker.select")}</button>:<div className="row-actions">
                     <button type="button" onClick={() => setEditUser(user)}>{t("admin.users.edit")}</button>
                     {user.role === "owner" ? (
                       <span className="muted">{t("admin.users.protected")}</span>
@@ -347,6 +359,7 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
           busy={create.isPending}
           error={create.error}
           organizations={organizations.data ?? []}
+          initialOrganizationId={organizations.data?.find(item => item.id === organizationFilter && item.active)?.id}
           onClose={() => setShowCreate(false)}
           onCreate={(value) => create.mutate(value)}
         />
@@ -354,6 +367,7 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
       {editUser && (
         <EditUserDialog
           user={editUser}
+          initialOrganizationId={joinOrganization?.id}
           organizations={organizations.data ?? []}
           busy={update.isPending}
           error={update.error}
@@ -371,16 +385,18 @@ export function UsersPage({ locale, currentUserId }: { locale: SupportedLocale; 
   );
 }
 
-function CreateUserDialog({
+export function CreateUserDialog({
   busy,
   error,
   organizations,
+  initialOrganizationId = "",
   onClose,
   onCreate,
 }: {
   busy: boolean;
   error: unknown;
   organizations: AdminOrganization[];
+  initialOrganizationId?: string;
   onClose: () => void;
   onCreate: (value: {
     displayName: string;
@@ -455,7 +471,7 @@ function CreateUserDialog({
         </label>
         <div className="form-help-field">
           <div className="field-help-heading"><label htmlFor="user-organization">{t("admin.users.organization")}</label><HelpPopover label={t("admin.users.organization")}>{t("admin.users.organizationHint")}</HelpPopover></div>
-          <select id="user-organization" name="organizationId" defaultValue="">
+          <select id="user-organization" name="organizationId" defaultValue={initialOrganizationId}>
             <option value="">{t("admin.users.noOrganization")}</option>
             {organizations.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
@@ -478,9 +494,10 @@ function CreateUserDialog({
   );
 }
 
-function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
+function EditUserDialog({ user, organizations, busy, error, onClose, onSave, initialOrganizationId }: {
   user: AdminUser;
   organizations: AdminOrganization[];
+  initialOrganizationId?: string;
   busy: boolean;
   error: unknown;
   onClose: () => void;
@@ -519,7 +536,7 @@ function EditUserDialog({ user, organizations, busy, error, onClose, onSave }: {
         </label>
         <div className="form-help-field">
           <div className="field-help-heading"><label htmlFor="user-organization">{t("admin.users.organization")}</label><HelpPopover label={t("admin.users.organization")}>{t("admin.users.organizationHint")}</HelpPopover></div>
-          <select id="user-organization" name="organizationId" defaultValue={user.organization?.id ?? ""}>
+          <select id="user-organization" name="organizationId" defaultValue={initialOrganizationId ?? user.organization?.id ?? ""}>
             <option value="">{t("admin.users.noOrganization")}</option>
             {selectableOrganizations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? "" : ` · ${t("admin.organizations.inactive")}`}</option>)}
           </select>

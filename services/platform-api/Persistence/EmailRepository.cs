@@ -20,6 +20,8 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
     {
         using var c = Open(); Exec(c, null, """
         CREATE TABLE IF NOT EXISTS email_settings(user_id TEXT PRIMARY KEY,email TEXT NOT NULL,verified INTEGER NOT NULL DEFAULT 0,notifications INTEGER NOT NULL DEFAULT 0,cursor INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS email_notification_scope(user_id TEXT PRIMARY KEY,topics TEXT NOT NULL);
+        CREATE TRIGGER IF NOT EXISTS email_scope_cleanup AFTER DELETE ON email_settings BEGIN DELETE FROM email_notification_scope WHERE user_id=OLD.user_id; END;
         CREATE TABLE IF NOT EXISTS email_tokens(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,email TEXT NOT NULL,purpose TEXT NOT NULL,version INTEGER NOT NULL,expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS email_requests(user_id TEXT NOT NULL,purpose TEXT NOT NULL,issued INTEGER NOT NULL,PRIMARY KEY(user_id,purpose));
         CREATE TABLE IF NOT EXISTS email_outbox(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,email TEXT NOT NULL,kind TEXT NOT NULL,body TEXT NOT NULL,subject TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL,expires INTEGER NOT NULL,notification_after INTEGER NOT NULL DEFAULT 0,notification_before INTEGER NOT NULL DEFAULT 0);
@@ -38,14 +40,23 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         END;
         """);
     }
-    public EmailSettingsDto Status(string id)
+    public EmailSettingsDto Status(string id, string? locale = null)
     {
         using var c = Open(); using var q = Cmd(c, null, """
         SELECT u.email,COALESCE(s.verified,0),COALESCE(s.notifications,0),
-        (SELECT status FROM email_outbox WHERE user_id=u.id AND kind='verify' ORDER BY next_attempt DESC LIMIT 1)
+        (SELECT status FROM email_outbox WHERE user_id=u.id AND kind='verify' ORDER BY next_attempt DESC LIMIT 1),COALESCE(u.locale,'zh-CN')
         FROM users u LEFT JOIN email_settings s ON s.user_id=u.id AND s.email=u.email WHERE u.id=$id AND u.is_active=1 AND u.closed_at IS NULL
         """, ("$id", id)); using var r = q.ExecuteReader();
-        return r.Read() ? new(settings.Ready, r.GetString(0), r.GetBoolean(1), r.GetBoolean(2), r.IsDBNull(3) ? null : r.GetString(3)) : new(settings.Ready, "", false, false, null);
+        if(!r.Read()) return new(settings.Ready, "", false, false, null, []);
+        var email=r.GetString(0);var verified=r.GetBoolean(1);var enabled=r.GetBoolean(2);var delivery=r.IsDBNull(3)?null:r.GetString(3);var en=(locale??r.GetString(4))=="en-US";r.Close();
+        var selected=ReadTopics(c,null,id);
+        string[] names=en?["Project completed","Changes requested","Final delivery","New replies","Other progress updates","Other notifications"]:["项目完成","退回修改","成品交付","新回复","其他进度更新","其他通知"];
+        return new(settings.Ready,email,verified,enabled,delivery,TopicIds.Select((key,index)=>new EmailTopicOption(key,names[index],selected.Contains(key))).ToArray());
+    }
+    internal static readonly string[] TopicIds=["completed","returned","delivery","replies","progress","other"];
+    private static string[] ReadTopics(SqliteConnection c,SqliteTransaction? tx,string id){
+        using var q=Cmd(c,tx,"SELECT topics FROM email_notification_scope WHERE user_id=$id",("$id",id));
+        return q.ExecuteScalar() is string json?System.Text.Json.JsonSerializer.Deserialize(json,Lifewood.PlatformApi.Serialization.AppJsonContext.Default.StringArray)??[]:TopicIds;
     }
     internal static readonly string[] QueueStates = ["pending", "retrying", "sent", "failed", "expired", "cancelled", "paused"];
     internal static readonly string[] QueueKinds = ["verify", "reset", "notice", "security"];
@@ -85,14 +96,16 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         tx.Commit();
         return new(settings.Ready, now, QueueStates.Select(state => new MailQueueCount(state, totals.GetValueOrDefault(state))).ToArray(), QueueKinds, items, total, page, size, settings.ConfigurationChecks);
     }
-    public bool SavePreferences(string id, bool enabled)
+    public bool SavePreferences(string id, bool enabled, string[]? topics=null)
     {
+        if(topics is not null && (topics.Length>TopicIds.Length || topics.Any(topic=>!TopicIds.Contains(topic)) || topics.Distinct().Count()!=topics.Length)) return false;
         using var c = Open(); using var tx = c.BeginTransaction(deferred: false);
         using var q = Cmd(c, tx, """
         UPDATE email_settings SET notifications=$enabled,cursor=CASE WHEN notifications=0 AND $enabled=1 THEN COALESCE((SELECT MAX(id) FROM notifications WHERE user_id=$id),0) ELSE cursor END
         WHERE user_id=$id AND ($enabled=0 OR (verified=1 AND $ready=1)) AND EXISTS(SELECT 1 FROM users u WHERE u.id=$id AND u.email=email_settings.email AND u.is_active=1 AND u.closed_at IS NULL)
         """, ("$id", id), ("$enabled", enabled ? 1 : 0), ("$ready", settings.Ready ? 1 : 0));
         if (q.ExecuteNonQuery() != 1) return false;
+        if(topics is not null) Exec(c,tx,"INSERT INTO email_notification_scope(user_id,topics) VALUES($id,$topics) ON CONFLICT(user_id) DO UPDATE SET topics=excluded.topics",("$id",id),("$topics",System.Text.Json.JsonSerializer.Serialize(topics,Lifewood.PlatformApi.Serialization.AppJsonContext.Default.StringArray)));
         if (!enabled) Exec(c, tx, "DELETE FROM email_outbox WHERE user_id=$id AND kind='notice' AND status='pending'", ("$id", id));
         tx.Commit(); return true;
     }
@@ -112,9 +125,7 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         Exec(c, tx, "INSERT INTO email_tokens VALUES($hash,$id,$email,$purpose,$version,$expires)", ("$hash", hash), ("$id", id), ("$email", email), ("$purpose", purpose), ("$version", version), ("$expires", Now + 600));
         Exec(c, tx, "INSERT INTO email_requests VALUES($id,$purpose,$now) ON CONFLICT(user_id,purpose) DO UPDATE SET issued=excluded.issued", ("$id", id), ("$purpose", purpose), ("$now", Now));
         var url = $"{settings.PublicUrl}/{(en ? "en-US" : "zh-CN")}/email-action#purpose={purpose}&token={token}";
-        var subject = purpose == "verify" ? (en ? "Verify your email" : "验证邮箱") : (en ? "Reset your password" : "重置密码");
-        var body = en ? $"Book Creative Portal\n\n{subject}:\n{url}\n\nThis link expires in 10 minutes and can be used once. If you did not request it, ignore this email." : $"Book Creative Portal\n\n{subject}：\n{url}\n\n链接在 10 分钟后失效，仅可使用一次。如非本人操作，请忽略此邮件。";
-        Queue(c, tx, id, email, purpose, subject, body, Now + 600);
+        Queue(c, tx, id, email, MailTemplates.Render(purpose, en ? "en-US" : "zh-CN", url), Now + 600);
         tx.Commit(); return true;
     }
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
@@ -133,14 +144,14 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         else
         {
             users.ApplyEmailPasswordReset(c, tx, id, password!);
-            Queue(c, tx, id, email, "security", en ? "Password changed" : "密码已修改", en ? "Your Book Creative Portal password was reset. Existing sessions were revoked. Contact your platform owner if this was not you." : "你的 Book Creative Portal 密码已重置，原登录会话已失效。如非本人操作，请立即联系平台负责人。", Now + 86400);
+            Queue(c, tx, id, email, MailTemplates.Render("security", en ? "en-US" : "zh-CN"), Now + 86400);
         }
         Exec(c, tx, "DELETE FROM email_tokens WHERE hash=$hash", ("$hash", Hash(token)));
         Exec(c, tx, "DELETE FROM email_outbox WHERE user_id=$id AND kind=$kind", ("$id", id), ("$kind", purpose));
         tx.Commit(); return true;
     }
-    private void Queue(SqliteConnection c, SqliteTransaction tx, string id, string email, string kind, string subject, string body, long expires, long after = 0, long before = 0)
-    { Exec(c, tx, "INSERT INTO email_outbox(id,user_id,email,kind,subject,body,next_attempt,expires,notification_after,notification_before) VALUES($key,$id,$email,$kind,$subject,$body,$now,$expires,$after,$before)", ("$key", Guid.NewGuid().ToString("N")), ("$id", id), ("$email", email), ("$kind", kind), ("$subject", subject), ("$body", protector.Protect(body)), ("$now", Now), ("$expires", expires), ("$after", after), ("$before", before)); }
+    private void Queue(SqliteConnection c, SqliteTransaction tx, string id, string email, MailTemplate template, long expires, long after = 0, long before = 0)
+    { Exec(c, tx, "INSERT INTO email_outbox(id,user_id,email,kind,subject,body,next_attempt,expires,notification_after,notification_before) VALUES($key,$id,$email,$kind,$subject,$body,$now,$expires,$after,$before)", ("$key", Guid.NewGuid().ToString("N")), ("$id", id), ("$email", email), ("$kind", template.Kind), ("$subject", template.Subject), ("$body", protector.Protect(template.Body.Encode())), ("$now", Now), ("$expires", expires), ("$after", after), ("$before", before)); }
     public void QueueNotifications()
     {
         using var c = Open();
@@ -151,15 +162,14 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
             // Snapshot before entering the write transaction: List owns a separate connection.
             using var maximum = Cmd(c, null, "SELECT COALESCE(MAX(id),0) FROM notifications WHERE user_id=$id", ("$id", id));
             var watermark = Convert.ToInt64(maximum.ExecuteScalar());
-            var visible = notifications.List(id, "en-US", watermark + 1, null, null, null, null, null, null, unread: true);
             using var tx = c.BeginTransaction(deferred: false);
             using var get = Cmd(c, tx, "SELECT u.email,COALESCE(u.locale,'zh-CN'),s.cursor FROM users u JOIN email_settings s ON s.user_id=u.id AND s.email=u.email WHERE u.id=$id AND u.is_active=1 AND u.closed_at IS NULL AND s.notifications=1 AND s.verified=1", ("$id", id));
             using var r = get.ExecuteReader(); if (!r.Read()) continue;
             var email = r.GetString(0); var locale = r.GetString(1); var cursor = r.GetInt64(2); r.Close();
             // Reads use the notification repository's current permission checks. Mail contains no project/user content.
-            if (visible.Items.Any(n => n.Id > cursor)) {
+            if (notifications.HasEmailCandidate(id,cursor,watermark,ReadTopics(c,tx,id))) {
                 using var pending = Cmd(c, tx, "UPDATE email_outbox SET notification_before=$before WHERE user_id=$id AND kind='notice' AND status='pending' AND expires>$now", ("$before", watermark), ("$id", id), ("$now", Now));
-                if (pending.ExecuteNonQuery() == 0) Queue(c, tx, id, email, "notice", locale == "en-US" ? "New platform notifications" : "平台有新通知", locale == "en-US" ? $"There are new notifications in Book Creative Portal. Sign in to view them:\n{settings.PublicUrl}/{locale}/notifications" : $"Book Creative Portal 有新通知，请登录查看：\n{settings.PublicUrl}/zh-CN/notifications", Now + 86400, cursor, watermark);
+                if (pending.ExecuteNonQuery() == 0) Queue(c, tx, id, email, MailTemplates.Render("notice", locale, $"{settings.PublicUrl}/{(locale == "en-US" ? "en-US" : "zh-CN")}/notifications"), Now + 86400, cursor, watermark);
             }
             Exec(c, tx, "UPDATE email_settings SET cursor=MAX(cursor,$watermark) WHERE user_id=$id", ("$id", id), ("$watermark", watermark));
             tx.Commit();
@@ -190,11 +200,11 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         using var r = q.ExecuteReader(); if (!r.Read()) return;
         var id = r.GetString(0); var address = r.GetString(1); var subject = r.GetString(2); var encrypted = r.GetString(3);
         var userId = r.GetString(4); var kind = r.GetString(5); var after = r.GetInt64(6); var before = r.GetInt64(7); r.Close();
-        if (kind == "notice" && !notifications.List(userId, "en-US", before + 1, null, null, null, null, null, null, unread: true).Items.Any(n => n.Id > after)) {
+        if (kind == "notice" && !notifications.HasEmailCandidate(userId,after,before,ReadTopics(c,null,userId))) {
             Exec(c, null, "UPDATE email_outbox SET status='cancelled',body='' WHERE id=$id", ("$id", id));
             return;
         }
-        try { await mailer.Send(address, subject, protector.Unprotect(encrypted), cancellation); Exec(c, null, "UPDATE email_outbox SET status='sent',body='' WHERE id=$id", ("$id", id)); }
+        try { await mailer.SendContent(address, subject, MailBody.Decode(protector.Unprotect(encrypted)), cancellation); Exec(c, null, "UPDATE email_outbox SET status='sent',body='' WHERE id=$id", ("$id", id)); }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
         catch { Exec(c, null, "UPDATE email_outbox SET attempts=attempts+1,status=CASE WHEN attempts>=4 THEN 'failed' ELSE 'pending' END,body=CASE WHEN attempts>=4 THEN '' ELSE body END,next_attempt=$next WHERE id=$id", ("$next", Now + 60), ("$id", id)); }
     }

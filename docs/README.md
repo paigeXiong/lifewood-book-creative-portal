@@ -1,5 +1,14 @@
 # 项目文档索引
 
+- [项目介绍 / Project overview](../README.md) · [English](../README.en.md)
+- [当前界面截图 / Current screenshots](./images/screenshots/README.md)：客户项目列表、资料填写、提交详情，以及客户与管理员概览的本地运行截图，标注日期与版本边界。
+
+- [出站代理配置](./outbound-proxy.md)：全局连接方式、AI/OIDC 覆盖、凭据保存和连接检查。
+
+## 会议验收 / Acceptance meeting
+
+- [会议验收清单与演示流程 / Acceptance checklist and demo guide](./acceptance-meeting.md)：版本边界、演示操作、通过标准、原图未决规则和可填写会议记录。业务验收尚未执行。
+
 ## 本地启动
 
 Windows 用户可以直接双击项目根目录的 `启动本地环境.bat`。启动成功后会自动打开客户提交页面；需要停止时双击 `停止本地环境.bat`。无需手动输入 PowerShell 命令。若某些压缩或传输工具不支持中文文件名，也可以使用等价的 `start-local.bat` 和 `stop-local.bat`。

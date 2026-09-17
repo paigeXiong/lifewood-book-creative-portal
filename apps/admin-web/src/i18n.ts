@@ -1,5 +1,42 @@
 import { i18n } from "@lifewood/i18n";
 
+for (const [locale, adminAnalytics] of Object.entries({
+  "zh-CN": {
+    title: "处理效率", refresh: "刷新统计", method: "统计口径", period: "统计周期", days: "近 {{count}} 天", duration: "{{value}} 天", samples: "有效样本 {{count}} 项",
+    averageDays: "平均需求完成时间", medianDays: "完成时间中位数", completed: "完成需求", submitted: "首次提交", completedTotal: "当前已完成", trend: "提交与完成趋势", aging: "在办需求历时", currentQueues: "当前待办",
+    daySummary: "{{date}} · 首次提交 {{submitted}} 项 · 完成 {{completed}} 项",
+    definition: "完成时间按首次提交至首次记录的标记完成计算，包含客户补资料及等待时间，不代表纯制作耗时。平均值和中位数仅统计本周期完成且有可靠起止时间的需求；重新打开后再次完成不重复计数。",
+    scope: "周期包含今天，按 {{timeZone}} 划分日期。趋势统计首次提交和首次记录的完成事件；在办分布和待办数量反映当前状态，不受周期影响。",
+    coverage: "完成事件从 {{date}} 开始记录。当前有 {{count}} 项已完成需求缺少可靠完成时间，未计入趋势和耗时。历史已完成需求不补造时间；历史重新打开的需求仅能统计启用后首次记录的完成。",
+    agingHelp: "从首次提交到现在的总历时，包含补资料与等待。排除已完成、已关闭和从未提交的草稿。缺少可靠提交时间的需求单列为时间未知。",
+    ages: { week: "0–7 天", fortnight: "超过 7–14 天", month: "超过 14–30 天", older: "超过 30 天", unknown: "时间未知" },
+    queues: { active: "在办需求", waiting_customer: "等待客户", unassigned: "尚未分配", overdue: "跟进已逾期" },
+  },
+  "en-US": {
+    title: "Processing efficiency", refresh: "Refresh analytics", method: "How metrics are calculated", period: "Reporting period", days: "Last {{count}} days", duration: "{{value}} days", samples: "{{count}} valid samples",
+    averageDays: "Average completion time", medianDays: "Median completion time", completed: "Completed requests", submitted: "First submissions", completedTotal: "Currently completed", trend: "Submissions and completions", aging: "Open request age", currentQueues: "Current workload",
+    daySummary: "{{date}} · {{submitted}} first submissions · {{completed}} completions",
+    definition: "Elapsed time runs from first submission to the first recorded completion, including customer revisions and waiting. It is not production time. Average and median include requests completed in this period with reliable start and end timestamps. Reopening and completing again does not add another sample.",
+    scope: "The period includes today, with dates grouped in {{timeZone}}. Trends count first submissions and first recorded completion events. Open request ages and workload counts show the current state regardless of the selected period.",
+    coverage: "Completion tracking started on {{date}}. {{count}} currently completed requests have no reliable completion timestamp and are excluded from trends and duration metrics. Historical timestamps are not inferred; previously reopened requests can only use their first recorded completion after tracking began.",
+    agingHelp: "Total elapsed time from first submission to now, including revisions and waiting. Completed, closed and never-submitted drafts are excluded. Requests without a reliable submission timestamp are listed as unknown.",
+    ages: { week: "0–7 days", fortnight: "Over 7–14 days", month: "Over 14–30 days", older: "Over 30 days", unknown: "Unknown age" },
+    queues: { active: "Open requests", waiting_customer: "Waiting for customer", unassigned: "Unassigned", overdue: "Overdue follow-up" },
+  },
+})) i18n.addResourceBundle(locale, "translation", { adminAnalytics }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { runtimeRecovery: { reload: "重新读取配置", reloadConfirm: "重新读取会替换尚未保存的运行设置，是否继续？", changed: "服务器配置已更新，当前输入已保留。请重新读取后再修改。" } }, true, true);
+i18n.addResourceBundle("en-US", "translation", { runtimeRecovery: { reload: "Reload settings", reloadConfirm: "Reloading will replace unsaved runtime settings. Continue?", changed: "Server settings changed. Your input is preserved. Reload before editing again." } }, true, true);
+
+for (const [locale, outboundProxy] of Object.entries({
+  "zh-CN": { title: "出站代理", configure: "配置", saved: "出站代理已保存", saving: "保存中…", test: "检查连接", testing: "检查中…", connected: "连接已建立，目标返回 HTTP {{status}}", errors: {
+    conflict: "配置已发生变化，请关闭后重新打开，再检查或修改。", invalid: "请检查代理地址和认证信息。仅支持 HTTP/HTTPS 地址，用户名和密码需同时填写或清空。", credentialsChanged: "代理地址或用户名已改变，请重新输入密码或清除认证信息。", target: "该服务没有有效的 HTTPS 目标，或目标不符合连接限制。", authentication: "代理认证失败，请检查用户名和密码。", unsupported: "此连接需要 HTTP/HTTPS 代理，当前代理协议不受支持。", tls: "TLS 证书验证失败，请检查代理和目标证书。", timeout: "连接超时，请检查代理和目标服务。", connection: "连接未能建立，请检查代理、域名解析和目标服务。",
+  } },
+  "en-US": { title: "Outbound proxy", configure: "Configure", saved: "Outbound proxy saved", saving: "Saving…", test: "Check connection", testing: "Checking…", connected: "Connection established; target returned HTTP {{status}}", errors: {
+    conflict: "Settings have changed. Close and reopen before checking or editing again.", invalid: "Check the proxy URL and credentials. Only HTTP/HTTPS URLs are supported; supply both username and password or clear both.", credentialsChanged: "The proxy URL or username changed. Re-enter the password or clear credentials.", target: "This service has no valid HTTPS target, or the target is not allowed.", authentication: "Proxy authentication failed. Check the username and password.", unsupported: "This connection requires an HTTP/HTTPS proxy; the current proxy protocol is unsupported.", tls: "TLS certificate verification failed. Check the proxy and target certificates.", timeout: "Connection timed out. Check the proxy and target service.", connection: "Could not connect. Check the proxy, DNS and target service.",
+  } },
+})) i18n.addResourceBundle(locale, "translation", { outboundProxy }, true, true);
+
 i18n.addResourceBundle("zh-CN", "translation", {admin:{download:{failed:"无法启动文件下载，请检查浏览器下载设置后重试。"}}}, true, true);
 i18n.addResourceBundle("en-US", "translation", {admin:{download:{failed:"The file download could not start. Check your browser download settings and try again."}}}, true, true);
 
@@ -932,3 +969,65 @@ for (const [locale, announcements] of Object.entries({
 
 i18n.addResourceBundle("zh-CN", "translation", {announcements:{listLimit:"已显示最多 1,000 条公告，请使用搜索或筛选缩小范围。"}}, true, true);
 i18n.addResourceBundle("en-US", "translation", {announcements:{listLimit:"Up to 1,000 announcements are shown. Narrow the results with search or filters."}}, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { mailService: {
+  title: "邮件服务", configure: "配置邮件服务", errors: {
+    invalid: "请检查 SMTP 主机、STARTTLS 端口、发件邮箱、用户名与授权码，以及门户域名。",
+    conflict: "配置已变更，请重新读取已保存配置后再修改。",
+    credentialsChanged: "更换 SMTP 主机、端口或用户名时，请重新输入授权码或明确清除旧值。",
+    saveFailed: "未能保存邮件配置，请稍后重试。", unavailable: "请先保存并启用有效的邮件配置。",
+    cooldown: "测试邮件每分钟最多发送一次，请稍后再试。", busy: "邮件配置操作正在进行，请稍后再试。",
+    testFailed: "测试未能确认成功，请检查 SMTP 配置和收件箱；为避免重复邮件，请勿立即重发。"
+  }
+} }, true, true);
+i18n.addResourceBundle("en-US", "translation", { mailService: {
+  title: "Email service", configure: "Configure email", errors: {
+    invalid: "Check the SMTP host, STARTTLS port, sender, username and credential, and portal domain.",
+    conflict: "Settings changed. Reload saved settings before editing again.",
+    credentialsChanged: "Re-enter or explicitly clear the credential when changing the SMTP host, port or username.",
+    saveFailed: "Email settings could not be saved. Try again later.", unavailable: "Save and enable a valid email configuration first.",
+    cooldown: "Only one test email per minute is allowed. Try again later.", busy: "An email configuration operation is in progress. Try again later.",
+    testFailed: "The test result could not be confirmed. Check SMTP settings and the inbox before retrying to avoid duplicates."
+  }
+} }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { mailService: {
+  errors: { testAuthentication: "SMTP 身份验证失败。", testConnection: "无法连接邮件服务器。", testTimeout: "测试发送超时或已中断，结果尚未确认。", testTls: "无法建立安全的邮件连接。", testSecurity: "邮件服务器要求安全连接或身份验证。", testRecipient: "邮件服务器拒绝了测试收件人。", testUnavailable: "邮件服务器暂不可用。" },
+  hints: {
+    testAuthentication: "确认已开启 SMTP 服务，用户名为完整邮箱，并使用授权码而非网页登录密码；必要时重新生成授权码并保存。",
+    testConnection: "检查 SMTP 主机、端口、服务器 DNS 和出站网络规则。当前使用 STARTTLS，QQ 邮箱可用 smtp.qq.com:587。",
+    testTimeout: "先检查收件箱和垃圾邮件；超时不代表邮件一定没有发出。确认网络后稍后再试，避免重复发送。",
+    testTls: "检查主机名、STARTTLS 端口、服务器证书和系统时间。不要通过关闭证书验证来解决。",
+    testSecurity: "检查服务商要求的 STARTTLS 端口和账号认证配置，确认已开启 SMTP 权限。",
+    testRecipient: "测试邮件发往配置的发件邮箱。检查邮箱是否有效，以及服务商的发信授权、收件或反垃圾规则。",
+    testUnavailable: "稍后再试，并检查邮箱服务是否维护或限制发送频率。",
+    testFailed: "未能从服务器响应确认具体原因。检查已保存的配置和收件箱，稍后再试；页面不会展示可能包含敏感信息的原始 SMTP 响应。"
+  }
+} }, true, true);
+i18n.addResourceBundle("en-US", "translation", { mailService: {
+  errors: { testAuthentication: "SMTP authentication failed.", testConnection: "Could not connect to the mail server.", testTimeout: "The test timed out or was interrupted; delivery is unconfirmed.", testTls: "A secure mail connection could not be established.", testSecurity: "The mail server requires a secure connection or authentication.", testRecipient: "The mail server rejected the test recipient.", testUnavailable: "The mail server is temporarily unavailable." },
+  hints: {
+    testAuthentication: "Enable SMTP access, use the full email address as the username and an authorization code instead of the web login password. Regenerate and save the code if needed.",
+    testConnection: "Check the SMTP host, port, server DNS and outbound network rules. This service uses STARTTLS; QQ Mail supports smtp.qq.com:587.",
+    testTimeout: "Check the inbox and spam folder first. A timeout does not prove that no email was sent. Check the network and retry later to avoid duplicates.",
+    testTls: "Check the hostname, STARTTLS port, server certificate and system time. Do not disable certificate verification.",
+    testSecurity: "Check the provider's STARTTLS port and account authentication requirements, including SMTP access permissions.",
+    testRecipient: "Tests target the configured sender mailbox. Check its validity, sender authorization and receiving or anti-spam policies.",
+    testUnavailable: "Retry later and check provider maintenance or sending limits.",
+    testFailed: "The server response did not identify a specific cause. Check saved settings and the inbox before retrying. Raw SMTP responses are hidden because they may contain sensitive information."
+  }
+} }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { mailPreview: {
+  title: "邮件预览", help: "使用示例内容预览系统邮件，不会发送邮件。预览中的链接与按钮不可用；实际邮件的显示效果取决于收件软件。", kind: "邮件类型", language: "邮件语言", format: "显示方式", html: "排版预览", text: "纯文本", subject: "主题"
+} }, true, true);
+i18n.addResourceBundle("en-US", "translation", { mailPreview: {
+  title: "Email preview", help: "Preview system emails with sample content without sending. Links and buttons in previews are inactive. Actual appearance may vary by email client.", kind: "Email type", language: "Email language", format: "View", html: "Formatted", text: "Plain text", subject: "Subject"
+} }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", { organizationMembers: {
+  title: "{{name}} · 成员", create: "创建成员", addExisting: "添加已有成员", manage: "管理成员", search: "搜索成员姓名或邮箱", pickTitle: "添加成员至 {{name}}", assigned: "已有所属组织", unavailable: "该组织不存在或已停用，请返回组织管理。"
+} }, true, true);
+i18n.addResourceBundle("en-US", "translation", { organizationMembers: {
+  title: "{{name}} · Members", create: "Create member", addExisting: "Add existing member", manage: "Manage members", search: "Search member name or email", pickTitle: "Add members to {{name}}", assigned: "Already in an organization", unavailable: "This organization is unavailable or inactive. Return to organization management."
+} }, true, true);

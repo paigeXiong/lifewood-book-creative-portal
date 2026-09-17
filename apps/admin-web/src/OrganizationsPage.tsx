@@ -1,15 +1,16 @@
 import { noticeReturnPath } from "./announcement-list-state";
 import { readNoticeDraft, readNoticeSelection, writeNoticeDraft } from "./announcement-draft";
 import { useConfirm } from "./useConfirm";
-import { useRef, useState, type FormEvent } from "react";
+import { Fragment, useRef, useState, type FormEvent } from "react";
 import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { adminService, localizedApiError } from "@lifewood/api-client";
 import type { AdminOrganization, SupportedLocale } from "@lifewood/domain";
 import { ModalFrame } from "./ModalFrame";
 import { showAdminToast } from "./Toast";
 import { useUnsavedClose } from "./useUnsavedClose";
+import { OrganizationMembers } from "./OrganizationMembers";
 
 function formatDate(value: string, locale: SupportedLocale) {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -36,6 +37,12 @@ export function OrganizationsPage({ locale, userId }: { locale: SupportedLocale;
   const selectOrganization=(organization:AdminOrganization,checked:boolean)=>{if(!canChangeNotice())return;const current=selectionRef.current;const next={ids:checked?[...new Set([...current.ids,organization.id])]:current.ids.filter(id=>id!==organization.id),names:{...current.names,[organization.id]:organization.name}};selectionRef.current=next;navigate(location.pathname+location.search+location.hash,{replace:true,flushSync:true,state:{...location.state,announcementSelection:next}});};
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const expandedOrganization = searchParams.get("members");
+  const toggleMembers = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    expandedOrganization === id ? next.delete("members") : next.set("members", id);
+    setSearchParams(next, { replace: true, state: location.state });
+  };
   const initialSearch = searchParams.get("q") ?? "";
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [search, setSearch] = useState(initialSearch);
@@ -104,13 +111,13 @@ export function OrganizationsPage({ locale, userId }: { locale: SupportedLocale;
             <th>{t("admin.organizations.action")}</th>
           </tr></thead>
           <tbody>{organizations.data?.items.map((organization) => (
-            <tr key={organization.id}>
-              <td data-label={t("admin.organizations.name")}><strong>{picking ? <OrganizationWordmark key={organization.avatarUrl} organization={organization} /> : <Link className="organization-members-link organization-identity-link" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}><OrganizationWordmark key={organization.avatarUrl} organization={organization} /></Link>}</strong></td>
-              <td data-label={t("admin.organizations.members")}>{picking ? organization.memberCount : <Link className="organization-members-link organization-member-count" to={`/${locale}/users?${new URLSearchParams({organization:organization.id})}`} aria-label={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})} title={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}>{organization.memberCount}</Link>}</td>
+            <Fragment key={organization.id}><tr>
+              <td data-label={t("admin.organizations.name")}><strong>{picking ? <OrganizationWordmark key={organization.avatarUrl} organization={organization} /> : <button type="button" className="organization-expand organization-identity-link" onClick={() => toggleMembers(organization.id)} aria-expanded={expandedOrganization === organization.id} aria-controls={`organization-members-${organization.id}`} aria-label={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}><svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m7 4 6 6-6 6" /></svg><OrganizationWordmark key={organization.avatarUrl} organization={organization} /></button>}</strong></td>
+              <td data-label={t("admin.organizations.members")}>{organization.memberCount}</td>
               <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
               <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>
               <td data-label={t("admin.organizations.action")}>{picking?<label><input type="checkbox" disabled={noticeSaving || !organization.active || !selected.includes(organization.id)&&selected.length>=200} checked={selected.includes(organization.id)} onChange={e=>selectOrganization(organization,e.target.checked)}/>{t("announcements.select")}</label>:<button type="button" onClick={() => setEditing(organization)}>{t("admin.organizations.edit")}</button>}</td>
-            </tr>
+            </tr>{!picking && expandedOrganization === organization.id && <tr className="organization-members-row"><td colSpan={5}><OrganizationMembers key={organization.id} organization={organization} locale={locale} userId={userId} /></td></tr>}</Fragment>
           ))}</tbody>
         </table>
         {!organizations.isPending && !organizations.data?.items.length && <div className="empty">{t("admin.organizations.empty")}</div>}

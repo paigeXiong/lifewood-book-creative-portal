@@ -76,6 +76,8 @@ export const appRoutes = createRoutesFromElements(<>
           <Route path="tasks" element={<TaskListPage />} />
           <Route path="overview" element={<DashboardPage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="organization" lazy={async () => ({ Component: (await import("./pages/MyOrganizationPage")).MyOrganizationPage })} />
+          <Route path="organization/members/:memberId" lazy={async () => ({ Component: (await import("./pages/OrganizationMemberPage")).OrganizationMemberPage })} />
           <Route path="tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="tasks/:taskId/submitted" element={<SubmissionSuccessPage />} />
           <Route path="tasks/:taskId/edit/project" lazy={async () => ({ Component: (await import("./pages/ProjectFormPage")).ProjectFormPage })} />

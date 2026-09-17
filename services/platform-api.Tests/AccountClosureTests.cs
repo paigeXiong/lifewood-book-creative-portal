@@ -2,6 +2,7 @@ using Lifewood.PlatformApi.Contracts;
 using Lifewood.PlatformApi.Persistence;
 using Lifewood.PlatformApi.Features;
 using Microsoft.Data.Sqlite;
+using Microsoft.AspNetCore.DataProtection;
 using Xunit;
 namespace Lifewood.PlatformApi.Tests;
 public sealed class AccountClosureTests:IDisposable {
@@ -41,6 +42,46 @@ public sealed class AccountClosureTests:IDisposable {
   admin.CreateUser(new("Staff","staff@closure.test","password-123","operator",null),out var staff);
   var draft=projects.Create(customer);Sql($"UPDATE projects SET assignee_user_id='{staff!.Id}' WHERE id='{draft.Id}';");Assert.Equal(1,closure.Preview(staff.Id)!.AssignedProjects);
   Assert.Equal(AdminWriteOutcome.Saved,closure.Close(staff.Id,owner,Request(staff.Id),out _).Outcome);Assert.Equal(1,Count($"SELECT COUNT(*) FROM projects WHERE id='{draft.Id}' AND assignee_user_id IS NULL"));
+ }
+ [Fact] public void ClosureClearsDailyActivityWithoutAffectingOtherAccounts(){
+  presence.Login(customer);presence.Login(owner);
+  Assert.True(presence.Heartbeat(customer,"device",0,new(Guid.NewGuid().ToString("D"),true,true)));
+  Assert.Equal(1,Count($"SELECT SUM(logins) FROM user_activity_daily WHERE user_id='{customer}'"));
+  Assert.Equal(1,Count($"SELECT SUM(active_periods) FROM user_activity_daily WHERE user_id='{customer}'"));
+  Assert.Equal(AdminWriteOutcome.Saved,closure.Close(customer,owner,Request(customer),out _).Outcome);
+  Assert.Equal(0,Count($"SELECT COUNT(*) FROM user_activity_daily WHERE user_id='{customer}'"));
+  presence.Login(customer);
+  Assert.False(presence.Heartbeat(customer,"late-device",0,new(Guid.NewGuid().ToString("D"),true,true)));
+  Assert.Equal(0,Count($"SELECT COUNT(*) FROM user_activity_daily WHERE user_id='{customer}'"));
+  Assert.Equal(1,Count($"SELECT SUM(logins) FROM user_activity_daily WHERE user_id='{owner}'"));
+ }
+ [Fact] public void ClosureClearsEmailTopicsRecoveryLinksAndExternalLoginBindings(){
+  var protection=new EphemeralDataProtectionProvider();
+  var emails=new EmailRepository(connection,protection,EmailTests.Settings(),users,new NotificationRepository(connection));emails.Initialize();
+  new OidcStore(connection,protection).Initialize();
+  foreach(var id in new[]{customer,owner}){
+   Sql($"INSERT INTO email_settings(user_id,email,verified) SELECT id,email,1 FROM users WHERE id='{id}'; INSERT INTO oidc_external_bindings VALUES('test','https://identity.example.test','client','{id}','{id}'); INSERT INTO oidc_flows(id,provider_id,browser_hash,version,locale,portal,user_id,session_version,expires) VALUES('{id}','test','hash',1,'en-US','customer','{id}',0,9999999999);");
+   Assert.True(emails.SavePreferences(id,true,["completed","returned"]));
+   Assert.True(emails.Request("reset",Assert.IsType<string>(users.Get(id)!.Email)));
+  }
+  string[] tables=["email_settings","email_notification_scope","email_tokens","email_requests","email_outbox","oidc_external_bindings","oidc_flows"];
+  foreach(var table in tables)Assert.Equal(1,Count($"SELECT COUNT(*) FROM {table} WHERE user_id='{customer}'"));
+  Assert.Equal(AdminWriteOutcome.Saved,closure.Close(customer,owner,Request(customer),out _).Outcome);
+  foreach(var table in tables){
+   Assert.Equal(0,Count($"SELECT COUNT(*) FROM {table} WHERE user_id='{customer}'"));
+   Assert.Equal(1,Count($"SELECT COUNT(*) FROM {table} WHERE user_id='{owner}'"));
+  }
+  Assert.False(emails.SavePreferences(customer,true,["completed"]));
+  Assert.False(emails.Request("reset","customer@closure.test"));
+ }
+ [Fact] public void InitializationRemovesLegacyClosedAccountCalendarButKeepsDisabledAccounts(){
+  presence.Login(customer);presence.Login(owner);
+  Assert.Equal(AdminWriteOutcome.Saved,closure.Close(customer,owner,Request(customer),out _).Outcome);
+  // Simulate daily totals left by the earlier closure implementation.
+  Sql($"INSERT OR REPLACE INTO user_activity_daily(user_id,day,logins,active_periods) VALUES('{customer}','2026-09-01',2,3); UPDATE users SET is_active=0 WHERE id='{owner}';");
+  presence.Initialize();presence.Initialize();
+  Assert.Equal(0,Count($"SELECT COUNT(*) FROM user_activity_daily WHERE user_id='{customer}'"));
+  Assert.Equal(1,Count($"SELECT SUM(logins) FROM user_activity_daily WHERE user_id='{owner}'"));
  }
  public void Dispose(){SqliteConnection.ClearAllPools();Directory.Delete(root,true);}
 }

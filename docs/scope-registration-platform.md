@@ -38,7 +38,7 @@ meta:
 - 头像统一从个人页面修改。
 - 平台公告、按天配置公示期，以及业务事件驱动的站内通知；详见本文末尾的已批准补充。
 
-新增审批节点、账号共享、交付版本或通知渠道均须先确认业务规则。快捷账号切换、批量处理及资料导出已实现，见[账号切换](./account-switching.md)、[效率工具](./productivity-tools.md)和[运营工作台](./operations-workbench.md)。模板和复制项目仍为候选。生产协作问题继续见[需求批注](./production-workflow-annotations.md)，暂不开发。
+新增审批节点、账号共享、交付版本或通知渠道均须先确认业务规则。快捷账号切换、批量处理及资料导出已实现，见[账号切换](./account-switching.md)、[效率工具](./productivity-tools.md)和[运营工作台](./operations-workbench.md)。模板仍为候选；2026-09-17 已批准并实现将本人项目复制为独立草稿，详见效率工具。生产协作问题继续见[需求批注](./production-workflow-annotations.md)，暂不开发。
 
 ## 产品定位
 
@@ -295,7 +295,7 @@ Windows 和 Linux 发布物都必须自包含，启动正式服务端后即可�
 - 在线审片、时间点评论、成片返修和多版本批准
 - 客户绕过定向退回自行修改或删除已提交项目
 - 客户自助创建组织或共享同组织项目
-- 邮件通知、短信通知和浏览器系统推送（站内通知已批准并实现）
+- 短信通知和浏览器系统推送（站内通知已实现；邮件能力见 v0.3.16 补充，默认关闭）
 - 支付、套餐和订阅
 - 通用可视化表单设计器
 
@@ -329,10 +329,10 @@ Windows 和 Linux 发布物都必须自包含，启动正式服务端后即可�
 1. 同一组织的多个账号是否共享项目
 2. 除已批准的定向退回外，客户是否可主动发起正式需求变更
 3. 授权声明只需勾选，还是必须上传签署文件
-4. 正式生产工作流包含哪些节点、角色和状态迁移条件
-5. 最终成品是否需要多版本、审片、批准和返修
+4. 原图已有制作节点与职责，仍需确定平台内外边界、项目权限和状态迁移条件
+5. 原图已有多版本、审片、局部批准和返修要求，仍需确定场景定义、版本关系与批准有效性；删减要求须明确记录
 6. 大文件是否改为分片上传或对象存储直传
-7. 是否发送邮件或其他外部通知
+7. 真实邮件服务、发件域名及启用时间；是否另需其他外部通知渠道
 8. Linux 是否必须提供全屏终端配置界面
 
 
@@ -343,3 +343,11 @@ Windows 和 Linux 发布物都必须自包含，启动正式服务端后即可�
 ## 站内通知范围更新（2026-09-07）
 
 用户确认开始实施完整站内通知计划，覆盖业务事件、双端通知中心、阅读与处理状态、即时提醒及偏好、模板规则、投递记录与失败恢复。此变更覆盖早期站内通知不在范围内的限制。邮件、短信和浏览器系统推送仍作为独立后续渠道。详见 [站内通知](./notifications.md)。
+
+## 当前版本补充（v0.3.16）
+
+可配置的邮箱验证、找回密码及用户自选邮件提醒，以及多 OIDC 服务配置、登录与账号绑定已实现。邮件默认关闭，真实 SMTP 与身份服务仍待接入验收；此更新覆盖上文历史记录中将邮件列为后续开发的描述。详见[邮件](./email.md)与[OIDC](./oidc.md)。
+
+Configurable email verification, password recovery, optional email notifications and multi-provider OIDC are implemented. Email is disabled by default; real SMTP and identity-provider acceptance remain pending. This supersedes earlier statements treating email as future development.
+
+业务会议使用[验收清单与演示流程](./acceptance-meeting.md)，分别记录发布版验收、本地后续改动、上线条件与下一阶段授权。 / Use the acceptance guide to record release acceptance, local changes, deployment readiness and future scope separately.

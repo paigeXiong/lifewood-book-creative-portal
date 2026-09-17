@@ -23,7 +23,7 @@ internal sealed class AccountClosureRepository(string connectionString)
    UPDATE projects SET assignee_user_id=NULL,workflow_updated_at=$now WHERE assignee_user_id=$id;
    """,("$id",id),("$now",now))){q.Transaction=tx;q.ExecuteNonQuery();}
   // Optional tables permit upgrades and repository tests before all features initialize.
-  foreach(var table in new[]{"user_saved_views","project_resume","saved_account_sessions","user_presence","presence_session_activity","ended_presence_sessions","user_activity","notification_preferences","notifications","notification_targets","announcement_recipients"}){
+  foreach(var table in new[]{"user_saved_views","project_resume","saved_account_sessions","user_presence","presence_session_activity","ended_presence_sessions","user_activity","user_activity_daily","notification_preferences","notifications","notification_targets","announcement_recipients"}){
    using var exists=Command(c,"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$table",("$table",table));exists.Transaction=tx;
    if(Convert.ToInt32(exists.ExecuteScalar())==0)continue;
    using var clear=Command(c,$"DELETE FROM {table} WHERE user_id=$id",("$id",id));clear.Transaction=tx;clear.ExecuteNonQuery();

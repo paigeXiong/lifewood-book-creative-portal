@@ -1,0 +1,53 @@
+/* Shared by both portals. Individual scale preserves positioning transforms. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(dialog, [popover]) {
+    opacity: 0;
+    scale: .975;
+    transition: opacity 140ms ease-in, scale 140ms ease-in,
+      display 140ms allow-discrete, overlay 140ms allow-discrete;
+  }
+
+  :where(dialog[open], [popover]:popover-open) {
+    opacity: 1;
+    scale: 1;
+    transition: opacity 200ms ease-out, scale 200ms cubic-bezier(.22, 1, .36, 1),
+      display 200ms allow-discrete, overlay 200ms allow-discrete;
+  }
+
+  :where([popover]) { transform-origin: top center; scale: .985; }
+  :where([popover]:popover-open) { scale: 1; transition-duration: 160ms; }
+  :where(dialog:not([open]), [popover]:not(:popover-open)) { pointer-events: none; }
+
+  dialog::backdrop {
+    opacity: 0;
+    transition: opacity 140ms ease-in, display 140ms allow-discrete, overlay 140ms allow-discrete;
+  }
+  dialog[open]::backdrop { opacity: 1; transition-duration: 200ms; }
+
+  @starting-style {
+    :where(dialog[open]) { opacity: 0; scale: .975; }
+    :where([popover]:popover-open) { opacity: 0; scale: .985; }
+    dialog[open]::backdrop { opacity: 0; }
+  }
+
+  /* React-mounted panels use an entrance animation; no delayed business actions. */
+  :where([role="dialog"][aria-modal="true"], [role="alertdialog"]):not(dialog):not([popover]) {
+    animation: lw-overlay-enter 200ms cubic-bezier(.22, 1, .36, 1);
+  }
+  :where(.portal-account-menu) {
+    transform-origin: top right;
+    animation: lw-overlay-enter 160ms cubic-bezier(.22, 1, .36, 1);
+  }
+  :where(.modal-backdrop, .password-backdrop, .avatar-editor-backdrop) {
+    animation: lw-overlay-shade 180ms ease-out;
+  }
+}
+
+@keyframes lw-overlay-enter {
+  from { opacity: 0; scale: .975; }
+  to { opacity: 1; scale: 1; }
+}
+@keyframes lw-overlay-shade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

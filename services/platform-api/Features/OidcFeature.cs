@@ -18,7 +18,7 @@ internal static class OidcFeature
     private const string BrowserCookie="lw_oidc_start";
     public static void Register(IServiceCollection services,string connection,Func<HttpContext,CurrentUserDto,int,Task<bool>> signIn) {
         services.AddSingleton(sp=>{var store=new OidcStore(connection,sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>());store.Initialize();return store;});
-        services.AddHttpClient("oidc",client=>{client.Timeout=TimeSpan.FromSeconds(20);client.MaxResponseContentBufferSize=1024*1024;}).ConfigurePrimaryHttpMessageHandler(OidcBackchannel.Handler);
+        services.AddHttpClient("oidc",client=>{client.Timeout=TimeSpan.FromSeconds(20);client.MaxResponseContentBufferSize=1024*1024;}).ConfigurePrimaryHttpMessageHandler(sp=>new OutboundProxyHandler(sp.GetRequiredService<OutboundProxyStore>(),true));
         services.AddAuthentication().AddOpenIdConnect(Scheme,_=>{});
         services.AddSingleton<IAuthenticationSchemeProvider,OidcSchemes>();
         services.AddSingleton<IConfigureOptions<OpenIdConnectOptions>>(sp=>new OidcNamedOptions((id,options)=>{
@@ -28,7 +28,7 @@ internal static class OidcFeature
             options.Authority=config.Issuer.Length>0?config.Issuer:"https://disabled.invalid";
             options.CallbackPath=CallbackFor(id);options.ResponseType="code";options.ResponseMode="query";options.UsePkce=true;options.RequireHttpsMetadata=true;
             options.Scope.Clear();options.Scope.Add("openid");options.SaveTokens=false;options.MapInboundClaims=false;options.GetClaimsFromUserInfoEndpoint=false;
-            options.Backchannel=http.CreateClient("oidc"); options.PushedAuthorizationBehavior=PushedAuthorizationBehavior.Disable;
+            options.Backchannel=ProxyScopeHandler.Wrap(http.CreateClient("oidc"),"oidc:"+id); options.PushedAuthorizationBehavior=PushedAuthorizationBehavior.Disable;
             options.CorrelationCookie.SameSite=SameSiteMode.Lax;options.CorrelationCookie.SecurePolicy=CookieSecurePolicy.SameAsRequest;
             options.NonceCookie.SameSite=SameSiteMode.Lax;options.NonceCookie.SecurePolicy=CookieSecurePolicy.SameAsRequest;
             options.RemoteAuthenticationTimeout=TimeSpan.FromMinutes(10);
@@ -85,7 +85,7 @@ internal static class OidcFeature
         });
         group.MapPost("/admin/settings/oidc/test",async (SaveOidcConfiguration input,HttpContext c,IHttpClientFactory http)=>{
             if(!Owner(currentUser(c)))return Results.Forbid();if(!OidcBackchannel.Valid(input))return Error(c,400,"invalid");
-            try{await OidcBackchannel.Test(http.CreateClient("oidc"),input.Issuer,c.RequestAborted);return Results.NoContent();}catch{return Error(c,400,"connection");}
+            try{using var client=ProxyScopeHandler.Wrap(http.CreateClient("oidc"),"oidc:"+input.Id);await OidcBackchannel.Test(client,input.Issuer,c.RequestAborted);return Results.NoContent();}catch{return Error(c,400,"connection");}
         }).RequireRateLimiting("authentication");
         group.MapGet("/auth/oidc/providers",(OidcStore store)=>Results.Ok(new OidcProviders(store.List().Where(config=>config.Enabled).Select(config=>new OidcProvider(config.NameZh,config.NameEn,config.Id)).ToArray())));
         group.MapGet("/me/oidc",(HttpContext c,OidcStore store)=>{
@@ -124,7 +124,7 @@ internal static class OidcFeature
         var store=c.RequestServices.GetRequiredService<OidcStore>();var previous=store.Get(input.Id);
         if(requireExisting&&previous.Public.Version==0)return Error(c,409,"conflict");
         var secret=input.Secret??(previous.Public.Issuer==input.Issuer&&previous.Public.ClientId==input.ClientId?previous.Secret:"");
-        if(input.Enabled){try{await OidcBackchannel.Test(c.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient("oidc"),input.Issuer,c.RequestAborted);}catch{return Error(c,400,"connection");}}
+        if(input.Enabled){try{using var client=ProxyScopeHandler.Wrap(c.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient("oidc"),"oidc:"+input.Id);await OidcBackchannel.Test(client,input.Issuer,c.RequestAborted);}catch{return Error(c,400,"connection");}}
         try{if(!store.Save(input,secret))return Error(c,409,"conflict");}catch(OidcDuplicateProviderException){return Error(c,409,"duplicate");}
         ((OidcSchemes)c.RequestServices.GetRequiredService<IAuthenticationSchemeProvider>()).Refresh();
         c.RequestServices.GetRequiredService<IOptionsMonitorCache<OpenIdConnectOptions>>().TryRemove(SchemeFor(input.Id));

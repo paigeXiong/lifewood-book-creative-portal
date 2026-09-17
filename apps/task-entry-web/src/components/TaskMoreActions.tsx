@@ -27,7 +27,7 @@ export function TaskMoreActions({ label, children }: PropsWithChildren<{ label: 
     </button>
     <div ref={panel} id={id} className="task-more-popover" popover="auto" role="dialog" aria-label={label} onToggle={event => setOpen(event.newState === "open")} onClick={event => {
       const button = (event.target as Element).closest('button');
-      if (button && !button.disabled) panel.current?.hidePopover?.();
+      if (button && !button.disabled && !button.hasAttribute("popovertarget")) panel.current?.hidePopover?.();
     }}>{children}</div>
   </>;
 }
