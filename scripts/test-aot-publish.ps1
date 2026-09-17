@@ -104,7 +104,7 @@ try {
             }
         }
         $verifyTemplate = $templates | Where-Object { $_.kind -eq "verify" }
-        $expectedSubject = if ($mailLocale -eq "zh-CN") { "验证邮箱" } else { "Verify your email" }
+        $expectedSubject = if ($mailLocale -eq "zh-CN") { (-join ([char[]](0x9A8C, 0x8BC1, 0x90AE, 0x7BB1))) } else { "Verify your email" }
         if ($verifyTemplate.subject -ne $expectedSubject -or $verifyTemplate.body.text -notmatch 'preview-only') { throw "AOT localized mail template content was invalid." }
     }
     $binding = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/me/oidc" -WebSession $session
