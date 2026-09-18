@@ -22,23 +22,23 @@ test('settings selection slides across routes and respects reduced motion',async
  const auth=await postAuthentication(page.request, status.requiresBootstrap?'/api/auth/bootstrap':'/api/auth/login',{headers:{'X-CSRF-TOKEN':await csrf()},data:status.requiresBootstrap?{displayName:'E2E Owner',email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',organizationName:'E2E'}:{email:'owner.e2e@lifewood.test',password:'E2E-owner-password-2026',rememberMe:false}});expect(auth.ok()).toBeTruthy();
  for(const locale of ['zh-CN','en-US']){
   await page.setViewportSize({width:1366,height:900});await gotoInAccountLocale(page, `/${locale}/settings/files`);
-  const nav=page.locator('.settings-tabs');await expect(nav.locator('a')).toHaveCount(11);
-  await expect(nav.locator('a[href$="/oidc"]')).toBeVisible();
-  await expect(nav.locator('a[href$="/mail"]')).toBeVisible();
+  const nav=page.locator('.settings-tabs');await expect(nav.locator('a')).toHaveCount(4);
+  await expect(page.locator('.settings-groups a[href$="/oidc"]')).toBeVisible();
+  await expect(page.locator('.settings-groups a[href$="/mail"]')).toBeVisible();
   await nav.locator('a[href$="/characters"]').click();await expect(page).toHaveURL(/settings\/characters$/);
   await expect.poll(()=>page.evaluate(()=>(window as any).selectionFrames.length)).toBeGreaterThan(0);
   const frames=await page.evaluate(()=>(window as any).selectionFrames.at(-1));
   expect(frames[0].transform).not.toBe(frames.at(-1).transform);
-  await nav.locator('a[href$="/backups"]').click();await nav.locator('a[href$="/runtime"]').click();
+  await page.locator('.settings-groups a[href$="/runtime"]').click();await nav.locator('a[href$="/backups"]').click();await nav.locator('a[href$="/runtime"]').click();
   await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('href',new RegExp('/runtime$'));
-  await nav.locator('a[href$="/voices"]').focus();await page.keyboard.press('Enter');await expect(page).toHaveURL(/settings\/voices$/);
-  await page.setViewportSize({width:390,height:844});await nav.locator('a[href$="/backups"]').click();
+  await page.locator('.settings-groups a[href$="/options"]').click();await nav.locator('a[href$="/voices"]').focus();await page.keyboard.press('Enter');await expect(page).toHaveURL(/settings\/voices$/);
+  await page.setViewportSize({width:390,height:844});await page.locator('.settings-groups a[href$="/runtime"]').click();await nav.locator('a[href$="/backups"]').click();
   await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('href',new RegExp('/backups$'));
   await expect.poll(()=>nav.evaluate(n=>{const a=n.querySelector('[aria-current="page"]')!.getBoundingClientRect(),b=n.getBoundingClientRect();return a.left>=b.left-1&&a.right<=b.right+1;})).toBeTruthy();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
   await page.screenshot({path:`artifacts/settings-motion-mobile-${locale}.png`});
  }
  await page.emulateMedia({reducedMotion:'reduce'});await page.reload();
- await page.locator('.settings-tabs a[href$="/notifications"]').click();await expect(page).toHaveURL(/settings\/notifications$/);
+ await page.locator('.settings-groups a[href$="/mail"]').click();await page.locator('.settings-tabs a[href$="/notifications"]').click();await expect(page).toHaveURL(/settings\/notifications$/);
  expect(await page.evaluate(()=>(window as any).selectionFrames.length)).toBe(0);
 });

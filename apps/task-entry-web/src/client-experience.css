@@ -331,3 +331,7 @@ html { scrollbar-gutter: stable; }
 
 .portal-nav-indicator[data-animate="true"] { transition: transform .22s ease-out, width .22s ease-out; }
 @media (prefers-reduced-motion: reduce) { .portal-nav-indicator[data-animate="true"] { transition: none; } }
+
+@media (max-width: 980px) {
+  .portal-primary-nav { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+}
