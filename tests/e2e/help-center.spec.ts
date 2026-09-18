@@ -7,7 +7,7 @@ test("guests can open customer help from login but cannot read admin guides", as
   for (const locale of ["zh-CN", "en-US"]) {
     await page.goto(`http://127.0.0.1:5193/${locale}/login`);
     await page.getByRole("link", { name: locale === "zh-CN" ? "帮助中心" : "Help center", exact: true }).click();
-    await expect(page.locator(".help-card")).toHaveCount(12);
+    await expect(page.locator(".help-card")).toHaveCount(13);
     await expect(page.locator(".help-audiences")).toHaveCount(0);
     await page.locator(".help-search input").fill(locale === "zh-CN" ? "未验证邮箱" : "unverified");
     await page.locator('.help-search button[type="submit"]').click();
@@ -38,7 +38,7 @@ test("help audiences, full-text search, linked articles and screenshots work in 
   for (const locale of ["zh-CN", "en-US"]) {
     await page.setViewportSize({ width: 1366, height: 900 });
     await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/help`);
-    await expect(page.locator(".help-card")).toHaveCount(12);
+    await expect(page.locator(".help-card")).toHaveCount(13);
     let releaseSwitch!: () => void;
     const switchGate = new Promise<void>(resolve => { releaseSwitch = resolve; });
     const delayedHelp = async (route: import("@playwright/test").Route) => {
@@ -50,14 +50,14 @@ test("help audiences, full-text search, linked articles and screenshots work in 
       await page.locator(".help-audiences button").nth(1).click();
       await expect(page.locator(".help-results")).toHaveAttribute("aria-busy", "true");
       await expect(page.locator(".help-results")).toHaveAttribute("inert", "");
-      await expect(page.locator(".help-card")).toHaveCount(12);
+      await expect(page.locator(".help-card")).toHaveCount(13);
     } finally { releaseSwitch(); }
-    await expect(page.locator(".help-card")).toHaveCount(14);
+    await expect(page.locator(".help-card")).toHaveCount(18);
     await expect(page.locator(".help-results")).not.toHaveAttribute("inert", "");
     await page.unroute("**/api/help?*", delayedHelp);
 
     await gotoInAccountLocale(page, `http://127.0.0.1:5194/${locale}/help?audience=admin`);
-    await expect(page.locator(".help-card")).toHaveCount(14);
+    await expect(page.locator(".help-card")).toHaveCount(18);
     await page.locator(".function-search-trigger").click();
     await page.locator(".function-search-dialog input").fill(locale === "zh-CN" ? "注册" : "registration");
     await expect(page.locator(`.function-search-results a[href="/${locale}/users"]`)).toBeVisible();
@@ -74,7 +74,7 @@ test("help audiences, full-text search, linked articles and screenshots work in 
     await page.locator('.help-card[href*="article=mail-service"]').click();
     await expect(page.locator(".help-article h1")).toContainText(locale === "zh-CN" ? "配置邮件" : "Configuring email");
     await page.reload();
-    await expect(page.locator(".help-article li")).toHaveCount(4);
+    await expect(page.locator(".help-article li")).toHaveCount(5);
     await page.locator(".help-article summary").first().click();
     await expect(page.locator(".help-article details[open]")).toHaveCount(1);
     await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/help?article=intake`);
@@ -91,7 +91,7 @@ test("help audiences, full-text search, linked articles and screenshots work in 
     await page.goto(`http://127.0.0.1:5193/${locale}/help?q=unmatched-zzzz`);
     await expect(page.locator(".help-empty")).toBeVisible();
     await page.locator(".help-empty button").click();
-    await expect(page.locator(".help-card")).toHaveCount(12);
+    await expect(page.locator(".help-card")).toHaveCount(13);
   }
   const owner = await (await page.request.get("/api/me")).json();
   const email = `help-${Date.now()}@lifewood.test`, password = "Help-fixture-password-2026";

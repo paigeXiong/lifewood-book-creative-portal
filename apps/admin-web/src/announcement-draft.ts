@@ -1,6 +1,6 @@
 import type { AnnouncementInput } from "@lifewood/domain";
 
-export type NoticeEditor = { id: string; flowId: string; userId: string; listSearch?: string; saveConflict?: boolean; content: AnnouncementInput; organizations: Record<string,string> };
+export type NoticeEditor = { scheduleAfterSave?: boolean; id: string; flowId: string; userId: string; listSearch?: string; saveConflict?: boolean; content: AnnouncementInput; organizations: Record<string,string> };
 type Selection = { ids: string[]; names: Record<string,string> };
 const closed = new Set<string>();
 const drafts = new Map<string,NoticeEditor>();
@@ -23,7 +23,7 @@ export function readNoticeDraft(state: unknown, userId: string, restore = true):
   if(!record(state)||!record(state.announcementEditor))return;
   const draft=state.announcementEditor,content=draft.content;
   if(draft.userId!==userId || typeof draft.id!=="string" || !/^[a-zA-Z0-9-]{1,64}$/.test(draft.id) || typeof draft.flowId!=="string" || !/^[a-zA-Z0-9-]{1,64}$/.test(draft.flowId) || !names(draft.organizations) || !record(content))return;
-  if(!["login","personal"].includes(String(content.placement)) || !["all","specified"].includes(String(content.audience)) || !ids(content.organizationIds) || !Array.isArray(content.languages) || !content.languages.every(value=>value==="zh-CN"||value==="en-US") || !Number.isSafeInteger(content.version) || Number(content.version)<0)return;
+  if(!["login","personal","banner"].includes(String(content.placement)) || !["all","specified"].includes(String(content.audience)) || !ids(content.organizationIds) || !Array.isArray(content.languages) || !content.languages.every(value=>value==="zh-CN"||value==="en-US") || !Number.isSafeInteger(content.version) || Number(content.version)<0)return;
   if(["title","body","titleZh","bodyZh","titleEn","bodyEn"].some(field=>content[field]!=null && typeof content[field]!=="string"))return;
   const editor=draft as unknown as NoticeEditor;
   if(closed.has(key(editor)))return;

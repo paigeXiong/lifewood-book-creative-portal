@@ -148,3 +148,21 @@ npm run test --workspace @lifewood/task-entry-web -- src/email.test.tsx src/emai
 结果：2 条双语 HTTP 综合用例及 44 项前端邮件/偏好恢复检查通过。前端用例包含打开链接不自动提交、移除地址栏令牌、替换链接隔离旧结果、断网与失败恢复。该结果为自动化隔离验证，不等同于真实浏览器访问正式域名、生产代理或第三方邮箱服务全流程验收。
 
 English: Isolated Chinese/English HTTP workflows passed verification, single-use links, notification opt-in/opt-out, password reset, revoked sessions, login after restart and persisted security-mail delivery to an in-memory mailbox. Two integrated server cases and 44 frontend checks passed. No live accounts or additional SMTP deliveries were used. Production-domain end-to-end acceptance remains pending.
+
+## 邮件模板编辑 / Template editing
+
+负责人从邮件服务进入独立邮件模板页。预览未保存内容不会写入配置、加入队列或发送邮件；正式渲染与预览共用模板和 HTML 转义，正文保留换行。仅业务通知允许按语言停用。修改、恢复默认和手动测试记录在既有操作审计中；审计不保存授权码、验证链接或整段邮件正文。
+
+Owners can open the dedicated template editor from Email service. Unsaved previews do not persist, queue or send messages. Preview and delivery share escaped rendering and preserve line breaks. Only business notices can be disabled per language. Updates, restores and manually requested tests enter the audit log, without credentials, verification links or complete message bodies.
+
+## 发送额度 / Sending quotas
+
+邮件服务配置支持每分钟及滚动 24 小时上限，默认 10/200，允许范围分别为 1–1000、1–100000。额度统计所有 SMTP 尝试，包括验证、安全提醒、通知、服务测试、模板测试及失败尝试；界面刷新可查看已用额度与预计恢复时间。达到额度的队列邮件保持待发送，不消耗失败重试次数。验证链接仍按原有效期过期，不会延长或发送过期链接。
+
+计数保存在数据目录的 mail-rate.db；重启、修改额度或更换发件配置不会清零。共用同一数据目录的实例通过 SQLite 事务共用额度；不同数据目录的独立部署不共享。备份和迁移时需保留该文件。默认值是平台初始限制，不是邮件服务商的额度或不封号承诺。
+
+The mail configuration exposes rolling 1-minute and 24-hour quotas, defaulting to 10 and 200 with allowed ranges of 1–1000 and 1–100000. All SMTP attempts consume quota, including security messages, tests and failures. Queue deferrals do not consume retries; expired links remain expired. Refresh the mail page for usage and estimated resumption.
+
+Counters persist in mail-rate.db and survive restarts and configuration changes. Instances sharing the data directory coordinate through SQLite; independent data directories do not share quota. Include the file in backups and migrations. Defaults are platform limits, not provider allowances or guarantees.
+
+额度用尽期间，邮件页每15秒刷新；服务未启用时不显示会恢复发送的提示。操作审计记录额度和启停的前后值，不记录SMTP授权码和账户配置。 / While quota is exhausted, the mail page refreshes every 15 seconds. Disabled service does not imply automatic resumption. Audit details contain quota and enabled-state changes, without SMTP credentials or account configuration.

@@ -36,7 +36,8 @@ for (const locale of ["zh-CN", "en-US"] as const) {
     await mount(locale);
     expect(host.querySelector<HTMLInputElement>('#mail-password')!.value).toBe("");
     expect(host.querySelector<HTMLInputElement>('#mail-password')!.placeholder).toBe("Saved");
-    expect(host.querySelectorAll('[popover="auto"]').length).toBe(5);
+    expect(host.querySelectorAll('[popover="auto"]').length).toBe(6);
+    expect(host.querySelectorAll('input[type="number"]')).toHaveLength(3);
     expect(mailSettingsService.test).not.toHaveBeenCalled();
   });
   it(`requires explicit test confirmation and uses the saved revision (${locale})`, async () => {

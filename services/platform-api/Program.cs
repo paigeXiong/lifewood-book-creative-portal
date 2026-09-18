@@ -259,6 +259,7 @@ builder.Services.AddSingleton(service => {
 builder.Services.AddHostedService<EmailWorker>();
 builder.Services.AddSingleton<BackupGate>();
 builder.Services.AddHostedService<NotificationWorker>();
+builder.Services.AddHostedService<AnnouncementWorker>();
 var characterPresets = new CharacterPresetRepository(databaseConnection);
 builder.Services.AddSingleton(characterPresets);
 var voiceReferences = new VoiceReferenceRepository(databaseConnection);
@@ -456,7 +457,7 @@ app.Use(async (context, next) =>
         return;
     }
 
-    var configChange = action.TargetType == "form_option" || action.TargetType == "notification" && action.ActionId == "notification.config";
+    var configChange = action.TargetType == "mail_settings" || action.TargetType == "mail_template" || action.TargetType == "form_option" || action.TargetType == "notification" && action.ActionId == "notification.config";
     if (configChange) await auditEvents.ConfigurationGate.WaitAsync(context.RequestAborted);
     AuditSnapshot? before = null;
     var responseBody = context.Response.Body;
@@ -476,13 +477,24 @@ app.Use(async (context, next) =>
             catch (JsonException) { }
             finally { context.Request.Body.Position = 0; }
         }
-        before = auditEvents.Capture(action);
+        if(action.TargetType == "mail_template") {
+            action = action with { TargetId = action.TargetId + "/" + context.Request.Query["locale"] };
+            if(context.Request.Method == "PUT" && actor.Roles.Contains("owner")) {
+                context.Request.EnableBuffering();
+                try {
+                    using var body = await JsonDocument.ParseAsync(context.Request.Body,cancellationToken:context.RequestAborted);
+                    if(body.RootElement.TryGetProperty("reset",out var reset) && reset.ValueKind == JsonValueKind.True)
+                        action = action with { ActionId = "mail.template_reset" };
+                } catch(JsonException) {} finally {context.Request.Body.Position=0;}
+            }
+        }
+        before = action.TargetType=="mail_settings" ? context.RequestServices.GetRequiredService<MailSettingsStore>().AuditSnapshot() : auditEvents.Capture(action);
         await next();
         if (context.Response.StatusCode >= 200 && context.Response.StatusCode < 300)
         {
             if (context.Items.TryGetValue(AuditActionCatalog.TargetIdItemKey, out var targetId) && targetId is string value)
                 action = action with { TargetId = value };
-            try { auditEvents.Record(actor, action, context.TraceIdentifier, before); }
+            try { auditEvents.Record(actor, action, context.TraceIdentifier, before, action.TargetType=="mail_settings" ? context.RequestServices.GetRequiredService<MailSettingsStore>().AuditSnapshot() : null); }
             catch (Exception exception)
             {
                 app.Logger.LogCritical(exception, "Failed to persist audit event {RequestId}; the business operation may already be committed and will not be acknowledged as successful.", context.TraceIdentifier);
@@ -706,6 +718,10 @@ api.MapGet("/announcements", (HttpContext context, AnnouncementRepository notice
     context.Response.Headers.CacheControl="no-store";
     var user=CurrentUser(context); return user is null ? Results.Unauthorized() : Results.Ok(notices.Feed(user.Id,Locale(context),before,unread));
 });
+api.MapGet("/announcements/banner", (HttpContext context, AnnouncementRepository notices) => {
+    context.Response.Headers.CacheControl="no-store";
+    var user=CurrentUser(context); return user is null ? Results.Unauthorized() : Results.Ok(notices.Feed(user.Id,Locale(context),null,true,true));
+});
 api.MapPost("/announcements/dismiss", (DismissAnnouncementsRequest? request,HttpContext context,AnnouncementRepository notices) => {
     var user=CurrentUser(context);if(user is null)return Results.Unauthorized();
     return notices.DismissMany(user.Id,request?.Ids)?Results.NoContent():Results.BadRequest();
@@ -736,23 +752,35 @@ api.MapGet("/admin/notifications/logs",(HttpContext c,NotificationRepository n,l
 api.MapPost("/admin/notifications/retry/{id:long}",(long id,HttpContext c,NotificationRepository n)=>CurrentUser(c) is {} u&&u.Roles.Contains("owner")?(n.Retry(id)?Results.NoContent():Results.Conflict()):Results.StatusCode(403));
 
 api.MapGet("/admin/announcements", (HttpContext context,AnnouncementRepository notices,long? before,string? search,string? status,string? placement) => {
-    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);return user is null?Results.Unauthorized():!Can(user,"admin.config.manage")?Results.Forbid():status is not (null or "" or "draft" or "published" or "withdrawn") || placement is not (null or "" or "login" or "personal") ? Results.BadRequest() : Results.Ok(notices.List(before,search,status,placement));
+    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);return user is null?Results.Unauthorized():!Can(user,"admin.announcements.manage")?Results.Forbid():status is not (null or "" or "draft" or "published" or "withdrawn" or "scheduled") || placement is not (null or "" or "login" or "personal" or "banner") ? Results.BadRequest() : Results.Ok(notices.List(before,search,status,placement));
 });
 api.MapGet("/admin/announcements/{id}/preview", (string id,long version,HttpContext context,AnnouncementRepository notices) => {
-    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();
     var error=notices.Preview(id,version,out var preview);return error is null?Results.Ok(preview):Error(context,error=="missing"?404:409,"announcement."+error,"announcements.conflict","Announcement changed or was removed.",false);
 });
 api.MapDelete("/admin/announcements/{id}", (string id,long version,HttpContext context,AnnouncementRepository notices) => {
-    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();
     var error=notices.DeleteDraft(id,version);return error is null?Results.NoContent():Error(context,error=="missing"?404:409,"announcement."+error,"announcements.conflict","Announcement changed or cannot be deleted.",false);
 });
 api.MapPut("/admin/announcements/{id}", (string id,AnnouncementInput? input,HttpContext context,AnnouncementRepository notices) => {
-    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();
     if(!Guid.TryParseExact(id,"N",out _))return Results.BadRequest();
     var error=notices.Save(id,input,out var saved);return error is null?Results.Ok(saved):Error(context,error=="conflict"?409:400,"announcement."+error,error=="conflict"?"announcements.conflict":"announcements.invalid","Invalid announcement or stale version.",false);
 });
+api.MapGet("/admin/announcements/jobs", (HttpContext context,AnnouncementRepository notices,int page=1) => {
+    var user=CurrentUser(context);context.Response.Headers.CacheControl="no-store";
+    return user is null?Results.Unauthorized():!Can(user,"admin.announcements.manage")?Results.Forbid():Results.Ok(notices.Jobs(page,Locale(context)));
+});
+api.MapPost("/admin/announcements/{id}/schedule", (string id,ScheduleAnnouncementRequest input,HttpContext context,AnnouncementRepository notices) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();
+    var error=notices.Schedule(id,input,out var saved);return error is null?Results.Ok(saved):Error(context,error=="conflict"?409:error=="missing"?404:400,"announcement."+error,error=="conflict"?"announcements.conflict":"announcements.invalid","Invalid schedule or stale version.",false);
+});
+api.MapPost("/admin/announcements/{id}/cancel-schedule", (string id,AnnouncementVersion input,HttpContext context,AnnouncementRepository notices) => {
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();
+    var error=notices.CancelSchedule(id,input.Version,out var saved);return error is null?Results.Ok(saved):Error(context,error=="conflict"?409:404,"announcement."+error,"announcements.conflict","Schedule changed.",false);
+});
 api.MapPost("/admin/announcements/{id}/{action}", (string id,string action,AnnouncementVersion input,HttpContext context,AnnouncementRepository notices) => {
-    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.config.manage"))return Results.Forbid();
+    var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();
     if(action is not ("publish" or "withdraw"))return Results.NotFound();
     var error=notices.Transition(id,input.Version,action=="publish",out var saved);return error is null?Results.Ok(saved):Error(context,error=="conflict"?409:error=="missing"?404:400,"announcement."+error,error=="conflict"?"announcements.conflict":"announcements.invalid","Invalid announcement or stale version.",false);
 });
@@ -1639,12 +1667,14 @@ api.MapGet("/admin/projects/{id}/submission-snapshot", (string id, HttpContext c
         : Results.Ok(snapshot);
 });
 
-api.MapGet("/admin/organizations", (HttpContext context, AdminRepository admin, string? search, int page = 1, int pageSize = 20) =>
+api.MapGet("/admin/organizations", (HttpContext context, AdminRepository admin, string? search, string? purpose, int page = 1, int pageSize = 20) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
-    if (!Can(user, "admin.users.manage")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
-    return Results.Ok(admin.ListOrganizations(search, Math.Max(1, page), Math.Clamp(pageSize, 1, 100)));
+    if (!Can(user, "admin.users.manage") && !(purpose == "announcement" && Can(user, "admin.announcements.manage"))) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Administrator permission is required.", false);
+    var result = admin.ListOrganizations(search, Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
+    context.Response.Headers.CacheControl="no-store";
+    return Results.Ok(result);
 });
 
 api.MapGet("/admin/organizations/{id}/avatar", (string id, HttpContext context, AdminRepository admin) =>

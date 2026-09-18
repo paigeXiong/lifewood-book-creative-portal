@@ -83,7 +83,7 @@
     "path": "/settings/mail",
     "title": "邮件服务与发送状态",
     "category": "系统配置 / 消息通知",
-    "keywords": "邮箱 邮件 smtp 授权码 发信 通知 email mail smtp notification",
+    "keywords": "邮箱 邮件 smtp 授权码 发信 通知 email mail smtp notification 限速 额度 频率 发件上限 rate limit quota throttle sending cap",
     "permissions": [
       "admin.config.manage"
     ],
@@ -100,12 +100,12 @@
     "owner": false
   },
   {
-    "path": "/settings/announcements",
+    "path": "/announcements",
     "title": "公告管理",
-    "category": "系统配置 / 消息通知",
+    "category": "项目运营",
     "keywords": "公告 发布 announcement publish",
     "permissions": [
-      "admin.config.manage"
+      "admin.announcements.manage"
     ],
     "owner": false
   },
@@ -197,6 +197,24 @@
     "category": "消息",
     "keywords": "通知 消息 未读 notification message unread",
     "permissions": [],
+    "owner": false
+  },
+  {
+    "path": "/settings/mail/templates",
+    "title": "邮件模板 · 编辑与预览",
+    "category": "消息通知 / 邮件服务",
+    "keywords": "邮件 模板 主题 正文 预览 停用 启用 恢复默认 email template subject body preview disable enable restore",
+    "permissions": [],
+    "owner": true
+  },
+  {
+    "path": "/automation",
+    "title": "定时任务",
+    "category": "项目运营",
+    "keywords": "定时 自动化 预约 备份 schedule automation backup announcement",
+    "permissions": [
+      "admin.announcements.manage"
+    ],
     "owner": false
   }
 ]

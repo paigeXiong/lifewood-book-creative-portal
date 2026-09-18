@@ -31,6 +31,13 @@ internal static class AuditTargets
         var id = action.TargetId ?? "";
         switch (action.TargetType)
         {
+            case "mail_template":
+                var templateParts=id.Split('/');
+                if(templateParts.Length!=2 || !MailTemplateStore.Valid(templateParts[0],templateParts[1]))return null;
+                var template=new MailTemplateStore(connectionString).Preview(templateParts[1]).Single(t=>t.Kind==templateParts[0]);
+                var templatePath="settings/mail/templates?kind="+templateParts[0]+"&language="+templateParts[1];
+                return new("邮件模板 · "+MailTemplates.Preview("zh-CN").Single(t=>t.Kind==templateParts[0]).Subject+" · "+templateParts[1],"Email template · "+MailTemplates.Preview("en-US").Single(t=>t.Kind==templateParts[0]).Subject+" · "+templateParts[1],templatePath,
+                    new() {["enabled"]=template.Enabled?"true":"false",["subject"]=template.Subject});
             case "mail_settings": return new("邮件服务", "Email service", "settings/mail");
             case "proxy_settings": return new("出站代理", "Outbound proxy", "settings/runtime");
             case "project":
@@ -70,7 +77,7 @@ internal static class AuditTargets
             case "file_category": return new("文件类别", "File category", "settings/files");
             case "character_preset": return new("预设角色", "Character preset", "settings/characters");
             case "voice": return new("参考音色", "Voice reference", "settings/voices");
-            case "announcement": return new("公告", "Announcement", "settings/announcements");
+            case "announcement": return new("公告", "Announcement", "announcements");
             default: return null;
         }
         try

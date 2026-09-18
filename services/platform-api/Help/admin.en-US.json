@@ -6,7 +6,7 @@
     "summary": "Handle projects and manage the platform according to role.",
     "steps": [
       "Use the Admin center entry in the customer portal. Menus follow permissions; a missing entry is not necessarily a fault.",
-      "The owner handles privileged configuration; administrators manage business and accounts; operators handle assigned projects. Available actions follow current permissions.",
+      "The owner handles privileged configuration; administrators manage business and accounts. Operators handle assigned projects and can also manage announcements and scheduled publication. Backup scheduling and runtime administration require owner permissions.",
       "Administrators can switch between customer and administration documentation here. Reading a guide does not grant the permissions it describes."
     ],
     "faq": [
@@ -103,7 +103,8 @@
       "As platform owner, open Email service under the Messaging settings group, then Configure email.",
       "Enter the SMTP host, STARTTLS port, sender, username, app credential and customer portal domain. Implicit TLS on port 465 is not supported; production domains should use HTTPS.",
       "Save and enable the service, then choose Send test email and confirm the recipient. The test targets the configured sender itself; inspect inbox and spam folders afterwards.",
-      "A blank credential normally keeps the existing value. When changing host, port or username, follow the prompt to replace or clear credentials. Never include them in feedback, screenshots or chat."
+      "A blank credential normally keeps the existing value. When changing host, port or username, follow the prompt to replace or clear credentials. Never include them in feedback, screenshots or chat.",
+      "Configure rolling minute and 24-hour limits (defaults 10/200). Tests and failed attempts also count; restarts or sender changes do not reset usage. Limited messages stay queued and the page refreshes every 15 seconds while showing estimated resumption. Expired links are not replayed. The audit log shows quota values before and after changes."
     ],
     "faq": [
       {
@@ -113,6 +114,10 @@
       {
         "question": "Can a local portal domain be used in production?",
         "answer": "It cannot provide publicly accessible customer links. Configure the real public HTTPS domain and test verification and recovery links at deployment."
+      },
+      {
+        "question": "Why can sending fail below the quota?",
+        "answer": "Platform quotas are local limits, not provider allowances. Inspect failure categories, credentials, connectivity and provider restrictions. Avoid repeated test sends."
       }
     ],
     "image": null,
@@ -187,7 +192,7 @@
     "title": "Announcements, notifications and feedback",
     "summary": "Publish announcements and answer feedback through notifications.",
     "steps": [
-      "Save announcements as drafts, review audience and bilingual content, then publish. Use unpublish when an announcement should no longer be shown.",
+      "Create and publish notices under Project operations → Announcements. See Creating announcements and choosing placement for audience and dismissal behavior, and Creating and managing scheduled announcements for scheduling.",
       "In Platform feedback, search for the issue, open details and inspect the screenshot, then choose a state and write a reply.",
       "Customers read saved replies in notifications. Changing only the state does not send a reply notification; read back details if saving has an uncertain outcome."
     ],
@@ -273,6 +278,109 @@
       {
         "question": "Does marking a notification read complete the task?",
         "answer": "No. Reading and business completion are separate. A revision request requires its actual action, such as resubmission, to be completed."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "mail-templates",
+    "category": "Sign-in and notifications",
+    "title": "Editing and previewing email templates",
+    "summary": "Maintain bilingual email content on a dedicated page.",
+    "steps": [
+      "As platform owner, open Settings → Messaging → Email service → Email templates, or search for Email templates in the top bar.",
+      "Choose a type and language, then Edit template. Use Preview unsaved changes to check the subject and body without saving or sending mail. Line breaks are preserved.",
+      "Choose Save and preview to apply changes. Navigation warns only about actual unsaved edits; type and language remain in the page URL.",
+      "Only business notices can be disabled per language. Verification, reset and security messages remain enabled. Disabling blocks unsent notices; skipped notices are not replayed.",
+      "Restore defaults saves the default content and enables that language's template. A manually confirmed template test goes to the configured sender with inactive example links.",
+      "Filter the audit log by template update, restore or test actions to inspect the actor, time, template type and language."
+    ],
+    "faq": [
+      {
+        "question": "Why are button links not editable?",
+        "answer": "Links, expiry and security notes are system-generated to protect verification and password recovery."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "announcements",
+    "category": "Project operations",
+    "title": "Creating announcements and choosing placement",
+    "summary": "Configure sign-in notices, personal popups or the customer banner.",
+    "steps": [
+      "Open Project operations → Announcements, create a notice and enter its title and body. Choose Sign-in page, Personal popup or Customer banner. Save a draft, review it, then publish.",
+      "Choose the target language and organizations. Signed-in audiences are determined from eligible active accounts at actual publication. Language and organization filters both apply when set. Sign-in notices are not organization-targeted.",
+      "Content appears as entered and is not automatically translated. The interface supports Chinese and English and legacy bilingual notices remain readable; review content and audiences for each language.",
+      "Set a display duration of 1–3650 days, defaulting to 30, starting at actual publication. Accounts added later do not automatically receive previously published targeted notices.",
+      "The customer banner scrolls its title and body and supports pause, details and View all. Dismissal persists for that account across sign-ins and devices; it does not hide future notices.",
+      "Published content is locked. To correct it, withdraw the original and create or copy a new notice, which is presented to its target audience again."
+    ],
+    "faq": [
+      {
+        "question": "Why can a customer not see a notice?",
+        "answer": "Check publication status, placement, expiry, language and organization eligibility at publication, and personal dismissal. The banner shows the newest eligible undismissed notice."
+      },
+      {
+        "question": "Does the organization picker allow member management?",
+        "answer": "No. The announcement picker only selects recipients and does not grant organization or membership editing permissions."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "scheduled-announcements",
+    "category": "Project operations",
+    "title": "Creating and managing scheduled announcements",
+    "summary": "Create a notice from Scheduled tasks and track publication.",
+    "steps": [
+      "Open Project operations → Scheduled tasks and choose Create scheduled announcement. Enter the title, body, placement, audience and display duration.",
+      "Choose Save and set publication time. The draft is saved first, then the scheduling dialog opens. Select a future time in your device time zone, up to one year ahead.",
+      "Confirm to return to Scheduled tasks. Check the pending count, next run and job record. Saving only the draft or closing the scheduling dialog does not create a publication job.",
+      "For an existing draft, choose Select draft to schedule and use its Schedule publication action. Scheduled content is locked; cancel the schedule before editing or choosing a new time.",
+      "To publish early, find the scheduled notice under Announcements and publish it. Its original schedule will not publish it again. Cancelling retains the draft and cancellation record.",
+      "The running service checks due jobs. Missed jobs run after service recovery and maintenance may delay them. Actual publication determines recipients and the display period.",
+      "Review succeeded, cancelled and failed jobs under Scheduled tasks. A failed notice returns to draft; inspect content and service health before scheduling again. Refresh uncertain results before repeating publication."
+    ],
+    "faq": [
+      {
+        "question": "Why was the notice not published at the selected time?",
+        "answer": "Check that the backend service is running, the maintenance state, the selected time zone and job result. Scheduling is not a guarantee of exact-second publication. Records refresh automatically."
+      },
+      {
+        "question": "Can I repeat a notice weekly or run scripts?",
+        "answer": "Announcement schedules are one-off. Backups have separate recurring settings; this page does not provide arbitrary scripts or general workflow orchestration."
+      },
+      {
+        "question": "Will members added after scheduling receive it?",
+        "answer": "Recipients are eligible active accounts at actual publication, matching the language and organization filters, rather than a snapshot taken when drafting or scheduling."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "scheduled-backups",
+    "category": "System settings",
+    "title": "Checking scheduled backups and run records",
+    "summary": "Owners can inspect schedules, maintenance pauses and manual runs.",
+    "steps": [
+      "As platform owner, open Project operations → Scheduled tasks. Inspect the backup card for enabled, running or maintenance-paused state and the next run.",
+      "Choose Configure to open Backups. Set daily or weekly scheduling, hour, time zone and retention. Backups use their configured time zone, unlike announcement scheduling which uses the device time zone.",
+      "For an additional backup, choose Run now and confirm. This creates a manual backup without changing the recurring policy. Another run cannot start while a backup is running or maintenance has paused it.",
+      "Switch to Backup records to inspect manual, scheduled and safety backups. For failure, open the error explanation and check storage and service health. Follow the recovery guide to validate successful backups."
+    ],
+    "faq": [
+      {
+        "question": "Why do I only see announcement jobs?",
+        "answer": "Backups contain business and account data. Their card and records require the platform owner’s runtime permissions."
+      },
+      {
+        "question": "Does a dash for completion time mean failure?",
+        "answer": "No. Backup records do not currently provide that field. Use the status column to determine the result."
       }
     ],
     "image": null,

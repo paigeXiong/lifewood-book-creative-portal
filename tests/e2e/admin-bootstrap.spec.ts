@@ -30,7 +30,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
   await expect(page.getByRole("button", { name: "Create user" })).toBeVisible();
 
   await test.step("admin saves and publishes single-content notice", async () => {
-    await gotoInAccountLocale(page, "/zh-CN/settings/announcements");
+    await gotoInAccountLocale(page, "/zh-CN/announcements");
     await page.getByRole("button", { name: "新建公告", exact: true }).click();
     await page.getByRole("textbox", { name: "标题", exact: true }).fill("客户公告验收");
     await page.getByRole("textbox", { name: "正文", exact: true }).fill("仅用于独立测试环境。");
@@ -67,7 +67,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
   });
 
   await test.step("English editor keeps one content version and supports optional targeting", async () => {
-    await gotoInAccountLocale(page, "/en-US/settings/announcements");
+    await gotoInAccountLocale(page, "/en-US/announcements");
     await expect(page.getByRole("cell", { name: "Published", exact: true })).toBeVisible();
     await expect(page.getByText("客户公告验收", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "New announcement", exact: true }).click();
@@ -85,7 +85,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
     await editor.getByRole("button", { name: "Save draft", exact: true }).click();
     await expect(editor).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 720 });
-    await gotoInAccountLocale(page, "/zh-CN/settings/announcements");
+    await gotoInAccountLocale(page, "/zh-CN/announcements");
     const row = page.getByRole("row").filter({ hasText: "Single content draft" });
     await row.getByRole("button", { name: "编辑草稿", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveValue("无需同时填写翻译。 No forced split.");
@@ -163,7 +163,7 @@ test("owner can initialize the platform and navigate the localized admin shell",
       await customer.locator("#login-password").fill("E2E-owner-password-2026");
       await customer.getByRole("button", { name: "登录", exact: true }).click();
       await expect(customer).toHaveURL(/\/tasks$/);
-      const modal = customer.locator("dialog.customer-announcements");
+      const modal = customer.getByRole("dialog");
       await expect(modal).toBeVisible();
       // The dialog opens before an uncached history page has returned.
       await expect(modal.locator("article").first()).toBeAttached();

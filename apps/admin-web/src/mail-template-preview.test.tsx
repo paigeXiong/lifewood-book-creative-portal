@@ -12,14 +12,16 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 let host: HTMLDivElement, root: Root, client: QueryClient;
 const data = (locale: string): Preview[] => ["verify", "reset", "notice", "security"].map(kind => ({ kind, introduction: "Body", enabled: true, revision: "default", subject: `${locale} ${kind}`, body: { text: `${locale} plain ${kind}`, html: `<!doctype html><html><head></head><body>${locale} ${kind}</body></html>` } }));
 const settle = async () => act(async () => { await new Promise(resolve => setTimeout(resolve, 25)); });
-beforeEach(() => {
+beforeEach(async () => {
+  const {transferableAbortController}=await vi.importActual<{transferableAbortController:()=>AbortController}>("node:util");
+  vi.stubGlobal("AbortController",class {constructor(){return transferableAbortController();}});
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(mailSettingsService, "templates").mockImplementation(async locale => data(locale));
   vi.spyOn(mailSettingsService, "test").mockResolvedValue();
   vi.spyOn(mailSettingsService, "save");
 });
-afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); });
+afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 async function mount(locale: "zh-CN" | "en-US") {
   await i18n.changeLanguage(locale);
   await act(async () => root.render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([{path:"*",element:<MailTemplatePage locale={locale} allowed={true} />}],{initialEntries:[`/${locale}/settings/mail/templates`]})} /></QueryClientProvider>));
@@ -64,6 +66,12 @@ it("keeps the edit revision across refetch and guards unsaved changes", async ()
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   await mount("zh-CN"); await open();
   await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === i18n.t("mailEditor.edit"))!.click());
+  expect(host.querySelectorAll("select")[0].disabled).toBe(false);
+  await act(async () => {
+    const input=host.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,"Changed body");
+    input.dispatchEvent(new Event("input",{bubbles:true}));
+  });
   expect(host.querySelectorAll("select")[0].disabled).toBe(true);
   await act(async () => { client.setQueryData(["admin-mail-templates", "zh-CN"], data("zh-CN").map(item => ({ ...item, revision: "newer" }))); });
   await act(async () => host.querySelector<HTMLAnchorElement>(".mail-template-page-heading a")!.click());
@@ -81,4 +89,16 @@ it("retains the editor when a background refresh fails", async () => {
   await act(async () => client.refetchQueries({ queryKey: ["admin-mail-templates"] })); await settle();
   expect(host.querySelector("textarea")).toBe(input);
   expect(host.textContent).toContain(i18n.t("recovery.refreshFailed"));
+});
+
+it("previews unsaved content without saving or sending", async () => {
+  const preview=vi.spyOn(mailSettingsService,"previewTemplate").mockResolvedValue({...data("zh-CN")[0],subject:"Preview title"});
+  const save=vi.spyOn(mailSettingsService,"saveTemplate");
+  const send=vi.spyOn(mailSettingsService,"testTemplate");
+  await mount("zh-CN");await open();
+  await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent===i18n.t("mailEditor.edit"))!.click());
+  await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent===i18n.t("mailEditor.preview"))!.click());await settle();
+  expect(preview).toHaveBeenCalled();
+  expect(host.querySelector(".mail-preview-subject")!.textContent).toContain("Preview title");
+  expect(save).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
 });

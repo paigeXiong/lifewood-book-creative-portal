@@ -12,7 +12,7 @@ export function MailStatusPage({ locale, allowed }: { locale: SupportedLocale; a
   const { t } = useTranslation(), [params, setParams] = useSearchParams();
   const status = params.get("status") ?? "", kind = params.get("kind") ?? "";
   const rawPage = Number(params.get("page") ?? 1), page = Number.isInteger(rawPage) && rawPage > 0 && rawPage <= 100000 ? rawPage : 1;
-  const query = useQuery({ queryKey: ["admin-mail-queue", status, kind, page], queryFn: ({ signal }) => mailQueueService.list(status, kind, page, signal), enabled: allowed, retry: false });
+  const query = useQuery({ queryKey: ["admin-mail-queue", status, kind, page], queryFn: ({ signal }) => mailQueueService.list(status, kind, page, signal), enabled: allowed, retry: false, refetchInterval: query => query.state.data?.rate?.resumeAt ? 15000 : false });
   const data = query.data;
   function filter(key: string, value: string) {
     setParams(current => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); if (key !== "page") next.delete("page"); return next; });
@@ -33,6 +33,7 @@ export function MailStatusPage({ locale, allowed }: { locale: SupportedLocale; a
         <HelpPopover label={t("mailQueue.title")}>{t("mailQueue.help")}</HelpPopover>
         </div>
       </div>
+      {data?.rate && <div className="mail-status-toolbar"><span>{t("mailRate.usage",{minute:data.rate.minuteUsed,minuteLimit:data.rate.perMinute,day:data.rate.dayUsed,dayLimit:data.rate.perDay})}</span><HelpPopover label={t("mailRate.title")}>{t("mailRate.help")}</HelpPopover>{data.available && data.rate.resumeAt && <span role="status">{t("mailRate.resume",{time:date(data.rate.resumeAt)})}</span>}</div>}
       {query.error && <p role="alert">{data ? t("recovery.refreshFailed") : localizedApiError(query.error, t)}</p>}
       {query.isPending ? <p role="status">{t("common.loading")}</p> : data && <>
         <div className="mail-status-counts">{data.counts.map(item => <button key={item.status} type="button" aria-pressed={status === item.status} onClick={() => filter("status", status === item.status ? "" : item.status)}><span>{t(`mailQueue.states.${item.status}`)}</span> <strong>{item.count.toLocaleString(locale)}</strong></button>)}</div>

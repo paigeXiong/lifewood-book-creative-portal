@@ -4,6 +4,7 @@ import {UserPresence} from "@lifewood/ui/user-presence";
 import {AccountSwitcher,AccountSessionGuard} from "@lifewood/ui/account-switcher";
 import {NotificationBell} from "@lifewood/ui/notifications";
 import { LoginBookBackdrop } from "./LoginBookBackdrop";
+import { AnnouncementBanner } from "./AnnouncementBanner";
 import { Announcements } from "./Announcements";
 import { useConfirm, useConfirmLink } from "../useConfirm";
 import { useEffect, useId, useRef, useState, type PropsWithChildren } from "react";
@@ -139,6 +140,7 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
         </div>
       </header>
       <UserPresence key={`presence-${user.id}`} userId={user.id}/><AccountSessionGuard key={user.id} userId={user.id}/>
+      <AnnouncementBanner key={`banner-${user.id}`} userId={user.id} locale={locale}/>
       <main id="main-content" tabIndex={-1}>{children}</main>
     </div>
   );

@@ -38,6 +38,18 @@ public sealed class EmailTests : IDisposable
         return Regex.Match(mailer.Messages.Last().Body, "token=([A-F0-9]{64})").Groups[1].Value;
     }
     private async Task Verify() { Assert.True(emails.Consume("verify", await Link("verify"))); }
+    private sealed class LimitedMailer:IPlatformMailer {
+        public Task Send(string address,string subject,string body,CancellationToken cancellation)=>throw new MailRateLimitedException(DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds());
+    }
+    [Fact] public async Task QuotaWaitDoesNotConsumeRetriesAndExpiredLinksAreRemoved() {
+        Assert.True(emails.Request("verify",owner));
+        for(var i=0;i<7;i++)await emails.DeliverOne(new LimitedMailer(),CancellationToken.None);
+        Assert.Equal(0L,Sql("SELECT attempts FROM email_outbox WHERE kind='verify'"));
+        Assert.Equal("pending",Sql("SELECT status FROM email_outbox WHERE kind='verify'"));
+        Sql("UPDATE email_outbox SET expires=0");
+        await emails.DeliverOne(mailer,CancellationToken.None);
+        Assert.Empty(mailer.Messages);
+    }
     [Fact] public async Task DisabledTemplateBlocksNewAndQueuedBusinessEmails() {
         await Verify(); Assert.True(emails.SavePreferences(owner,true));
         Notify("template-pending"); emails.QueueNotifications();

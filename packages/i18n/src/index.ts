@@ -1634,3 +1634,12 @@ i18n.addResourceBundle("en-US", "translation", { dashboard: { scopeLabel: "Scope
 
 i18n.addResourceBundle("zh-CN", "translation", { dashboard: { organizationActionRequired: "待成员处理", organizationRules: "统计当前组织成员的共享项目，历史活动也按当前归属计算。活动包括首次提交、重新提交和成品发布（含之后撤回的发布），不包括浏览和自动保存；活动数量不代表制作进度。" } }, true, true);
 i18n.addResourceBundle("en-US", "translation", { dashboard: { organizationActionRequired: "Needs member input", organizationRules: "Includes shared projects of current organization members. Historical activity follows current ownership. Counts first submissions, resubmissions and delivery publications (including later withdrawals), excluding views and autosaves. Activity volume does not measure production progress." } }, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", {announcements:{bannerLabel:"平台公告", bannerDetails:"查看公告详情", bannerDismiss:"关闭此公告，不再显示", bannerCloseFailed:"关闭失败，请重试。", bannerAll:"查看全部"}}, true, true);
+i18n.addResourceBundle("en-US", "translation", {announcements:{bannerLabel:"Announcement", bannerDetails:"View announcement", bannerDismiss:"Dismiss this announcement permanently", bannerCloseFailed:"Could not dismiss. Please try again.", bannerAll:"View all"}}, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", {announcements:{bannerPause:"暂停公告滚动",bannerResume:"继续公告滚动"}}, true, true);
+i18n.addResourceBundle("en-US", "translation", {announcements:{bannerPause:"Pause announcement scrolling",bannerResume:"Resume announcement scrolling"}}, true, true);
+
+i18n.addResourceBundle("zh-CN", "translation", {announcements:{bannerText:"{{title}} · {{body}}"}}, true, true);
+i18n.addResourceBundle("en-US", "translation", {announcements:{bannerText:"{{title}} · {{body}}"}}, true, true);

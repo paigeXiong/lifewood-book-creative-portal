@@ -5,8 +5,8 @@ export function readNoticeListState(search:string) {
  const rawPages=params.get("pages")??"1";
  return {
   search:(params.get("q")??"").trim().slice(0,160),
-  status:["draft","published","withdrawn"].includes(status)?status:"",
-  placement:["login","personal"].includes(placement)?placement:"",
+  status:["draft","scheduled","published","withdrawn"].includes(status)?status:"",
+  placement:["login","personal","banner"].includes(placement)?placement:"",
   pages:/^[1-9]\d*$/.test(rawPages)?Math.min(maxNoticePages,Number(rawPages)):1,
  };
 }
@@ -19,5 +19,5 @@ export function noticeListSearch(state:ReturnType<typeof readNoticeListState>) {
  return params.size?`?${params}`:"";
 }
 export function noticeReturnPath(locale:string,search:unknown) {
- return `/${locale}/settings/announcements${noticeListSearch(readNoticeListState(typeof search==="string"?search:""))}`;
+ return `/${locale}/announcements${noticeListSearch(readNoticeListState(typeof search==="string"?search:""))}`;
 }

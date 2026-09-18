@@ -3,6 +3,15 @@ using Xunit;
 namespace Lifewood.PlatformApi.Tests;
 public sealed class MailTemplateStoreTests
 {
+ [Fact] public void DraftPreviewDoesNotPersistAndPreservesSafeLineBreaks() {
+  var input=new SaveMailTemplate("default","Preview","First\r\n<script>Second</script>",true);
+  Assert.True(MailTemplateStore.Validate("verify","en-US",input));
+  var result=MailTemplateStore.PreviewDraft("verify","en-US",input);
+  Assert.Contains("First<br>&lt;script&gt;",result.Body.Html);
+  Assert.DoesNotContain("href=",result.Body.Html);
+  Assert.Contains("10 minutes",result.Body.Text);
+  Assert.Equal("Preview",result.Subject);
+ }
  [Fact] public void TemplatesPersistValidateProtectLinksAndHandleConflicts() {
   var path=Path.Combine(Path.GetTempPath(),"template-"+Guid.NewGuid()+".db");
   try {

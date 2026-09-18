@@ -11,6 +11,9 @@ internal static class AuditActionCatalog
 
     private static readonly Definition[] Definitions =
     [
+        new("mail.template_update", "修改邮件模板", "Updated email template"),
+        new("mail.template_reset", "恢复默认邮件模板", "Restored default email template"),
+        new("mail.template_test", "发送模板测试", "Sent template test"),
         new("mail.settings_update", "更新邮件服务", "Updated email service"),
         new("proxy.settings_update", "更新出站代理", "Updated outbound proxy"),
         new("proxy.test", "检查出站连接", "Checked outbound connection"),
@@ -29,6 +32,8 @@ internal static class AuditActionCatalog
         new("notification.config", "修改通知配置", "Changed notification configuration"),
         new("notification.retry", "重试通知", "Retried notification delivery"),
         new("announcement.delete", "删除公告草稿", "Deleted announcement draft"),
+        new("announcement.schedule", "预约发布公告", "Scheduled announcement"),
+        new("announcement.cancel-schedule", "取消公告预约", "Cancelled scheduled announcement"),
         new("announcement.save", "保存公告草稿", "Saved announcement draft"),
         new("announcement.publish", "发布公告", "Published announcement"),
         new("announcement.withdraw", "下架公告", "Withdrew announcement"),
@@ -69,6 +74,8 @@ internal static class AuditActionCatalog
         var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments is null || segments.Length < 3 || segments[0] != "api" || segments[1] != "admin") return null;
         string? Value(int index) => segments.Length > index ? Uri.UnescapeDataString(segments[index]) : null;
+        if (method == "PUT" && segments is ["api", "admin", "mail", "templates", _]) return new("mail.template_update", "mail_template", Value(4));
+        if (method == "POST" && segments is ["api", "admin", "mail", "templates", _, "test"]) return new("mail.template_test", "mail_template", Value(4));
         if (method == "PUT" && segments is ["api", "admin", "mail", "settings"]) return new("mail.settings_update", "mail_settings", "smtp");
         if (method == "PUT" && segments is ["api", "admin", "outbound-proxy"]) return new("proxy.settings_update", "proxy_settings", "outbound");
         if (method == "POST" && segments is ["api", "admin", "outbound-proxy", "test"]) return new("proxy.test", "proxy_settings", "outbound");
@@ -78,7 +85,7 @@ internal static class AuditActionCatalog
         if (segments.Length >= 5 && segments[2] == "notifications" && method == "POST") return new("notification.retry", "notification", Value(4));
         if (method == "DELETE" && segments.Length == 4 && segments[2] == "announcements") return new("announcement.delete", "announcement", Value(3));
         if (method == "PUT" && segments.Length == 4 && segments[2] == "announcements") return new("announcement.save", "announcement", Value(3));
-        if (method == "POST" && segments.Length == 5 && segments[2] == "announcements" && (segments[4] is "publish" or "withdraw")) return new("announcement." + segments[4], "announcement", Value(3));
+        if (method == "POST" && segments.Length == 5 && segments[2] == "announcements" && (segments[4] is "publish" or "withdraw" or "schedule" or "cancel-schedule")) return new("announcement." + segments[4], "announcement", Value(3));
         if (method == "DELETE" && segments.Length == 5 && segments[2] == "file-categories") return new("file_category.remove", "file_category", $"{Value(3)}/{Value(4)}");
         if (method == "DELETE" && segments.Length == 4 && segments[2] == "character-presets") return new("preset.remove", "character_preset", Value(3));
         if (method == "DELETE" && segments.Length == 4 && segments[2] == "voices") return new("voice.remove", "voice", Value(3));

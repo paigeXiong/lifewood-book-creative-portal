@@ -734,3 +734,31 @@ describe("recovered inputs survive prerequisite changes", () => {
     }
   });
 });
+
+for (const locale of ["zh-CN", "en-US"] as const) {
+  for (const source of ["filtered", "external", "missing"] as const) {
+    it(`returns from project details to a safe list destination (${locale}, ${source})`, async () => {
+      await i18n.changeLanguage(locale);
+      const draft = { ...completeDraft(), status: "submitted" as const };
+      const catalog: FormOptions = {
+        brands: [], videoGoals: [], audiences: [], genres: [], contentLanguages: [], videoDurations: [], publishingPlatforms: [],
+        taskStatuses: [], roleTypes: [], ageRanges: [], genders: [], visualStyles: [], moodTags: [], imageStyleTags: [], paceTags: [],
+        narrationTones: [], speechRates: [], voiceGenders: [], voiceAges: [], accents: [], voiceEmotions: [], voiceTags: [],
+        sourceCategories: [], referenceCategories: [], maxSelectedVoices: 3, workflowStatuses: [], projectPriorities: [],
+      };
+      const listPath = `/${locale}/tasks`;
+      const filtered = listPath + "?q=Book&status=submitted&scope=personal&sort=project&direction=asc&page=2";
+      const query = source === "missing" ? "" : "?" + new URLSearchParams({ returnTo: source === "filtered" ? filtered : "https://example.com/" });
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+      client.setQueryData(["project", draft.id, locale], draft);
+      client.setQueryData(["form-options", locale], catalog);
+      client.setQueryData(["voices", locale], []);
+      const container = document.createElement("div"); document.body.append(container);
+      const root = createRoot(container);
+      try {
+        await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/${draft.id}${query}`]}><Routes><Route path="/:locale/tasks/:taskId" element={<TaskDetailPage />} /></Routes></MemoryRouter></QueryClientProvider>));
+        expect(container.querySelector(".detail-back")?.getAttribute("href")).toBe(source === "filtered" ? filtered : listPath);
+      } finally { await act(async () => root.unmount()); container.remove(); client.clear(); }
+    });
+  }
+}

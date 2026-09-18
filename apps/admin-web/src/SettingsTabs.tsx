@@ -49,7 +49,7 @@ function SettingsTab({ locale, name, children }: { locale: SupportedLocale; name
 const settingsGroups = [
   { id: "content", items: ["options", "files", "characters", "voices"] },
   { id: "access", items: ["oidc", "ai"] },
-  { id: "messages", items: ["mail", "announcements", "notifications"] },
+  { id: "messages", items: ["mail", "notifications"] },
   { id: "operations", items: ["runtime", "backups"] },
 ] as const;
 const settingsLabels: Record<keyof typeof settingsIconPaths, string> = {

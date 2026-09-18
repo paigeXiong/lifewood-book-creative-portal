@@ -28,7 +28,14 @@ test("organization member opens shared draft and creator profile without editing
     const row = page.locator(".task-project-row").filter({ hasText: title });
     await expect(row).toHaveCount(1);
     await expect(row.locator(".task-copy, .task-delete")).toHaveCount(0);
-    await expect(row.locator(".task-identity")).toHaveAttribute("href", `/${locale}/tasks/${draft.id}`);
+    const returnPath = `/${locale}/tasks?${new URLSearchParams({ q: title })}`;
+    await expect(row.locator(".task-identity")).toHaveAttribute("href", `/${locale}/tasks/${draft.id}?${new URLSearchParams({ returnTo: returnPath })}`);
+    await row.locator(".task-identity").click();
+    await expect(page.locator(".detail-back")).toHaveAttribute("href", returnPath);
+    await page.reload();
+    await page.locator(".detail-back").click();
+    await expect(page).toHaveURL(url => url.pathname + url.search === returnPath);
+    await expect(row).toHaveCount(1);
     await row.locator(".task-creator").click();
     await expect(page).toHaveURL(url => url.pathname === `/${locale}/organization/members/${owner.id}`);
     await expect(page.locator(".organization-member-back")).toHaveAttribute("href", `/${locale}/tasks?q=${encodeURIComponent(title).replaceAll("%20", "+")}`);

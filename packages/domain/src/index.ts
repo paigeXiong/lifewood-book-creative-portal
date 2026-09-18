@@ -501,9 +501,9 @@ export interface AdminCharacterPreset {
   enabled: boolean; sortOrder: number; updatedAt: string | null;
 }
 
-export interface AnnouncementInput { displayDays?: number | null; title?: string; body?: string; titleZh?: string; bodyZh?: string; titleEn?: string; bodyEn?: string; placement: "login" | "personal"; audience: "all" | "specified"; languages: string[]; organizationIds: string[]; startsAt: string | null; endsAt: string | null; version: number }
-export interface AnnouncementDocument { id: string; sequence: number; content: AnnouncementInput; status: "draft" | "published" | "withdrawn"; version: number; createdAt: string; recipients: number }
-export interface AnnouncementItem { id: string; sequence: number; title: string; body: string; publishedAt: string; dismissed: boolean; popup: boolean }
+export interface AnnouncementInput { displayDays?: number | null; title?: string; body?: string; titleZh?: string; bodyZh?: string; titleEn?: string; bodyEn?: string; placement: "login" | "personal" | "banner"; audience: "all" | "specified"; languages: string[]; organizationIds: string[]; startsAt: string | null; endsAt: string | null; version: number }
+export interface AnnouncementDocument { scheduledAt?: string; id: string; sequence: number; content: AnnouncementInput; status: "draft" | "published" | "withdrawn" | "scheduled"; version: number; createdAt: string; recipients: number }
+export interface AnnouncementItem { id: string; sequence: number; title: string; body: string; publishedAt: string; dismissed: boolean; popup: boolean; banner?: boolean }
 export interface AnnouncementFeed { items: AnnouncementItem[]; nextCursor: number | null }
 export interface AnnouncementPage { items: AnnouncementDocument[]; nextCursor: number | null }
 
@@ -531,3 +531,6 @@ export interface CustomerDashboard {
   activities: PagedResult<{ id: string; kind: "submission" | "resubmission" | "delivery"; occurredAt: string; project: DashboardProject }>;
   recentProjects: DashboardProject[];
 }
+
+export interface AnnouncementJob {id:string;announcementId:string;title:string;status:"pending"|"completed"|"cancelled"|"failed";runAt:string;finishedAt?:string;errorCode?:string}
+export interface AnnouncementJobsPage {items:AnnouncementJob[];page:number;total:number;pending:number;nextRunAt?:string}

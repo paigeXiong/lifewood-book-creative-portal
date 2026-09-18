@@ -17,6 +17,12 @@ internal static class EmailEndpoints
             if (locale is not ("zh-CN" or "en-US")) return Failure(c, 400, "invalidFilter");
             return Results.Ok(repository.Templates.Preview(locale));
         });
+        api.MapPost("/admin/mail/templates/{kind}/preview", (string kind,string locale,SaveMailTemplate input,HttpContext c) => {
+            if(currentUser(c) is not {} user)return Results.Unauthorized();
+            if(!user.Roles.Contains("owner"))return Results.StatusCode(403);
+            if(input.Reset || !MailTemplateStore.Validate(kind,locale,input))return SettingsFailure(c,400,"invalid");
+            return Results.Ok(MailTemplateStore.PreviewDraft(kind,locale,input));
+        });
         api.MapPost("/admin/mail/templates/{kind}/test", async (string kind, string locale, MailTestRequest input, HttpContext c, EmailRepository repository, MailSettingsStore store, IPlatformMailer mailer) => {
             if(currentUser(c) is not {} user)return Results.Unauthorized();
             if(!user.Roles.Contains("owner"))return Results.StatusCode(403);
@@ -29,7 +35,7 @@ internal static class EmailEndpoints
                 if(error is not null)return SettingsFailure(c,error=="cooldown"?429:409,error);
                 await mailer.SendContent(recipient,"[TEST] "+template.Subject,template.Body,c.RequestAborted);
                 return Results.NoContent();
-            }catch(Exception exception){return SettingsFailure(c,502,MailFailureClassifier.Classify(exception));}
+            }catch(MailRateLimitedException){return SettingsFailure(c,429,"quota");}catch(Exception exception){return SettingsFailure(c,502,MailFailureClassifier.Classify(exception));}
             finally {store.Operations.Release();}
         }).RequireRateLimiting("authentication");
         api.MapPut("/admin/mail/templates/{kind}", (string kind, string locale, SaveMailTemplate input, HttpContext c, EmailRepository repository) => {
@@ -64,14 +70,14 @@ internal static class EmailEndpoints
                 await mailer.Send(recipient, english ? "Book Creative Portal — Email test" : "Book Creative Portal — 邮件测试",
                     english ? "This is an email service test requested by your platform owner. No action is required." : "这是一封由平台负责人主动发送的邮件服务测试邮件，无需操作。", c.RequestAborted);
                 return Results.NoContent();
-            } catch (Exception exception) { return SettingsFailure(c, 502, MailFailureClassifier.Classify(exception)); }
+            } catch (MailRateLimitedException) { return SettingsFailure(c,429,"quota"); } catch (Exception exception) { return SettingsFailure(c, 502, MailFailureClassifier.Classify(exception)); }
             finally { store.Operations.Release(); }
         }).RequireRateLimiting("authentication");
-        api.MapGet("/admin/mail/status", (HttpContext c, EmailRepository repository, string? status, string? kind, int? page) => {
+        api.MapGet("/admin/mail/status", (HttpContext c, EmailRepository repository, MailSettingsStore store, string? status, string? kind, int? page) => {
             if (currentUser(c) is not {} user) return Results.Unauthorized();
             if (!user.Roles.Contains("owner")) return Results.StatusCode(403);
             if ((!string.IsNullOrEmpty(status) && !EmailRepository.QueueStates.Contains(status)) || (!string.IsNullOrEmpty(kind) && !EmailRepository.QueueKinds.Contains(kind)) || page is < 1 or > 100000) return Failure(c, 400, "invalidFilter");
-            return Results.Ok(repository.QueueStatus(status, kind, page ?? 1));
+            return Results.Ok(repository.QueueStatus(status, kind, page ?? 1) with {Rate=store.Limiter.Check(store.Settings.Current)});
         });
         api.MapGet("/me/email", (HttpContext c, EmailRepository repository, string? locale) => {
             if(currentUser(c) is not {} user) return Results.Unauthorized();

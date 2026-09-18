@@ -40,8 +40,8 @@ for(const locale of ["zh-CN","en-US"] as const)it(`preserves editor and picker t
  let finishSave!:(value:Awaited<ReturnType<typeof announcementService.save>>)=>void;
  const save=vi.spyOn(announcementService,"save").mockImplementation(()=>new Promise(resolve=>{finishSave=resolve;}));
  const cache=new QueryClient({defaultOptions:{queries:{retry:false}}});
- const routes=[{path:`/${locale}/settings/announcements`,element:<AnnouncementsPage locale={locale} userId="owner"/>},{path:`/${locale}/organizations`,element:<OrganizationsPage locale={locale} userId="owner"/>}];
- let router=createMemoryRouter(routes,{initialEntries:[`/${locale}/settings/announcements`]});
+ const routes=[{path:`/${locale}/announcements`,element:<AnnouncementsPage locale={locale} userId="owner"/>},{path:`/${locale}/organizations`,element:<OrganizationsPage locale={locale} userId="owner"/>}];
+ let router=createMemoryRouter(routes,{initialEntries:[`/${locale}/announcements`]});
  const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
  const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
  const render=async()=>{await act(async()=>{root.render(<QueryClientProvider client={cache}><RouterProvider key={router.state.location.key} router={router}/></QueryClientProvider>);await settle();});await act(async()=>{await settle();});};
@@ -67,9 +67,9 @@ for(const locale of ["zh-CN","en-US"] as const)it(`preserves editor and picker t
   await act(async()=>{await router.navigate(1);await settle();});await act(async()=>{await settle();});expect([...c.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')].every(input=>input.disabled)).toBe(true);expect([...c.querySelectorAll<HTMLButtonElement>('button')].find(item=>item.textContent===i18n.t("announcements.done"))!.disabled).toBe(true);await button("announcements.cancel");
   await remount();expect(c.querySelector<HTMLFieldSetElement>('fieldset')!.disabled).toBe(true);expect(save).toHaveBeenCalledTimes(1);
   await act(async()=>{finishSave({} as Awaited<ReturnType<typeof announcementService.save>>);await settle();});await act(async()=>{await settle();});expect(c.querySelector('[role="dialog"]')).toBeNull();
-  await act(async()=>{await router.navigate(`/${locale}/settings/announcements`,{state:oldState});});expect(c.querySelector('[role="dialog"]')).toBeNull();
+  await act(async()=>{await router.navigate(`/${locale}/announcements`,{state:oldState});});expect(c.querySelector('[role="dialog"]')).toBeNull();
   await button("announcements.new");const discarded=router.state.location.state;await button("announcements.cancel");expect(confirmation).toHaveBeenCalledWith(i18n.t("announcements.unsaved"),false);
-  await act(async()=>{await router.navigate(`/${locale}/settings/announcements`,{state:discarded});});expect(c.querySelector('[role="dialog"]')).toBeNull();
+  await act(async()=>{await router.navigate(`/${locale}/announcements`,{state:discarded});});expect(c.querySelector('[role="dialog"]')).toBeNull();
  }finally{await act(async()=>root.unmount());router.dispose();cache.clear();c.remove();}
 },15000);
 
@@ -82,7 +82,7 @@ for(const locale of ["zh-CN","en-US"] as const)it.each(["conflict","network"] as
  let rejectSave!:(error:unknown)=>void;
  const save=vi.spyOn(announcementService,"save").mockImplementationOnce(()=>mode==="conflict"?new Promise((_resolve,reject)=>{rejectSave=reject;}):Promise.reject(failure)).mockResolvedValue({} as Awaited<ReturnType<typeof announcementService.save>>);
  const cache=new QueryClient({defaultOptions:{queries:{retry:false}}});
- const route=`/${locale}/settings/announcements`;
+ const route=`/${locale}/announcements`;
  const routes=[{path:route,element:<AnnouncementsPage locale={locale} userId="owner"/>}];
  let router=createMemoryRouter(routes,{initialEntries:[{pathname:route,state:{announcementEditor:original}}]});
  const c=document.createElement("div");document.body.append(c);const root=createRoot(c);

@@ -8,7 +8,8 @@
       "Sign in with the account and password assigned by your administrator. Password recovery requires an email address verified in advance.",
       "Check your name, phone and language preference in profile settings. Signed-in routes follow your account language preference.",
       "Open Projects and choose New project. Creation requires permission and organization membership. Ask an administrator if the action is unavailable.",
-      "Complete book information, characters, voice, style, references and creative direction, then review and submit. Follow the steps and required-field prompts shown on screen."
+      "Complete book information, characters, voice, style, references and creative direction, then review and submit. Follow the steps and required-field prompts shown on screen.",
+      "You can open customer help from the sign-in page without signing in. Administration documentation requires a signed-in account with admin access."
     ],
     "faq": [
       {
@@ -112,7 +113,8 @@
     "steps": [
       "Open the project detail to see current progress. Expand information panels to review submitted material.",
       "Use the delivery section to download published files. Preparing means there is no published deliverable available yet.",
-      "If a download fails, check your session and connection, then reopen the project. Withdrawal or a membership change can invalidate an old link."
+      "If a download fails, check your session and connection, then reopen the project. Withdrawal or a membership change can invalidate an old link.",
+      "When you enter details from a filtered project list, the return action preserves search, status, sorting and page. A detail link without a list source returns to the default list."
     ],
     "faq": [
       {
@@ -150,16 +152,16 @@
     "id": "analytics",
     "category": "Data and messages",
     "title": "Using the overview and activity calendar",
-    "summary": "Explore your own project activity by date.",
+    "summary": "Switch between personal and organization scope and explore activity by date.",
     "steps": [
-      "Open Overview and choose a month. Calendar intensity indicates activity count; select a day for details.",
+      "Open Overview and select Personal or Organization, then choose a month. Personal covers your projects; Organization covers accessible organization projects. Calendar intensity reflects activity count; select a day for details.",
       "Select a trend point or an actionable status item to inspect activity or open a filtered project list. Interactive controls also support keyboard focus.",
-      "Check historical-coverage notices: absent records do not always mean no activity occurred. The personal overview and shared organization list use different scopes."
+      "Keep scope, month and project filters consistent when comparing counts. Historical coverage can be incomplete; absent records do not always mean no activity occurred."
     ],
     "faq": [
       {
         "question": "Why do overview and list counts differ?",
-        "answer": "The customer overview focuses on your projects, while the list includes organization-shared projects. Filters also affect counts."
+        "answer": "Check Personal or Organization scope, month and list filters first. Organization statistics do not grant permission to edit colleagues’ projects."
       }
     ],
     "image": "customer-overview",
@@ -244,6 +246,26 @@
       {
         "question": "What should I do when a request fails?",
         "answer": "Check connectivity and retry reading. For submission, reply or upload, verify whether the action already succeeded before repeating it. Report the visible error and time if it persists."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "announcements",
+    "category": "Data and messages",
+    "title": "Reading and dismissing the announcement banner",
+    "summary": "Read scrolling content and manage account-level dismissal.",
+    "steps": [
+      "Eligible notices appear above customer pages after sign-in. The banner scrolls both title and body. Select it for full details or choose View all for announcement history.",
+      "Hover or focus with the keyboard to pause, or use the pause/resume control. Reduced-motion preferences show static content.",
+      "Use the banner close button to hide that notice for your account across refreshes, sign-ins and devices. Other members are unaffected and new notices may still appear.",
+      "Closing the details window does not dismiss the banner. Dismissed or expired notices remain in history; withdrawn notices are removed. Retry a failed dismissal as prompted."
+    ],
+    "faq": [
+      {
+        "question": "Why does my colleague see a different notice?",
+        "answer": "Language and organization targeting, expiry and individual dismissal affect visibility. The banner shows only the newest eligible undismissed notice."
       }
     ],
     "image": null,

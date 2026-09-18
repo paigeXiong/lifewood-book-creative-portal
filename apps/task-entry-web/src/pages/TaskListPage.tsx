@@ -302,12 +302,15 @@ export function TaskListPage() {
                 const returned = task.status === "draft" && task.workflowStatus === "awaiting_customer";
                 const statusId = customerStatusId(task);
                 const statusOption = statusMap.get(statusId);
-                const target = task.status === "draft" && task.canEdit !== false ? `/tasks/${task.id}/edit/${resume.data?.find(item=>item.projectId===task.id)?.step??"project"}` : `/tasks/${task.id}`;
+                const editableDraft = task.status === "draft" && task.canEdit !== false;
+                const target = editableDraft ? `/tasks/${task.id}/edit/${resume.data?.find(item=>item.projectId===task.id)?.step??"project"}` : `/tasks/${task.id}`;
+                const detailQuery = !editableDraft && searchParams.size ? `?${new URLSearchParams({ returnTo: localizedPath(locale, "/tasks") + "?" + searchParams.toString() })}` : "";
+                const targetPath = localizedPath(locale, target) + detailQuery;
                 const projectTitle = presentValue(task.bookTitle) ?? presentValue(task.projectName) ?? t("tasks.untitledDraft");
                 const projectContext = presentValue(task.clientName) ?? presentValue(task.projectName) ?? t("tasks.pendingInput");
                 const authorName = presentValue(task.authorName) ?? t("tasks.pendingInput");
                 return <tr key={task.id} className="task-project-row">
-                  <td><Link className="task-identity" to={localizedPath(locale, target)}>
+                  <td><Link className="task-identity" to={targetPath}>
                     <ProjectCover coverUrl={task.coverUrl} pendingLabel={t("tasks.coverPending")} />
                     <span><strong>{projectTitle}</strong><small>{projectContext}</small></span>
                   </Link></td>
@@ -315,7 +318,7 @@ export function TaskListPage() {
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${returned ? "danger" : statusOption?.tone ?? "neutral"}`}>{customerStatusLabel(statusId, statusOption?.label, t("clientUx.returnedStatus"))}</span></td>
                   <td data-label={t("tasks.columns.creator")}>{task.creator ? <Link className="task-creator" to={localizedPath(locale, task.creator.id === account.data?.id ? "/profile" : `/organization/members/${task.creator.id}?${new URLSearchParams({ returnTo: localizedPath(locale, "/tasks") + (searchParams.size ? "?" + searchParams.toString() : "") })}`)}><MemberAvatar name={task.creator.displayName} url={task.creator.id === account.data?.id ? "/api/me/avatar" : task.creator.avatarUrl}/><span>{task.creator.displayName}</span></Link> : "—"}</td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(task.canEdit === false ? "tasks.viewProject" : returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.canEdit !== false && (supportsCopy || task.status === "draft") && <TaskMoreActions label={t("clientUx.more")}>{supportsCopy && <><button className="button button-quiet button-small task-copy" type="button" title={t("tasks.copyHelp")} disabled={!canCreate || copyDraft.isPending} onClick={() => {
+                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={targetPath}>{t(task.canEdit === false ? "tasks.viewProject" : returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.canEdit !== false && (supportsCopy || task.status === "draft") && <TaskMoreActions label={t("clientUx.more")}>{supportsCopy && <><button className="button button-quiet button-small task-copy" type="button" title={t("tasks.copyHelp")} disabled={!canCreate || copyDraft.isPending} onClick={() => {
                     if(copying.current || !account.data?.id)return;copying.current=true;
                     const key=`${account.data.id}:${task.id}`;const requestId=copyKeys.current.get(key)??crypto.randomUUID();copyKeys.current.set(key,requestId);
                     copyDraft.mutate({id:task.id,requestId,userId:account.data.id});

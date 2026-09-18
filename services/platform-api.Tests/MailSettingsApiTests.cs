@@ -26,6 +26,12 @@ public sealed partial class VoiceSampleApiIntegrationTests
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode); Assert.True(saved.Headers.CacheControl!.NoStore);
         Assert.DoesNotContain("sensitive-test-value", await saved.Content.ReadAsStringAsync());
         var dto = (await saved.Content.ReadFromJsonAsync<MailServiceDto>())!; Assert.True(dto.HasPassword); Assert.True(dto.Available);
+        var rateSaved=await Send(ownerClient,HttpMethod.Put,"/api/admin/mail/settings",csrf,JsonContent.Create(input with {Revision=dto.Revision,Password="",PerMinute=4,PerDay=80}));
+        Assert.Equal(HttpStatusCode.OK,rateSaved.StatusCode);
+        dto=(await rateSaved.Content.ReadFromJsonAsync<MailServiceDto>())!;
+        using var auditJson=System.Text.Json.JsonDocument.Parse(await ownerClient.GetStringAsync("/api/admin/audit-events"));
+        var events=auditJson.RootElement.GetProperty("items").EnumerateArray();
+        Assert.Contains(events, e=>e.GetProperty("context").GetProperty("changes").EnumerateArray().Any(c=>c.GetProperty("field").GetString()=="perMinute" && c.GetProperty("before").GetString()=="10" && c.GetProperty("after").GetString()=="4"));
         Assert.Equal(HttpStatusCode.Conflict, (await Send(ownerClient, HttpMethod.Put, "/api/admin/mail/settings", csrf, JsonContent.Create(input))).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await Send(ownerClient, HttpMethod.Put, "/api/admin/mail/settings", csrf, JsonContent.Create(input with { Revision = dto.Revision, Password = "", Host = "other.example.test" }))).StatusCode);
         var audit = await ownerClient.GetStringAsync("/api/admin/audit-events");

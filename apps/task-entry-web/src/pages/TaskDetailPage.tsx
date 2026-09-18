@@ -5,7 +5,7 @@ import { safeLinkUrl } from "@lifewood/domain";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { optionService, projectService } from "@lifewood/api-client";
 import { isSupportedLocale, localizedPath } from "@lifewood/i18n";
 import { getNarrationEnabled } from "@lifewood/domain";
@@ -28,7 +28,11 @@ function DetailGroupIcon({path}:{path:string}) {
 export function TaskDetailPage() {
   const { t } = useTranslation();
   const { locale, taskId } = useParams();
+  const [searchParams] = useSearchParams();
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
+  const listPath = localizedPath(validLocale, "/tasks");
+  const requestedReturn = searchParams.get("returnTo");
+  const backPath = requestedReturn === listPath || requestedReturn?.startsWith(listPath + "?") ? requestedReturn : listPath;
   const task = useQuery({
     queryKey: ["project", taskId, validLocale],
     queryFn: () => projectService.getProject(taskId!, validLocale),
@@ -112,7 +116,7 @@ export function TaskDetailPage() {
       <header className="detail-header">
         <Link
           className="button button-quiet detail-back"
-          to={localizedPath(validLocale, "/tasks")}
+          to={backPath}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m11 5-7 7 7 7M4 12h16"/></svg>{t("common.back")}
         </Link>

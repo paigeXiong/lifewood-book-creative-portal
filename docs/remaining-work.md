@@ -26,7 +26,7 @@ v0.3.16 新增[邮箱验证、找回密码和可选邮件提醒](./email.md)，�
 
 v0.3.14 的[完整验证](https://github.com/paigeXiong/lifewood-book-creative-portal/actions/runs/34821927349)已通过，包含 15 项端到端用例与 6 项三浏览器回归。Windows 安装器生命周期、Linux x64/ARM64 安装及失败回滚已有 CI 验证；[正式发布构建](https://github.com/paigeXiong/lifewood-book-creative-portal/actions/runs/34823771361)已完成。不能据此声称真实手机、目标服务器或生产数据迁移已验收。
 
-v0.3.16 后续工作区：后台已新增负责人邮件服务配置、加密授权码保存、即时启停、发件邮箱自身测试和脱敏失败诊断。已有 QQ 配置已保存；说明和诊断建议收在问号，支持中英文。本地实现尚未发布，详见[邮件说明](./email.md)。 / Unreleased: owner SMTP configuration, encrypted credentials, immediate activation, sender-only tests and redacted diagnostics are implemented; production acceptance remains open.
+v0.3.16 后续工作区：后台已新增负责人邮件服务配置、加密授权码保存、即时启停、发件邮箱自身测试和脱敏失败诊断。已有 QQ 配置已保存；说明和诊断建议收在问号，支持中英文。相关功能已发布，详见[邮件说明](./email.md)。 / Released: owner SMTP configuration, encrypted credentials, immediate activation, sender-only tests and redacted diagnostics are implemented; production acceptance remains open.
 
 ## 可以继续推进
 
@@ -142,8 +142,12 @@ v0.3.16 后续工作区：通知偏好保存已补齐重复提交、保存期间
 
 All customer and admin changes must support `zh-CN` and `en-US`, use stable identifiers and enforce server-side access rules. User-entered content is not automatically translated. Existing automated checks do not replace real-device, real-provider or target-deployment acceptance. Production workflow and the unresolved business rules above require confirmation before implementation.
 
-2026-09-18 邮件模板与预览（未发布）：验证、重置、通知及安全提醒统一中英文 HTML 排版并保留纯文本；后台负责人可按类型和语言只读预览，帮助说明收于问号。旧队列兼容、预览权限、HTML 转义、MIME 备选正文、语言切换和键盘关闭已验证。后续经用户单独授权发送两封示例邮件，QQ 实收与中英文排版已确认；外部域名及真实链接仍待验收。见[邮件说明](./email.md)。
+2026-09-18 邮件模板与预览（已发布）：验证、重置、通知及安全提醒统一中英文 HTML 排版并保留纯文本；后台负责人可在独立页面按类型和语言编辑与预览，帮助说明收于问号。旧队列兼容、预览权限、HTML 转义、MIME 备选正文、语言切换和键盘关闭已验证。后续经用户单独授权发送两封示例邮件，QQ 实收与中英文排版已确认；外部域名及真实链接仍待验收。见[邮件说明](./email.md)。
 
 2026-09-18 本地邮件流程验收：正式域名未定，按用户确认使用临时数据和内存收件器。中英文验证、一次性链接、订阅不补历史、退订取消待发且保留站内通知、改密撤销会话及重启后的登录/安全邮件恢复均通过；2 条 HTTP 综合用例、44 项前端检查通过。本轮不改真实账号、不发额外邮件，正式域名验收仍待开展。见[邮件说明](./email.md)。
 
-2026-09-18 组织项目共享：客户项目列表增加创建人头像及资料链接。同组织成员可只读查看项目、附件、成品和退回意见；待处理仅统计本人需操作的项目，复制与所有写入仍限创建人。组织移除或变更后重新检查访问权限。数据概览仍保持个人统计。 / Organization project sharing: members can read drafts and submitted projects, attachments, deliveries and return feedback; creator-only editing and writes remain enforced. Pending actions and the customer dashboard remain personal. Creator avatars link to member profiles; membership changes revoke shared access.
+2026-09-18 组织项目共享：客户项目列表增加创建人头像及资料链接。同组织成员可只读查看项目、附件、成品和退回意见；待处理仅统计本人需操作的项目，复制与所有写入仍限创建人。组织移除或变更后重新检查访问权限。数据概览支持个人与组织口径切换。 / Organization project sharing: members can read drafts and submitted projects, attachments, deliveries and return feedback; creator-only editing and writes remain enforced. Pending actions remain personal; the dashboard supports personal and organization scopes. Creator avatars link to member profiles; membership changes revoke shared access.
+
+2026-09-18 后续完善（未发布）：邮件模板增加不保存、不发信的正文预览与换行支持，类型/语言保存在路由；仅实际修改才阻止离开。模板修改、恢复默认和测试接入既有操作审计，帮助文档与功能搜索已同步。 / Unreleased follow-up: unsaved template preview, preserved line breaks, URL selections, dirty-only navigation protection, template audit events and updated help/search.
+
+2026-09-18 邮件发送额度（未发布）：现有配置增加滚动每分钟及24小时上限，SMTP尝试统一扣额，计数持久化；限速不消耗重试，队列保留原有效期。邮件服务展示使用量和预计恢复时间，中英文及隔离并发测试覆盖。 / Unreleased: persistent rolling minute/day quotas cover SMTP attempts, preserve queued message expiry and retry counts, and expose usage/resumption in the mail service panel.

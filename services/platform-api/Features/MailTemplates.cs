@@ -48,7 +48,7 @@ internal static class MailTemplates
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:580px"><tr><td style="padding:0 8px 20px;font-size:14px;font-weight:700;letter-spacing:.3px">Book Creative Portal</td></tr>
         <tr><td style="background:#ffffff;border-top:4px solid #204e3e;border-radius:10px;padding:32px">
         <h1 style="margin:0 0 16px;font-size:24px;line-height:1.4">{E(subject)}</h1>
-        <p style="margin:0;font-size:16px">{E(introduction)}</p>{button}
+        <p style="margin:0;font-size:16px">{E(introduction).Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "<br>")}</p>{button}
         <p style="padding:16px;background:#eef4f0;border-radius:6px;font-size:14px">{E(note)}</p>{fallback}
         </td></tr><tr><td style="padding:20px 8px;font-size:12px;color:#52635c">{E(en ? "This is an automated email from Book Creative Portal." : "这是一封由 Book Creative Portal 自动发送的邮件。")}</td></tr></table>
         </td></tr></table></body></html>

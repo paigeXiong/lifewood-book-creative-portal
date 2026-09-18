@@ -22,7 +22,7 @@ it("validates list state and constructs only a local return route",()=>{
  expect(readNoticeListState("?pages=100000").pages).toBe(50);
  expect(readNoticeListState("?pages=2.5").pages).toBe(1);
  expect(readNoticeListState(`?q=${"x".repeat(200)}`).search).toHaveLength(160);
- expect(noticeReturnPath("en-US","https://bad.example/path?redirect=evil")).toBe("/en-US/settings/announcements");
+ expect(noticeReturnPath("en-US","https://bad.example/path?redirect=evil")).toBe("/en-US/announcements");
  expect(noticeListSearch(readNoticeListState("?q=a%26b&pages=2&status=draft"))).toBe("?q=a%26b&status=draft&pages=2");
 });
 for(const locale of ["zh-CN","en-US"] as const)it(`restores filters and loaded pages through history, organization selection and cold remount (${locale})`,async()=>{
@@ -30,7 +30,7 @@ for(const locale of ["zh-CN","en-US"] as const)it(`restores filters and loaded p
  const list=vi.spyOn(announcementService,"list").mockImplementation(async(search,before)=>({items:[notice(before===undefined?"a":before===20?"b":"c",`${search}-${before??30}`)],nextCursor:before===undefined?20:before===20?10:null}));
  vi.spyOn(adminService,"listOrganizations").mockResolvedValue({items:[{id:"org",name:"Organization",active:true,memberCount:1,updatedAt:"2026-09-15T00:00:00Z"}],total:1} as Awaited<ReturnType<typeof adminService.listOrganizations>>);
  const cache=new QueryClient({defaultOptions:{queries:{retry:false}}});
- const path=`/${locale}/settings/announcements`,initial="?q=Alpha&status=draft&placement=personal&pages=2";
+ const path=`/${locale}/announcements`,initial="?q=Alpha&status=draft&placement=personal&pages=2";
  const routes=[{path,element:<AnnouncementsPage locale={locale} userId="owner"/>},{path:`/${locale}/organizations`,element:<OrganizationsPage locale={locale} userId="owner"/>}];
  let router=createMemoryRouter(routes,{initialEntries:[path+initial]});const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
  const render=async()=>{await act(async()=>{root.render(<QueryClientProvider client={cache}><RouterProvider key={router.state.location.key} router={router}/></QueryClientProvider>);await settle();});await act(async()=>{await settle();});await act(async()=>{await settle();});};
@@ -60,7 +60,7 @@ it("does not navigate back to an old list when load-more finishes after leaving"
  await i18n.changeLanguage("en-US");let finish!:(page:Awaited<ReturnType<typeof announcementService.list>>)=>void;
  vi.spyOn(announcementService,"list").mockImplementation(async(_search,before)=>before===undefined?{items:[notice("a","First")],nextCursor:20}:new Promise(resolve=>{finish=resolve;}));
  const cache=new QueryClient({defaultOptions:{queries:{retry:false}}}),c=document.createElement("div"),root=createRoot(c);document.body.append(c);
- const router=createMemoryRouter([{path:"/en-US/settings/announcements",element:<AnnouncementsPage locale="en-US" userId="owner"/>},{path:"/other",element:<p>Other</p>}],{initialEntries:["/en-US/settings/announcements"]});
+ const router=createMemoryRouter([{path:"/en-US/announcements",element:<AnnouncementsPage locale="en-US" userId="owner"/>},{path:"/other",element:<p>Other</p>}],{initialEntries:["/en-US/announcements"]});
  try{
   await act(async()=>{root.render(<QueryClientProvider client={cache}><RouterProvider router={router}/></QueryClientProvider>);await settle();});await act(async()=>{await settle();});
   await act(async()=>{[...c.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent===i18n.t("announcements.more"))!.click();await settle();});
@@ -72,7 +72,7 @@ it.each([1,3])("keeps the URL stable on page-load failure and recovers after ref
  await i18n.changeLanguage("en-US");let fail=true;
  vi.spyOn(announcementService,"list").mockImplementation(async(_search,before)=>{if(before===20&&fail){fail=false;throw new Error("offline");}return {items:[notice(before===undefined?"a":before===20?"b":"c","Title")],nextCursor:before===undefined?20:before===20?10:null};});
  const cache=new QueryClient({defaultOptions:{queries:{retry:false}}}),c=document.createElement("div"),root=createRoot(c);document.body.append(c);
- const path="/en-US/settings/announcements",search=pages===1?"":`?pages=${pages}`;
+ const path="/en-US/announcements",search=pages===1?"":`?pages=${pages}`;
  const router=createMemoryRouter([{path,element:<AnnouncementsPage locale="en-US" userId="owner"/>}],{initialEntries:[path+search]});
  const flush=async()=>{for(let n=0;n<4;n++)await act(async()=>{await settle();});};
  const click=async(key:string)=>{await act(async()=>[...c.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent===i18n.t(key))!.click());await flush();};
@@ -89,7 +89,7 @@ it.each(["refresh","back"] as const)("ignores stale load-more completion after %
  await i18n.changeLanguage("en-US");let finish!:(page:Awaited<ReturnType<typeof announcementService.list>>)=>void;
  vi.spyOn(announcementService,"list").mockImplementation(async(search,before)=>before===undefined?{items:[notice("a",search||"First")],nextCursor:20}:new Promise(resolve=>{finish=resolve;}));
  const cache=new QueryClient({defaultOptions:{queries:{retry:false}}}),c=document.createElement("div"),root=createRoot(c);document.body.append(c);
- const path="/en-US/settings/announcements";const router=createMemoryRouter([{path,element:<AnnouncementsPage locale="en-US" userId="owner"/>}],{initialEntries:[path]});
+ const path="/en-US/announcements";const router=createMemoryRouter([{path,element:<AnnouncementsPage locale="en-US" userId="owner"/>}],{initialEntries:[path]});
  const flush=async()=>{for(let n=0;n<3;n++)await act(async()=>{await settle();});};
  const click=async(key:string)=>{await act(async()=>[...c.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent===i18n.t(key))!.click());await flush();};
  try{

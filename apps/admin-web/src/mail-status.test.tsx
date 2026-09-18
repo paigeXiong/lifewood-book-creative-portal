@@ -56,3 +56,15 @@ for (const locale of ["zh-CN", "en-US"] as const) {
     expect(host.textContent).toContain(i18n.t("mailQueue.empty")); expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 }
+
+for(const locale of ["zh-CN","en-US"] as const) {
+ it(`shows quota wait and clears it after refresh (${locale})`,async()=>{
+  vi.mocked(mailQueueService.list).mockResolvedValue({...data,available:true,rate:{minuteUsed:10,dayUsed:20,perMinute:10,perDay:200,resumeAt:1800000000}});
+  await mount(locale);
+  expect(host.textContent).toContain(i18n.t("mailRate.usage",{minute:10,minuteLimit:10,day:20,dayLimit:200}));
+  expect([...host.querySelectorAll('[role="status"]')].some(x=>x.textContent?.includes(new Date(1800000000000).toLocaleString(locale)))).toBe(true);
+  vi.mocked(mailQueueService.list).mockResolvedValue({...data,available:true,rate:{minuteUsed:0,dayUsed:20,perMinute:10,perDay:200,resumeAt:null}});
+  await click("mailQueue.refresh");
+  expect([...host.querySelectorAll('[role="status"]')].some(x=>x.textContent?.includes(new Date(1800000000000).toLocaleString(locale)))).toBe(false);
+ });
+}

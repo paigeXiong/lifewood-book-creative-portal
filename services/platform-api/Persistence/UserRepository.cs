@@ -488,9 +488,9 @@ internal sealed partial class UserRepository
     {
         var permissions = role switch
         {
-            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.feedback.manage", "admin.config.manage", "admin.runtime.manage" },
-            "admin" => new[] { "admin.access", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.feedback.manage", "admin.config.manage" },
-            "operator" => new[] { "admin.access", "admin.projects.read", "admin.projects.workflow", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export" },
+            "owner" => new[] { "tasks.read", "tasks.write", "tasks.submit", "admin.access", "admin.announcements.manage", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.feedback.manage", "admin.config.manage", "admin.runtime.manage" },
+            "admin" => new[] { "admin.access", "admin.announcements.manage", "admin.projects.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.assign", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export", "admin.overview.read", "admin.audit.read", "admin.users.manage", "admin.feedback.manage", "admin.config.manage" },
+            "operator" => new[] { "admin.access", "admin.announcements.manage", "admin.projects.read", "admin.projects.workflow", "admin.projects.return", "admin.projects.reply", "admin.projects.note", "admin.projects.deliver", "admin.projects.export" },
             "customer" => new[] { "tasks.read", "tasks.write", "tasks.submit" },
             _ => Array.Empty<string>()
         };

@@ -47,6 +47,16 @@ for (const locale of ["zh-CN", "en-US"] as const) {
         expect(page.container.querySelector(".task-copy, .task-delete")).toBeNull();
       } finally { await page.close(); }
     });
+    it("keeps list filters on both detail entry links", async () => {
+      const item: TaskSummary = { id: "submitted", version: 1, status: "submitted", projectName: "Project", bookTitle: "Book", authorName: "Author", clientName: "Client", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
+      const query = "?q=Book&status=submitted&scope=personal&sort=project&direction=asc&page=2";
+      const page = await mount(locale, query, 30, [item]);
+      try {
+        const expected = `/${locale}/tasks/submitted?${new URLSearchParams({ returnTo: `/${locale}/tasks${query}` })}`;
+        expect(page.container.querySelector(".task-identity")?.getAttribute("href")).toBe(expected);
+        expect(page.container.querySelector(".task-actions a")?.getAttribute("href")).toBe(expected);
+      } finally { await page.close(); }
+    });
     it("copies submitted projects and reuses the request key after a failed response", async () => {
       const item: TaskSummary = { id: "submitted", version: 1, status: "submitted", projectName: "Project", bookTitle: "Book", authorName: "Author", clientName: "Client", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
       const copy = vi.spyOn(projectService,"copyDraft").mockRejectedValue(new Error("offline"));

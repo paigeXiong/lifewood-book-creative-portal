@@ -286,6 +286,7 @@ async function request<T>(path: string, options: RequestOptions = {}, retryCsrf 
 export interface LoginCredentials { email: string; password: string; rememberMe: boolean }
 export interface EmailSettings { available: boolean; email: string; verified: boolean; notifications: boolean; deliveryStatus?: string; topics?: Array<{ id: string; label: string; enabled: boolean }> }
 export interface MailQueuePage {
+  rate?: {minuteUsed:number;dayUsed:number;perMinute:number;perDay:number;resumeAt:number|null};
   configurationChecks?: { code: string; passed: boolean }[];
   available: boolean; checkedAt: number; counts: { status: string; count: number }[]; kinds: string[];
   items: { id: string; recipient: string; kind: string; status: string; failures: number; nextAttempt: number | null; expires: number }[];
@@ -296,10 +297,12 @@ export const mailQueueService = {
 };
 export interface MailServiceSettings {
   revision: string; enabled: boolean; host: string; port: number; from: string; username: string;
+  perMinute?: number; perDay?: number;
   hasPassword: boolean; publicUrl: string; available: boolean; labels: Record<string, string>;
 }
 export interface MailServiceInput {
   revision: string; enabled: boolean; host: string; port: number; from: string; username: string;
+  perMinute?: number; perDay?: number;
   password: string; clearPassword: boolean; publicUrl: string;
 }
 export interface ProxyScope { id: string; label: string; mode: string; effectiveMode: string; address: string; username: string; hasPassword: boolean }
@@ -311,6 +314,7 @@ export const outboundProxyService = {
   test: (revision: string, scope: string) => request<{ status: number }>("/admin/outbound-proxy/test", { method: "POST", body: JSON.stringify({ revision, scope }) }),
 };
 export const mailSettingsService = {
+  previewTemplate: (kind: string, locale: SupportedLocale, input: {revision:string;subject:string;introduction:string;enabled:boolean}) => request<MailTemplatePreview>(`/admin/mail/templates/${encodeURIComponent(kind)}/preview?locale=${locale}`, {method:"POST",body:JSON.stringify(input)}),
   testTemplate: (kind: string, locale: SupportedLocale, revision: string) => request<void>(`/admin/mail/templates/${encodeURIComponent(kind)}/test?locale=${locale}`, { method: "POST", body: JSON.stringify({revision}) }),
   saveTemplate: (kind: string, locale: SupportedLocale, input: { revision: string; subject: string; introduction: string; enabled: boolean; reset?: boolean }) => request<MailTemplatePreview[]>(`/admin/mail/templates/${encodeURIComponent(kind)}?locale=${locale}`, { method: "PUT", body: JSON.stringify(input) }),
   templates: (locale: SupportedLocale, signal?: AbortSignal) => request<MailTemplatePreview[]>(`/admin/mail/templates?locale=${locale}`, { signal }),
@@ -694,9 +698,10 @@ export const adminService = {
     request<AdminUser>(`/admin/users/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(account) }),
   resetUserPassword: (id: string, newPassword: string) =>
     request<void>(`/admin/users/${encodeURIComponent(id)}/password`, { method: "PUT", body: JSON.stringify({ newPassword }) }),
-  listOrganizations: ({ search, page = 1, pageSize = 20 }: AdminOrganizationListQuery = {}) => {
+  listOrganizations: ({ search, page = 1, pageSize = 20, purpose }: AdminOrganizationListQuery & { purpose?: "announcement" } = {}) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (search) query.set("search", search);
+    if (purpose) query.set("purpose", purpose);
     return request<PagedResult<AdminOrganization>>(`/admin/organizations?${query}`);
   },
   createOrganization: (name: string) =>
@@ -752,6 +757,10 @@ export const revisionService = {
 };
 
 export const announcementService = {
+  jobs: (page=1, locale: SupportedLocale="zh-CN") => request<import("@lifewood/domain").AnnouncementJobsPage>(`/admin/announcements/jobs?page=${page}`,{locale}),
+  schedule: (id:string,version:number,runAt:string) => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}/schedule`,{method:"POST",body:JSON.stringify({version,runAt})}),
+  cancelSchedule: (id:string,version:number) => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}/cancel-schedule`,{method:"POST",body:JSON.stringify({version})}),
+  banner: (locale: SupportedLocale) => request<import("@lifewood/domain").AnnouncementFeed>("/announcements/banner", { locale }),
   preview: (id: string, version: number) => request<{count: number | null}>(`/admin/announcements/${id}/preview?version=${version}`),
   deleteDraft: (id: string, version: number) => request<void>(`/admin/announcements/${id}?version=${version}`, {method:"DELETE"}),
   dismissMany: (ids: string[]) => request<void>("/announcements/dismiss", { method: "POST", body: JSON.stringify({ids}) }),

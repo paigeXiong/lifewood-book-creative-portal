@@ -1,3 +1,4 @@
+import { readNoticeDraft } from "./announcement-draft";
 import { FunctionSearch } from "./FunctionSearch";
 import { AccountLocaleRedirect } from "@lifewood/ui/account-locale";
 import { ForgotPasswordButton } from "@lifewood/ui/email";
@@ -63,13 +64,15 @@ const CharacterPresetsPage = lazy(() => import("./CharacterPresetsPage").then(mo
 const VoiceConfigPage = lazy(() => import("./VoiceConfigPage").then((module) => ({ default: module.VoiceConfigPage })));
 const AiSettingsPage = lazy(() => import("./AiSettingsPage").then(module => ({ default: module.AiSettingsPage })));
 const HelpCenter = lazy(() => import("@lifewood/ui/help-center").then(module => ({ default: module.HelpCenter })));
+const AutomationPage = lazy(() => import("./AutomationPage").then(module => ({default:module.AutomationPage})));
 const BackupsPage = lazy(() => import("./BackupsPage").then(module => ({ default: module.BackupsPage })));
 const SystemRuntimePage = lazy(() => import("./SystemRuntimePage").then((module) => ({ default: module.SystemRuntimePage })));
 
-type AdminNavIconName = "feedback" | "home" | "overview" | "projects" | "users" | "organizations" | "audit" | "settings";
+type AdminNavIconName = "announcements" | "feedback" | "home" | "overview" | "projects" | "users" | "organizations" | "audit" | "settings";
 
 function AdminNavIcon({ name }: { name: AdminNavIconName }) {
   const paths: Record<AdminNavIconName, ReactNode> = {
+    announcements: <path d="M4 9h4l12-5v16L8 15H4V9Zm4 6 2 6h4l-2-4M8 9v6"/>,
     feedback: <><path d="M4 4h16v14H9l-5 3V4Z"/><path d="M8 8h8m-8 4h5"/></>,
     home: <><path d="m10 6-6 6 6 6" /><path d="M5 12h15" /></>,
     overview: <><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>,
@@ -242,7 +245,7 @@ function AdminShell({
     notifications: "notifications.title",
     feedback: "feedback.adminTitle", overview: "admin.nav.overview", projects: "admin.nav.projects",
     users: "admin.nav.users", organizations: "admin.nav.organizations",
-    help: "help.title", audit: "admin.nav.audit", settings: "admin.nav.settings",
+    automation: "automation.title", announcements: "announcements.manage", help: "help.title", audit: "admin.nav.audit", settings: "admin.nav.settings",
   };
   const [accountOpen, setAccountOpen] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
@@ -310,6 +313,8 @@ function AdminShell({
                 <span className="nav-label">{t("admin.nav.overview")}</span>
               </NavLink>}
               <NavLink to={localizedPath(locale, "/workbench")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="overview" /></span><span className="nav-label">{t("operations.workbench")}</span></NavLink>
+              {user.permissions.includes("admin.announcements.manage") && <NavLink to={localizedPath(locale, "/automation")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="audit"/></span><span className="nav-label">{t("automation.title")}</span></NavLink>}
+              {user.permissions.includes("admin.announcements.manage") && <NavLink to={localizedPath(locale, "/announcements")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="announcements"/></span><span className="nav-label">{t("announcements.manage")}</span></NavLink>}
               {user.permissions.includes("admin.feedback.manage")&&<NavLink to={localizedPath(locale,"/feedback")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="feedback"/></span><span className="nav-label">{t("feedback.adminTitle")}</span></NavLink>}
               <NavLink to={localizedPath(locale, "/projects")}>
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="projects" /></span>
@@ -519,7 +524,8 @@ function AdminRoot() {
       </main></>
     );
   const area = location.pathname.split(`/${locale}/`)[1]?.split("/")[0] ?? "";
-  const required = ({ feedback: "admin.feedback.manage", reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
+  const announcementPicker = area === "organizations" && new URLSearchParams(location.search).get("pick") === "announcement" && !!readNoticeDraft(location.state, me.data.id);
+  const required = announcementPicker ? "admin.announcements.manage" : area === "settings" && location.pathname.replace(/\/+$/, "").endsWith("/settings/announcements") ? "admin.announcements.manage" : ({ automation: "admin.announcements.manage", announcements: "admin.announcements.manage", feedback: "admin.feedback.manage", reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
   const home = me.data.permissions.includes("admin.overview.read") ? "overview" : "workbench";
   return (
     <><AccountLocaleRedirect locale={me.data.locale}/><AdminShell user={me.data} locale={locale}>
@@ -537,7 +543,9 @@ function AdminRoot() {
         <Route path="feedback" element={<FeedbackPage key={me.data.id} userId={me.data.id} locale={locale}/>}/>
         <Route path="organizations" element={<OrganizationsPage key={me.data.id} userId={me.data.id} locale={locale} />} />
         <Route path="audit" element={<AuditPage key={me.data.id} locale={locale} userId={me.data.id} />} />
-        <Route path="settings/announcements" element={<AnnouncementsPage key={me.data.id} userId={me.data.id} locale={locale} />} />
+        <Route path="automation" element={<AutomationPage key={me.data.id} locale={locale} userId={me.data.id} canBackup={me.data.permissions.includes("admin.runtime.manage")}/>}/>
+        <Route path="announcements" element={<AnnouncementsPage key={me.data.id} userId={me.data.id} locale={locale} />} />
+        <Route path="settings/announcements" element={<Navigate replace to={localizedPath(locale, "/announcements") + location.search + location.hash} state={location.state}/>} />
         <Route path="settings/characters" element={<CharacterPresetsPage locale={locale} imageBase={customerPortalUrl(locale)} />} />
         <Route path="settings/ai" element={<AiSettingsPage locale={locale} />} />
         <Route path="settings/oidc" element={<OidcSettingsPage key={me.data.id} locale={locale} allowed={me.data.roles.includes("owner")} />} />

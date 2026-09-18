@@ -42,10 +42,10 @@ internal sealed class AuditRepository(string connectionString, string dataDirect
         FlushPending();
     }
 
-    public void Record(CurrentUserDto actor, AuditActionMatch action, string traceId, AuditSnapshot? before = null)
+    public void Record(CurrentUserDto actor, AuditActionMatch action, string traceId, AuditSnapshot? before = null, AuditSnapshot? after = null)
     {
         AuditContextDto? recorded = null;
-        try { recorded = AuditTargets.RecordContext(Capture(action), before); }
+        try { recorded = AuditTargets.RecordContext(after ?? Capture(action), before); }
         catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException) { /* Persist the core event even if optional enrichment is unavailable. */ }
         var item = new AuditEventDto(
             Guid.NewGuid().ToString("N"), actor.Id, actor.DisplayName, actor.Email ?? "",

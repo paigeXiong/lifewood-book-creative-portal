@@ -62,7 +62,7 @@ public sealed partial class VoiceSampleApiIntegrationTests
             response.EnsureSuccessStatusCode();
             Assert.True(response.Headers.CacheControl!.NoStore);
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            Assert.Equal(12, body.RootElement.GetArrayLength());
+            Assert.Equal(13, body.RootElement.GetArrayLength());
             Assert.DoesNotContain(body.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == "mail-service");
             foreach (var article in body.RootElement.EnumerateArray())
             {
@@ -74,7 +74,19 @@ public sealed partial class VoiceSampleApiIntegrationTests
             using var admin = await ownerClient.GetAsync("/api/help?audience=admin&locale=" + locale);
             admin.EnsureSuccessStatusCode();
             using var adminBody = JsonDocument.Parse(await admin.Content.ReadAsStringAsync());
-            Assert.Equal(14, adminBody.RootElement.GetArrayLength());
+            Assert.Equal(18, adminBody.RootElement.GetArrayLength());
+            Assert.Contains(adminBody.RootElement.EnumerateArray(), article=>article.GetProperty("id").GetString()=="mail-templates");
+        }
+        foreach (var (locale, query, id) in new[] {
+            ("zh-CN", "保存并设置发布时间", "scheduled-announcements"),
+            ("en-US", "Save and set publication time", "scheduled-announcements"),
+            ("zh-CN", "维护暂停", "scheduled-backups"),
+            ("en-US", "maintenance-paused", "scheduled-backups") })
+        {
+            using var result = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/help?audience=admin&locale=" + locale + "&q=" + Uri.EscapeDataString(query)));
+            Assert.Contains(result.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == id);
+            using var publicResult = JsonDocument.Parse(await customer.GetStringAsync("/api/help?locale=" + locale + "&q=" + Uri.EscapeDataString(query)));
+            Assert.DoesNotContain(publicResult.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == id);
         }
         using var search = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/help?audience=admin&locale=en-US&q=implicit%20TLS"));
         Assert.Equal("mail-service", Assert.Single(search.RootElement.EnumerateArray()).GetProperty("id").GetString());

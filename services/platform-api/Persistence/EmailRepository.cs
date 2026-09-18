@@ -215,6 +215,7 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
             return;
         }
         try { await mailer.SendContent(address, subject, MailBody.Decode(protector.Unprotect(encrypted)), cancellation); Exec(c, null, "UPDATE email_outbox SET status='sent',body='' WHERE id=$id", ("$id", id)); }
+        catch (MailRateLimitedException) { /* Keep eligible messages queued; the next worker tick rechecks current limits. */ }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
         catch { Exec(c, null, "UPDATE email_outbox SET attempts=attempts+1,status=CASE WHEN attempts>=4 THEN 'failed' ELSE 'pending' END,body=CASE WHEN attempts>=4 THEN '' ELSE body END,next_attempt=$next WHERE id=$id", ("$next", Now + 60), ("$id", id)); }
     }

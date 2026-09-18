@@ -38,7 +38,7 @@ function MailServiceEditor({ initial, locale, onClose, reload, readError }: { in
   const l = initial.labels;
   const [baseline, setBaseline] = useState(initial);
   const confirm = useConfirm();
-  const [form, setForm] = useState<MailServiceInput>(() => ({ revision: baseline.revision, enabled: baseline.enabled, host: baseline.host, port: baseline.port, from: baseline.from, username: baseline.username, password: "", clearPassword: false, publicUrl: baseline.publicUrl }));
+  const [form, setForm] = useState<MailServiceInput>(() => ({ revision: baseline.revision, enabled: baseline.enabled, host: baseline.host, port: baseline.port, from: baseline.from, username: baseline.username, password: "", clearPassword: false, publicUrl: baseline.publicUrl, perMinute:baseline.perMinute??10,perDay:baseline.perDay??200 }));
   const [confirmTest, setConfirmTest] = useState(false);
   const [notice, setNotice] = useState("");
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -51,7 +51,7 @@ function MailServiceEditor({ initial, locale, onClose, reload, readError }: { in
     mutationFn: () => mailSettingsService.test(baseline.revision, locale) });
   const busy = save.isPending || test.isPending || reloading;
   const controls = useUnsavedClose(onClose, t("common.unsavedConfirm"), busy);
-  const changed = form.enabled !== baseline.enabled || form.host !== baseline.host || form.port !== baseline.port || form.from !== baseline.from || form.username !== baseline.username || form.publicUrl !== baseline.publicUrl || !!form.password || form.clearPassword;
+  const changed = form.perMinute !== (baseline.perMinute??10) || form.perDay !== (baseline.perDay??200) || form.enabled !== baseline.enabled || form.host !== baseline.host || form.port !== baseline.port || form.from !== baseline.from || form.username !== baseline.username || form.publicUrl !== baseline.publicUrl || !!form.password || form.clearPassword;
   const testHint = test.error instanceof ApiError ? test.error.details.messageKey?.replace("mailService.errors.", "mailService.hints.") : undefined;
   async function submit(event: FormEvent) {
     event.preventDefault(); if (locked.current || refreshFailed) return;
@@ -85,7 +85,7 @@ function MailServiceEditor({ initial, locale, onClose, reload, readError }: { in
         if (!result.isError && result.data) {
           const value = result.data;
           setBaseline(value);
-          setForm({ revision: value.revision, enabled: value.enabled, host: value.host, port: value.port, from: value.from, username: value.username, password: "", clearPassword: false, publicUrl: value.publicUrl });
+          setForm({ revision: value.revision, enabled: value.enabled, host: value.host, port: value.port, from: value.from, username: value.username, password: "", clearPassword: false, publicUrl: value.publicUrl,perMinute:value.perMinute??10,perDay:value.perDay??200 });
           controls.resetDirty(); save.reset();
         }
       }
@@ -109,6 +109,9 @@ function MailServiceEditor({ initial, locale, onClose, reload, readError }: { in
         <div className="mail-service-field"><div><label htmlFor="mail-password">{l.password}</label><HelpPopover label={l.password}>{l.passwordHelp}</HelpPopover></div><input id="mail-password" type="password" maxLength={4096} value={form.password} disabled={form.clearPassword} placeholder={baseline.hasPassword ? l.passwordSaved : undefined} autoComplete="new-password" onChange={e => setForm({ ...form, password: e.target.value })} /></div>
         {baseline.hasPassword && <label className="mail-service-clear"><input type="checkbox" checked={form.clearPassword} onChange={e => setForm({ ...form, clearPassword: e.target.checked, password: "" })} />{l.clearPassword}</label>}
         <div className="mail-service-field mail-service-domain"><div><label htmlFor="mail-public-url">{l.publicUrl}</label><HelpPopover label={l.publicUrl}>{l.domainHelp}</HelpPopover></div><input id="mail-public-url" type="url" required={form.enabled} maxLength={2048} value={form.publicUrl} onChange={e => setForm({ ...form, publicUrl: e.target.value })} /></div>
+        <label>{t("mailRate.minute")}<input type="number" required min={1} max={1000} value={form.perMinute??10} onChange={e=>setForm({...form,perMinute:Number(e.target.value)})}/></label>
+        <label>{t("mailRate.day")}<input type="number" required min={1} max={100000} value={form.perDay??200} onChange={e=>setForm({...form,perDay:Number(e.target.value)})}/></label>
+        <HelpPopover label={t("mailRate.title")}>{t("mailRate.help")}</HelpPopover>
       </fieldset>
       {save.error && <p role="alert">{localizedApiError(save.error, t)}</p>}
       {readError && <p role="alert">{t("recovery.refreshFailed")}</p>}

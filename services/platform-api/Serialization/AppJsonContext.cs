@@ -8,6 +8,8 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(ScheduleAnnouncementRequest))]
+[JsonSerializable(typeof(AnnouncementJobsPage))]
 [JsonSerializable(typeof(MailBody))]
 [JsonSerializable(typeof(ProxyDocument))]
 [JsonSerializable(typeof(ProxySettingsDto))]

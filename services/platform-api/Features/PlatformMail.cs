@@ -5,7 +5,7 @@ using Lifewood.PlatformApi.Persistence;
 
 namespace Lifewood.PlatformApi.Features;
 
-internal sealed record MailConfiguration(bool Enabled, string Host, int Port, string From, string Username, string Password, string PublicUrl)
+internal sealed record MailConfiguration(bool Enabled, string Host, int Port, string From, string Username, string Password, string PublicUrl, int PerMinute = 10, int PerDay = 200)
 {
     public IReadOnlyList<MailConfigurationCheck> ConfigurationChecks => [
         new("enabled", Enabled),
@@ -44,7 +44,7 @@ internal interface IPlatformMailer {
     Task Send(string address, string subject, string body, CancellationToken cancellation);
     Task SendContent(string address, string subject, MailBody body, CancellationToken cancellation) => Send(address, subject, body.Text, cancellation);
 }
-internal sealed class SmtpPlatformMailer(MailSettings settings) : IPlatformMailer
+internal sealed class SmtpPlatformMailer(MailSettings settings, MailSettingsStore store) : IPlatformMailer
 {
     public Task Send(string address, string subject, string body, CancellationToken cancellation) => SendContent(address, subject, new(body), cancellation);
     internal static MailMessage CreateMessage(string from, string address, string subject, MailBody body)
@@ -57,6 +57,9 @@ internal sealed class SmtpPlatformMailer(MailSettings settings) : IPlatformMaile
     {
         var configuration = settings.Current;
         if (!configuration.Ready) throw new InvalidOperationException("Mail is not configured.");
+        cancellation.ThrowIfCancellationRequested();
+        var quota=store.Limiter.Check(configuration,true);
+        if(quota.ResumeAt is {} resume)throw new MailRateLimitedException(resume);
         using var message = CreateMessage(configuration.From, address, subject, body);
         using var smtp = new SmtpClient(configuration.Host, configuration.Port) { EnableSsl = true, UseDefaultCredentials = false };
         if (configuration.Username.Length > 0) smtp.Credentials = new NetworkCredential(configuration.Username, configuration.Password);

@@ -6,6 +6,33 @@ using Xunit;
 namespace Lifewood.PlatformApi.Tests;
 public sealed partial class VoiceSampleApiIntegrationTests
 {
+    [Fact] public async Task MailTemplateDraftPreviewAndEditsAreScopedAndAudited()
+    {
+        await BootstrapOwner();
+        var csrf=await GetCsrf(ownerClient);
+        async Task<HttpResponseMessage> Send(HttpClient client,HttpMethod method,string path,object input) {
+            using var request=new HttpRequestMessage(method,path){Content=JsonContent.Create(input)};
+            request.Headers.Add("X-CSRF-TOKEN",await GetCsrf(client));
+            return await client.SendAsync(request);
+        }
+        var input=new SaveMailTemplate("default","Custom subject","First\nSecond",true);
+        using var customer=await CreateCustomerClient(csrf);
+        Assert.Equal(HttpStatusCode.Forbidden,(await Send(customer,HttpMethod.Post,"/api/admin/mail/templates/notice/preview?locale=en-US",input)).StatusCode);
+        var preview=await Send(ownerClient,HttpMethod.Post,"/api/admin/mail/templates/notice/preview?locale=en-US",input);
+        Assert.Equal(HttpStatusCode.OK,preview.StatusCode);
+        Assert.Contains("First<br>Second",(await preview.Content.ReadFromJsonAsync<MailTemplate>())!.Body.Html);
+        var original=(await ownerClient.GetFromJsonAsync<MailTemplate[]>("/api/admin/mail/templates?locale=en-US"))!.Single(t=>t.Kind=="notice");
+        Assert.Equal("default",original.Revision);
+        Assert.Equal(HttpStatusCode.OK,(await Send(ownerClient,HttpMethod.Put,"/api/admin/mail/templates/notice?locale=en-US",input with {Enabled=false})).StatusCode);
+        var updated=(await ownerClient.GetFromJsonAsync<MailTemplate[]>("/api/admin/mail/templates?locale=en-US"))!.Single(t=>t.Kind=="notice");
+        Assert.False(updated.Enabled);
+        Assert.Equal(HttpStatusCode.OK,(await Send(ownerClient,HttpMethod.Put,"/api/admin/mail/templates/notice?locale=en-US",input with {Revision=updated.Revision,Reset=true})).StatusCode);
+        using var audit=System.Text.Json.JsonDocument.Parse(await ownerClient.GetStringAsync("/api/admin/audit-events?page=1&pageSize=100"));
+        var items=audit.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Contains(items,x=>x.GetProperty("actionId").GetString()=="mail.template_update" && x.GetProperty("targetId").GetString()=="notice/en-US");
+        Assert.Contains(items,x=>x.GetProperty("actionId").GetString()=="mail.template_reset");
+        Assert.DoesNotContain("First",audit.RootElement.GetRawText());
+    }
     [Fact] public async Task MailTemplatePreviewRequiresOwnerAndDoesNotChangeQueue()
     {
         await BootstrapOwner();

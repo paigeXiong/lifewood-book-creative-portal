@@ -49,8 +49,8 @@ export function OrganizationsPage({ locale, userId }: { locale: SupportedLocale;
   const [page, setPage] = useState(() => Math.max(1, Number(searchParams.get("page")) || 1));
   const [editing, setEditing] = useState<AdminOrganization | null | undefined>();
   const organizations = useQuery({
-    queryKey: ["admin-organizations", search, page],
-    queryFn: () => adminService.listOrganizations({ search: search || undefined, page, pageSize: 20 }),
+    queryKey: ["admin-organizations", search, page, picking ? "announcement" : "manage", userId],
+    queryFn: () => adminService.listOrganizations({ search: search || undefined, page, pageSize: 20, ...(picking ? {purpose: "announcement" as const} : {}) }),
   });
   const pages = Math.max(1, Math.ceil((organizations.data?.total ?? 0) / 20));
   const save = useMutation({
@@ -97,7 +97,7 @@ export function OrganizationsPage({ locale, userId }: { locale: SupportedLocale;
           <button>{t("common.search")}</button>
         </form>
         <span className="result-count">{t("admin.organizations.count", { count: organizations.data?.total ?? 0 })}</span>
-        <button type="button" className="primary push-right" onClick={() => setEditing(null)}>{t("admin.organizations.create")}</button>
+        {!picking && <button type="button" className="primary push-right" onClick={() => setEditing(null)}>{t("admin.organizations.create")}</button>}
       </section>
       {Boolean(organizations.error) && <div className="message error" role="alert">{localizedApiError(organizations.error, t)}</div>}
       <section className="table-card">
@@ -112,7 +112,7 @@ export function OrganizationsPage({ locale, userId }: { locale: SupportedLocale;
           </tr></thead>
           <tbody>{organizations.data?.items.map((organization) => (
             <Fragment key={organization.id}><tr>
-              <td data-label={t("admin.organizations.name")}><strong>{picking ? <OrganizationWordmark key={organization.avatarUrl} organization={organization} /> : <button type="button" className="organization-expand organization-identity-link" onClick={() => toggleMembers(organization.id)} aria-expanded={expandedOrganization === organization.id} aria-controls={`organization-members-${organization.id}`} aria-label={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}><svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m7 4 6 6-6 6" /></svg><OrganizationWordmark key={organization.avatarUrl} organization={organization} /></button>}</strong></td>
+              <td data-label={t("admin.organizations.name")}><strong>{picking ? <span>{organization.name}</span> : <button type="button" className="organization-expand organization-identity-link" onClick={() => toggleMembers(organization.id)} aria-expanded={expandedOrganization === organization.id} aria-controls={`organization-members-${organization.id}`} aria-label={t("admin.organizations.viewMembers",{name:organization.name,count:organization.memberCount})}><svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m7 4 6 6-6 6" /></svg><OrganizationWordmark key={organization.avatarUrl} organization={organization} /></button>}</strong></td>
               <td data-label={t("admin.organizations.members")}>{organization.memberCount}</td>
               <td data-label={t("admin.organizations.status")}><span className={organization.active ? "status active" : "status inactive"}>{t(organization.active ? "admin.organizations.active" : "admin.organizations.inactive")}</span></td>
               <td data-label={t("admin.organizations.updated")}>{formatDate(organization.updatedAt, locale)}</td>

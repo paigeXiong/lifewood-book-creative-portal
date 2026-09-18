@@ -3,15 +3,21 @@ using Lifewood.PlatformApi.Contracts;
 using Lifewood.PlatformApi.Serialization;
 using Microsoft.Data.Sqlite;
 namespace Lifewood.PlatformApi.Persistence;
-internal sealed class AnnouncementRepository(string connectionString)
+internal sealed partial class AnnouncementRepository(string connectionString)
 {
     private SqliteConnection Open() { var db = new SqliteConnection(connectionString); db.Open(); return db; }
     public void Initialize() {
         using var db=Open(); using var c=db.CreateCommand(); c.CommandText="""
         CREATE TABLE IF NOT EXISTS announcements(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,document TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS announcement_recipients(announcement_id TEXT NOT NULL,user_id TEXT NOT NULL,dismissed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(announcement_id,user_id));
+        CREATE TABLE IF NOT EXISTS announcement_jobs(id TEXT PRIMARY KEY,announcement_id TEXT NOT NULL,version INTEGER NOT NULL,run_at TEXT NOT NULL,status TEXT NOT NULL,finished_at TEXT,error TEXT,title_zh TEXT,title_en TEXT);
+        CREATE INDEX IF NOT EXISTS ix_announcement_jobs_due ON announcement_jobs(status,run_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_announcement_job_pending ON announcement_jobs(announcement_id) WHERE status='pending';
         CREATE INDEX IF NOT EXISTS ix_announcement_recipient ON announcement_recipients(user_id,announcement_id);
         """; c.ExecuteNonQuery();
+        using var columns=db.CreateCommand();columns.CommandText="PRAGMA table_info(announcement_jobs)";
+        var names=new HashSet<string>();using(var reader=columns.ExecuteReader())while(reader.Read())names.Add(reader.GetString(1));
+        foreach(var name in new[]{"title_zh","title_en"})if(!names.Contains(name)){using var add=db.CreateCommand();add.CommandText=$"ALTER TABLE announcement_jobs ADD COLUMN {name} TEXT";add.ExecuteNonQuery();}
     }
     private static AnnouncementDocument? Read(SqliteConnection db,string id,SqliteTransaction? tx=null) {
         using var c=db.CreateCommand(); c.Transaction=tx; c.CommandText="SELECT document FROM announcements WHERE id=$id"; c.Parameters.AddWithValue("$id",id);
@@ -27,7 +33,7 @@ internal sealed class AnnouncementRepository(string connectionString)
             : !string.IsNullOrWhiteSpace(p.TitleZh) && p.TitleZh.Length<=160 && !string.IsNullOrWhiteSpace(p.TitleEn) && p.TitleEn.Length<=160 &&
               !string.IsNullOrWhiteSpace(p.BodyZh) && p.BodyZh.Length<=12000 && !string.IsNullOrWhiteSpace(p.BodyEn) && p.BodyEn.Length<=12000) &&
         (p.DisplayDays is null || p.DisplayDays is >=1 and <=3650) &&
-        p.Placement is "login" or "personal" && p.Audience is "all" or "specified" && p.Languages is {Length:<=2} && p.OrganizationIds is {Length:<=200} &&
+        p.Placement is "login" or "personal" or "banner" && p.Audience is "all" or "specified" && p.Languages is {Length:<=2} && p.OrganizationIds is {Length:<=200} &&
         p.Languages.All(x=>x is "zh-CN" or "en-US") && p.OrganizationIds.All(x=>!string.IsNullOrWhiteSpace(x) && x.Length<=64) &&
         (p.Audience!="all" || p.Languages.Length+p.OrganizationIds.Length==0) &&
         (p.Audience!="specified" || p.Languages.Length+p.OrganizationIds.Length>0) && (p.Placement!="login" || p.OrganizationIds.Length==0) &&
@@ -46,13 +52,14 @@ internal sealed class AnnouncementRepository(string connectionString)
         result=new(id,seq,p,"draft",(old?.Version??0)+1,old?.CreatedAt??DateTimeOffset.UtcNow.ToString("O"),0);
         Write(db,tx,result);tx.Commit();return null;
     }
-    public string? Transition(string id,long version,bool publish,out AnnouncementDocument? result) {
+    public string? Transition(string id,long version,bool publish,out AnnouncementDocument? result,bool automated=false) {
         result=null;using var db=Open();using var tx=db.BeginTransaction(deferred:false);var old=Read(db,id,tx);
-        if(old is null)return "missing";if(old.Version!=version || (publish ? old.Status!="draft" : old.Status!="published"))return "conflict";
+        if(old is null)return "missing";if(old.Version!=version || (publish ? old.Status is not ("draft" or "scheduled") : old.Status!="published"))return "conflict";
+        if(automated && (old.Status!="scheduled" || old.ScheduledAt>DateTimeOffset.UtcNow))return "conflict";
         if(publish)old=old with {Content=old.Content with {DisplayDays=old.Content.DisplayDays??30,StartsAt=null,EndsAt=null}};
         if(publish && !Valid(old.Content))return "invalid";
         var count=0;
-        if(publish && old.Content.Placement=="personal") {
+        if(publish && old.Content.Placement is "personal" or "banner") {
             using var c=db.CreateCommand();c.Transaction=tx;
             // Snapshot recipients at publication. History belongs to these accounts, even if they later change organization/language.
             c.CommandText="""
@@ -67,12 +74,19 @@ internal sealed class AnnouncementRepository(string connectionString)
         if(publish){using var sequenceCommand=db.CreateCommand();sequenceCommand.Transaction=tx;sequenceCommand.CommandText="UPDATE announcements SET seq=(SELECT COALESCE(MAX(seq),0)+1 FROM announcements) WHERE id=$id RETURNING seq";sequenceCommand.Parameters.AddWithValue("$id",id);sequence=Convert.ToInt64(sequenceCommand.ExecuteScalar());}
         var publishedAt=DateTimeOffset.UtcNow;
         var content=publish && old.Content.DisplayDays is int days ? old.Content with {StartsAt=null,EndsAt=publishedAt.AddDays(days).ToString("O")} : old.Content;
-        result=old with {Content=content,Sequence=sequence,Status=publish?"published":"withdrawn",Version=old.Version+1,CreatedAt=publish?publishedAt.ToString("O"):old.CreatedAt,Recipients=publish?count:old.Recipients};
-        Write(db,tx,result);tx.Commit();return null;
+        result=old with {ScheduledAt=null,Content=content,Sequence=sequence,Status=publish?"published":"withdrawn",Version=old.Version+1,CreatedAt=publish?publishedAt.ToString("O"):old.CreatedAt,Recipients=publish?count:old.Recipients};
+        Write(db,tx,result);
+        if(publish && old.Status=="scheduled") { using var done=db.CreateCommand();done.Transaction=tx;done.CommandText="UPDATE announcement_jobs SET status='completed',finished_at=$now WHERE announcement_id=$id AND status='pending'";done.Parameters.AddWithValue("$now",publishedAt.ToString("O"));done.Parameters.AddWithValue("$id",id);done.ExecuteNonQuery(); }
+        if(automated) {
+            using var audit=db.CreateCommand();audit.Transaction=tx;
+            audit.CommandText="INSERT INTO audit_events(id,actor_user_id,actor_name,actor_email,action_id,target_type,target_id,occurred_at,trace_id) VALUES($event,'system','System','','announcement.publish','announcement',$id,$now,$event)";
+            audit.Parameters.AddWithValue("$event",Guid.NewGuid().ToString("N"));audit.Parameters.AddWithValue("$id",id);audit.Parameters.AddWithValue("$now",publishedAt.ToString("O"));audit.ExecuteNonQuery();
+        }
+        tx.Commit();return null;
     }
     public string? Preview(string id,long version,out AnnouncementPreview? preview) {
         preview=null;using var db=Open();using var tx=db.BeginTransaction();var d=Read(db,id,tx);
-        if(d is null)return "missing";if(d.Version!=version || d.Status!="draft")return "conflict";
+        if(d is null)return "missing";if(d.Version!=version || d.Status is not ("draft" or "scheduled"))return "conflict";
         if(d.Content.Placement=="login"){preview=new(null);return null;}
         using var c=db.CreateCommand();c.Transaction=tx;c.CommandText="""
         SELECT COUNT(*) FROM users WHERE is_active=1
@@ -93,7 +107,7 @@ internal sealed class AnnouncementRepository(string connectionString)
         using var reader=c.ExecuteReader();var list=new List<AnnouncementDocument>();while(reader.Read())list.Add(JsonSerializer.Deserialize(reader.GetString(0),AppJsonContext.Default.AnnouncementDocument)!);
         return new(list.Take(20).ToArray(),list.Count>20?list[19].Sequence:null);
     }
-    public AnnouncementFeed Feed(string? userId,string locale,long? before,bool unread=false) {
+    public AnnouncementFeed Feed(string? userId,string locale,long? before,bool unread=false,bool bannerOnly=false) {
         using var db=Open();using var c=db.CreateCommand();
         c.CommandText="""
         SELECT a.document,COALESCE(r.dismissed,0) FROM announcements a
@@ -103,12 +117,14 @@ internal sealed class AnnouncementRepository(string connectionString)
         AND (($user IS NULL AND json_extract(a.document,'$.content.placement')='login'
              AND (json_array_length(a.document,'$.content.languages')=0 OR $locale IN (SELECT value FROM json_each(a.document,'$.content.languages')))
              AND (json_extract(a.document,'$.content.endsAt') IS NULL OR julianday(json_extract(a.document,'$.content.endsAt'))>julianday('now')))
-             OR ($user IS NOT NULL AND r.user_id IS NOT NULL AND json_extract(a.document,'$.content.placement')='personal'))
+             OR ($user IS NOT NULL AND r.user_id IS NOT NULL AND json_extract(a.document,'$.content.placement') IN ('personal','banner')))
+        AND ($banner=0 OR json_extract(a.document,'$.content.placement')='banner')
+        AND ($unread=0 OR $banner=1 OR json_extract(a.document,'$.content.placement')!='banner')
         AND ($unread=0 OR (r.dismissed=0 AND (json_extract(a.document,'$.content.endsAt') IS NULL OR julianday(json_extract(a.document,'$.content.endsAt'))>julianday('now'))))
         ORDER BY a.seq DESC LIMIT 21;
         """;
-        c.Parameters.AddWithValue("$user",(object?)userId??DBNull.Value);c.Parameters.AddWithValue("$before",before??long.MaxValue);c.Parameters.AddWithValue("$locale",locale);c.Parameters.AddWithValue("$unread",unread?1:0);
-        using var reader=c.ExecuteReader();var list=new List<AnnouncementItem>();while(reader.Read()) {var d=JsonSerializer.Deserialize(reader.GetString(0),AppJsonContext.Default.AnnouncementDocument)!;var dismissed=reader.GetInt32(1)==1;list.Add(new(d.Id,d.Sequence,d.Content.Title ?? (locale=="en-US"?d.Content.TitleEn:d.Content.TitleZh) ?? "",d.Content.Body ?? (locale=="en-US"?d.Content.BodyEn:d.Content.BodyZh) ?? "",d.CreatedAt,dismissed,!dismissed && (d.Content.EndsAt is null || DateTimeOffset.Parse(d.Content.EndsAt)>DateTimeOffset.UtcNow)));}
+        c.Parameters.AddWithValue("$user",(object?)userId??DBNull.Value);c.Parameters.AddWithValue("$before",before??long.MaxValue);c.Parameters.AddWithValue("$locale",locale);c.Parameters.AddWithValue("$unread",unread?1:0);c.Parameters.AddWithValue("$banner",bannerOnly?1:0);
+        using var reader=c.ExecuteReader();var list=new List<AnnouncementItem>();while(reader.Read()) {var d=JsonSerializer.Deserialize(reader.GetString(0),AppJsonContext.Default.AnnouncementDocument)!;var dismissed=reader.GetInt32(1)==1;list.Add(new(d.Id,d.Sequence,d.Content.Title ?? (locale=="en-US"?d.Content.TitleEn:d.Content.TitleZh) ?? "",d.Content.Body ?? (locale=="en-US"?d.Content.BodyEn:d.Content.BodyZh) ?? "",d.CreatedAt,dismissed,d.Content.Placement!="banner" && !dismissed && (d.Content.EndsAt is null || DateTimeOffset.Parse(d.Content.EndsAt)>DateTimeOffset.UtcNow),d.Content.Placement=="banner"));}
         return new(list.Take(20).ToArray(),list.Count>20?list[19].Sequence:null);
     }
     public bool DismissMany(string userId,string[]? ids) {
