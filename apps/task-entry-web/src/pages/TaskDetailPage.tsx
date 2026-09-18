@@ -65,7 +65,7 @@ export function TaskDetailPage() {
     );
   if ((task.isError && (!task.data || !canRetainQueryData(task.error))) || (options.isError && (!options.data || !canRetainQueryData(options.error))) || (needsVoices && voices.isError && (!voices.data || !canRetainQueryData(voices.error))) || !task.data)
     return <ScreenError error={task.error ?? options.error ?? (needsVoices ? voices.error : undefined)} onRetry={() => Promise.all([task.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])} />;
-  if (task.data.status === "draft")
+  if (task.data.status === "draft" && task.data.canEdit !== false)
     return (
       <Navigate
         replace
@@ -73,7 +73,7 @@ export function TaskDetailPage() {
       />
     );
 
-  const statusId = task.data.workflowStatus ?? task.data.status;
+  const statusId = task.data.status === "draft" && task.data.workflowStatus !== "awaiting_customer" ? "draft" : task.data.workflowStatus ?? task.data.status;
   const status = statusMap.get(statusId);
   const optionLabel = (
     items: Array<{ id: string; label: string }>,
@@ -127,10 +127,10 @@ export function TaskDetailPage() {
         <div className="project-progress-state">
           <span className="project-progress-label">{t("projectProgress.title")}</span>
           <span className={`status-badge status-${status?.tone ?? "neutral"}`}>{status?.label ?? t("uiDensity.unavailableOption")}</span>
-          <p>{t(`projectProgress.${statusId === "completed" ? "completed" : statusId === "closed" ? "closed" : statusId === "in_production" ? "production" : "waiting"}`)}</p>
+          <p>{t(`projectProgress.${statusId === "draft" ? "draft" : statusId === "awaiting_customer" ? "returned" : statusId === "completed" ? "completed" : statusId === "closed" ? "closed" : statusId === "in_production" ? "production" : "waiting"}`)}</p>
           <a className="button button-quiet" href="#submitted-materials">{t("projectProgress.viewMaterials")}<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg></a>
         </div>
-        <FinalDeliverySection projectId={task.data.id} locale={validLocale} />
+        {task.data.status !== "draft" && <FinalDeliverySection projectId={task.data.id} locale={validLocale} />}
       </section>
       <SubmittedMaterials key={task.data.id} ids={[...detailGroups.map(group => group.id), ...task.data.creative.characters.map(character => `character-${character.id}`)]}>
         <aside className="detail-cover">
@@ -152,7 +152,7 @@ export function TaskDetailPage() {
               </dd>
             </div>
             <div>
-              <dt>{t("taskDetail.updated")}</dt>
+              <dt>{t(task.data.status === "draft" ? "tasks.columns.updated" : "taskDetail.updated")}</dt>
               <dd>
                 <time dateTime={task.data.updatedAt}>
                   {date.format(new Date(task.data.updatedAt))}

@@ -65,7 +65,7 @@ test("customer submission, requested changes and final delivery recover safely i
   await gotoInAccountLocale(page, `http://127.0.0.1:5193/${locale}/tasks/${draft.id}`);
   const summary=page.locator(".project-progress-summary");await expect(summary).toBeVisible();await expect(summary.locator(".customer-delivery.ready")).toBeVisible();await expect(summary.locator("b")).toHaveCount(0);
   // Notification failures remain visible inside the active modal and retry reaches the project.
-  await page.goto(`http://127.0.0.1:5193/${locale}/notifications`);
+  await page.goto(`http://127.0.0.1:5193/${locale}/notifications?kind=delivery&project=${draft.id}`);
   await page.locator(".notification-list").getByRole("button",{name:zh?"通知详情":"Notification details",exact:true}).first().click();
   const noticeDialog=page.getByRole("dialog");
   const targetRoute="**/api/notifications/*/target?admin=false";

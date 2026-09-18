@@ -485,7 +485,7 @@ export function CreativeFormPage({ stage }: { stage: "characters" | "style" }) {
     !optionsQuery.data
   )
     return <><UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
-  if (draftQuery.data.status !== "draft")
+  if (draftQuery.data.status !== "draft" || draftQuery.data.canEdit === false)
     return (
       <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />
     );

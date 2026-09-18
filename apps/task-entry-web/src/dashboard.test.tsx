@@ -84,7 +84,7 @@ for (const locale of ["zh-CN", "en-US"] as const) {
         expect(document.activeElement).toBe(host.querySelector(".dashboard-day-details"));
       }
       const links = host.querySelectorAll<HTMLAnchorElement>(".dashboard-distribution li a");
-      expect([...links].map(link => link.getAttribute("href"))).toEqual(["awaiting_customer", "draft", "new"].map(id => `/${locale}/tasks?status=stage%3A${id}`));
+      expect([...links].map(link => link.getAttribute("href"))).toEqual(["awaiting_customer", "draft", "new"].map(id => `/${locale}/tasks?status=stage%3A${id}&scope=personal`));
       expect(host.querySelectorAll(".dashboard-status-segment")).toHaveLength(3);
       expect(links[0].textContent).toContain(i18n.t("clientUx.returnedStatus"));
       expect(links[0].getAttribute("aria-label")).not.toContain("Admin label");

@@ -1,3 +1,4 @@
+import "@lifewood/ui/segmented-control.css";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -39,7 +40,7 @@ export function AiSettingsPage({ locale }: { locale: SupportedLocale }) {
     {query.isPending && <div role="status">{t("common.loading")}</div>}
     {(query.isError || (query.data && !data)) && <div className="message error" role="alert">{query.isError ? localizedApiError(query.error, t) : t("errors.network.invalidResponse")} <button disabled={query.isFetching} onClick={() => void query.refetch()}>{t("common.retry")}</button></div>}
     {data && labels && <>
-      <nav className="ai-section-tabs" aria-label={labels.title}>
+      <nav className="ai-section-tabs lw-segmented" aria-label={labels.title}>
         <button aria-pressed={section === "providers"} onClick={() => setSection("providers")}>{labels.providers}</button>
         <button aria-pressed={section === "business"} onClick={() => setSection("business")}>{labels.business}</button>
       </nav>

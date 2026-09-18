@@ -50,7 +50,7 @@ public sealed partial class VoiceSampleApiIntegrationTests
         var last = (await ownerClient.GetFromJsonAsync<OrganizationMemberActivity>(url + "?page=999"))!;
         Assert.Equal(2, last.Page); Assert.Equal(5, last.Projects.Length);
         var projects = first.Projects.Concat(last.Projects).ToArray();
-        Assert.All(projects, p => Assert.False(p.CanOpen));
+        Assert.All(projects, p => Assert.True(p.CanOpen));
         Assert.Equal("Shared original", projects.Single(p => p.Id == "returned").Name);
         Assert.Null(projects.Single(p => p.Id == "returned").SubmittedAt);
         Assert.Equal("2026-09-01T10:00:00Z", projects.Single(p => p.Id == "production").SubmittedAt);
@@ -63,7 +63,7 @@ public sealed partial class VoiceSampleApiIntegrationTests
         Assert.Equal("待修改或回复", Assert.Single(filtered.Projects).StatusLabel); Assert.Equal("登录概况", filtered.Labels["activity"]);
         var own = (await customer.GetFromJsonAsync<OrganizationMemberActivity>(url))!;
         Assert.All(own.Projects, p => Assert.True(p.CanOpen));
-        Assert.Equal(HttpStatusCode.NotFound, (await ownerClient.GetAsync("/api/projects/production")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await ownerClient.GetAsync("/api/projects/production")).StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         foreach (var hiddenField in new[] { "sessionId", "ipAddress", "email", "phone", "password" }) Assert.DoesNotContain(hiddenField, json);
         OrganizationSql("UPDATE user_presence SET last_seen=$old WHERE user_id=$id", ("$old", now - 180), ("$id", member.Id));

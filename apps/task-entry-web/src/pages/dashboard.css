@@ -112,3 +112,5 @@
 @media(max-width:700px){.dashboard-month-control{min-width:0;flex:1}.dashboard-month-control>strong{min-width:0;flex:1;font-size:14px}.customer-dashboard .dashboard-text-button{padding-inline:4px;font-size:12px}}
 
 @media(max-width:700px){.customer-dashboard{width:calc(100% - 24px)}}
+
+.dashboard-toolbar { flex-wrap:wrap; }

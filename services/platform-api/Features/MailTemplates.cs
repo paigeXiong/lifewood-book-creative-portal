@@ -12,7 +12,7 @@ internal sealed record MailBody(string Text, string? Html = null)
         ? JsonSerializer.Deserialize(value[Prefix.Length..], AppJsonContext.Default.MailBody) ?? throw new JsonException()
         : new(value);
 }
-internal sealed record MailTemplate(string Kind, string Subject, MailBody Body);
+internal sealed record MailTemplate(string Kind, string Subject, MailBody Body, string Introduction = "", bool Enabled = true, string Revision = "default");
 
 internal static class MailTemplates
 {
@@ -20,7 +20,7 @@ internal static class MailTemplates
         .Select(kind => Render(kind, locale, kind == "security" ? null : $"https://portal.example.test/{locale}/" +
             (kind == "notice" ? "notifications" : $"email-action#purpose={kind}&token=preview-only"), preview: true)).ToArray();
 
-    public static MailTemplate Render(string kind, string locale, string? actionUrl = null, bool preview = false)
+    public static MailTemplate Render(string kind, string locale, string? actionUrl = null, bool preview = false, string? customSubject = null, string? customIntroduction = null)
     {
         var en = locale == "en-US";
         var (subject, introduction, action, note) = kind switch {
@@ -34,6 +34,8 @@ internal static class MailTemplates
                 : ("密码已修改", "你的 Book Creative Portal 密码已重置，原登录会话已失效。", "", "如非本人操作，请立即联系平台负责人。"),
             _ => throw new ArgumentOutOfRangeException(nameof(kind))
         };
+        subject = customSubject ?? subject;
+        introduction = customIntroduction ?? introduction;
         if (action.Length > 0 && (!Uri.TryCreate(actionUrl, UriKind.Absolute, out var uri) || uri.UserInfo.Length > 0 ||
             !(uri.Scheme == "https" || uri.Scheme == "http" && uri.IsLoopback))) throw new ArgumentException("Invalid mail action URL.", nameof(actionUrl));
         static string E(string value) => WebUtility.HtmlEncode(value);
@@ -52,6 +54,6 @@ internal static class MailTemplates
         </td></tr></table></body></html>
         """;
         var text = $"Book Creative Portal\n\n{subject}\n\n{introduction}\n\n" + (action.Length == 0 ? "" : $"{action}:\n{actionUrl}\n\n") + note;
-        return new(kind, subject, new(text, html));
+        return new(kind, subject, new(text, html), introduction);
     }
 }

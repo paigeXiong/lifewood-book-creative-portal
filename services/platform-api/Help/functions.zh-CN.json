@@ -1,0 +1,202 @@
+[
+  {
+    "path": "/users",
+    "title": "用户管理 · 创建用户",
+    "category": "主体管理 / 用户管理",
+    "keywords": "注册 开户 新建账号 添加用户 成员 密码 register registration signup sign up account create user password",
+    "permissions": [
+      "admin.users.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/organizations",
+    "title": "组织管理",
+    "category": "主体管理",
+    "keywords": "公司 团队 成员 organization company team members",
+    "permissions": [
+      "admin.users.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/projects",
+    "title": "项目跟进",
+    "category": "项目运营",
+    "keywords": "项目 需求 退回 完成 指派 project request return complete assign",
+    "permissions": [
+      "admin.projects.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/workbench",
+    "title": "运营工作台",
+    "category": "项目运营",
+    "keywords": "待办 跟进 todo follow up workbench",
+    "permissions": [
+      "admin.projects.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/overview",
+    "title": "统计概览",
+    "category": "项目运营",
+    "keywords": "统计 效率 平均 完成 时间 analytics efficiency average duration",
+    "permissions": [
+      "admin.overview.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/feedback",
+    "title": "平台反馈",
+    "category": "项目运营",
+    "keywords": "问题 反馈 回复 bug feedback reply",
+    "permissions": [
+      "admin.feedback.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/audit",
+    "title": "操作审计",
+    "category": "平台治理",
+    "keywords": "日志 审计 操作 log audit activity",
+    "permissions": [
+      "admin.audit.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/oidc",
+    "title": "登录方式",
+    "category": "系统配置 / 登录与接入",
+    "keywords": "注册 登录 单点 第三方 身份 绑定 sso oidc login registration signup identity",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": true
+  },
+  {
+    "path": "/settings/mail",
+    "title": "邮件服务与发送状态",
+    "category": "系统配置 / 消息通知",
+    "keywords": "邮箱 邮件 smtp 授权码 发信 通知 email mail smtp notification",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": true
+  },
+  {
+    "path": "/settings/notifications",
+    "title": "通知设置",
+    "category": "系统配置 / 消息通知",
+    "keywords": "通知 提醒 notification reminder",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/announcements",
+    "title": "公告管理",
+    "category": "系统配置 / 消息通知",
+    "keywords": "公告 发布 announcement publish",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/options",
+    "title": "表单选项",
+    "category": "系统配置 / 内容配置",
+    "keywords": "品牌 类型 语言 表单 选项 brand genre language form options",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/files",
+    "title": "文件类别",
+    "category": "系统配置 / 内容配置",
+    "keywords": "文件 上传 分类 file upload category",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/characters",
+    "title": "预设角色",
+    "category": "系统配置 / 内容配置",
+    "keywords": "角色 人物 预设 character preset",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/voices",
+    "title": "参考音色",
+    "category": "系统配置 / 内容配置",
+    "keywords": "音色 配音 声音 voice audio",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/ai",
+    "title": "AI 接入",
+    "category": "系统配置 / 登录与接入",
+    "keywords": "人工智能 模型 接口 ai model api",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/runtime",
+    "title": "运行与网络",
+    "category": "系统配置 / 系统运维",
+    "keywords": "存储 用量 代理 网络 域名 端口 proxy storage network domain port runtime",
+    "permissions": [
+      "admin.runtime.manage",
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/backups",
+    "title": "备份与恢复",
+    "category": "系统配置 / 系统运维",
+    "keywords": "备份 恢复 数据 backup restore recovery",
+    "permissions": [
+      "admin.runtime.manage",
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/reports",
+    "title": "项目报表",
+    "category": "项目运营",
+    "keywords": "报表 导出 csv report export",
+    "permissions": [
+      "admin.projects.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/notifications",
+    "title": "通知中心",
+    "category": "消息",
+    "keywords": "通知 消息 未读 notification message unread",
+    "permissions": [],
+    "owner": false
+  }
+]

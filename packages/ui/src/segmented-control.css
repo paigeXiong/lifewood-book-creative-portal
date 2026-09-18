@@ -1,0 +1,11 @@
+/* Shared two-option segmented control. Labels remain localized at the call site. */
+.lw-segmented.lw-segmented.lw-segmented { position:relative; isolation:isolate; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:max-content; max-width:100%; gap:0; padding:3px; border:0; border-radius:999px; background:#dfeae3; align-self:center; }
+.lw-segmented::before { content:""; position:absolute; z-index:-1; inset:3px auto 3px 3px; width:calc((100% - 6px)/2); border-radius:999px; background:#fff; box-shadow:0 1px 4px rgb(22 62 53 / 12%); transform:translateX(0); transition:transform 200ms ease-out; pointer-events:none; }
+.lw-segmented:has(>button:nth-child(2)[aria-pressed="true"])::before { transform:translateX(100%); }
+.lw-segmented.lw-segmented.lw-segmented > button { position:relative; min-width:0; min-height:36px; margin:0; padding:6px 16px; border:0; border-radius:999px; background:transparent; color:#657a70; font:inherit; font-size:14px; font-weight:500; cursor:pointer; box-shadow:none; transform:none; transition:color 160ms ease-out; white-space:nowrap; }
+.lw-segmented.lw-segmented.lw-segmented > button[aria-pressed="true"], .lw-segmented.lw-segmented.lw-segmented > button:hover { background:transparent; color:#194c39; }
+.lw-segmented.lw-segmented.lw-segmented > button[aria-pressed="true"] { font-weight:650; }
+.lw-segmented.lw-segmented.lw-segmented > button:focus-visible { outline:2px solid #2f6a55; outline-offset:-2px; }
+.lw-segmented.lw-segmented.lw-segmented > button:disabled { opacity:.45; cursor:default; }
+@media(prefers-reduced-motion:reduce) { .lw-segmented::before, .lw-segmented > button { transition:none!important; } }
+@media(max-width:400px) { .lw-segmented.lw-segmented.lw-segmented > button { padding-inline:12px; } }

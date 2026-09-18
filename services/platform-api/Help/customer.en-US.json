@@ -1,0 +1,252 @@
+[
+  {
+    "id": "start",
+    "category": "Getting started",
+    "title": "Getting started and signing in",
+    "summary": "From signing in to your first brief.",
+    "steps": [
+      "Sign in with the account and password assigned by your administrator. Password recovery requires an email address verified in advance.",
+      "Check your name, phone and language preference in profile settings. Signed-in routes follow your account language preference.",
+      "Open Projects and choose New project. Creation requires permission and organization membership. Ask an administrator if the action is unavailable.",
+      "Complete book information, characters, voice, style, references and creative direction, then review and submit. Follow the steps and required-field prompts shown on screen."
+    ],
+    "faq": [
+      {
+        "question": "Can I register myself?",
+        "answer": "Accounts and organization membership are assigned by administrators. Third-party sign-in also requires an existing, linked platform account."
+      }
+    ],
+    "image": "customer-projects",
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "intake",
+    "category": "Projects",
+    "title": "Preparing a brief and uploading files",
+    "summary": "Enter book and creative information and verify uploads.",
+    "steps": [
+      "Select the cover, full book or excerpt, and supplementary images in the book-upload step. Expand optional sections; field help shows supported formats and limits.",
+      "Fill required fields such as the book title, then choose characters, narration and visual style. Review presets against the actual book before submitting.",
+      "An upload at 100% may still be processing. Confirm that the file appears in the saved list. Failed files can be retried individually.",
+      "If book recognition is enabled, start it explicitly to assist entry. Check the result yourself; uploading does not start recognition automatically."
+    ],
+    "faq": [
+      {
+        "question": "Does cancelling an upload delete the file?",
+        "answer": "Not necessarily. Cancelling a transfer does not delete a file already saved. Check the list and use its delete action if needed."
+      },
+      {
+        "question": "What if storage is full?",
+        "answer": "Ask an administrator to review storage. Avoid repeatedly uploading; existing downloads remain available, and files referenced by history may not release space immediately."
+      }
+    ],
+    "image": "customer-intake",
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "drafts",
+    "category": "Projects",
+    "title": "Draft saving, conflicts and duplication",
+    "summary": "Recover unfinished work and duplicate your own project.",
+    "steps": [
+      "Watch the save status and confirm success before leaving. Keep the page open if the network fails and check connectivity first.",
+      "For a version conflict, compare the latest version, select which fields to keep, then apply and continue editing.",
+      "For a similar brief, use Duplicate as new draft in your project actions. Review the new draft and files before submitting; the previous workflow state is not continued."
+    ],
+    "faq": [
+      {
+        "question": "Will refreshing recover unsaved input?",
+        "answer": "No guarantee. Conflict comparisons and upload queues live in page memory. Copy important unsaved text before loading the latest state."
+      },
+      {
+        "question": "Can I duplicate a colleague’s project?",
+        "answer": "Organization sharing grants read access. Duplication, editing and deletion remain creator actions."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "submit",
+    "category": "Projects",
+    "title": "Submitting and confirming a brief",
+    "summary": "Review required fields and confirm submission.",
+    "steps": [
+      "Check completion on Review and submit. Follow validation links to fill missing required information.",
+      "Submit when ready and wait for a receipt or updated project status. Submitted material is no longer freely editable as a draft.",
+      "If the result is uncertain, use the result-check action or inspect the current project state before retrying."
+    ],
+    "faq": [
+      {
+        "question": "Does submission automatically produce a video?",
+        "answer": "Submission hands the brief to the team for follow-up. The platform does not promise automatic video production."
+      }
+    ],
+    "image": "customer-detail",
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "revisions",
+    "category": "Projects",
+    "title": "Handling requested changes and replies",
+    "summary": "Update the requested sections and resubmit.",
+    "steps": [
+      "Open your project from Pending or a notification. Read the reason and the sections opened for revision.",
+      "Edit the allowed fields and add a reply when needed. Read-only fields are outside this revision; do not create a replacement project simply to bypass them.",
+      "Resubmit as prompted and check the new status. Other organization members can read but cannot edit or reply on the creator’s behalf."
+    ],
+    "faq": [
+      {
+        "question": "Why can I edit only some fields?",
+        "answer": "A return may reopen only selected steps. Contact the project team through the available project communication channel if additional sections need changing."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "delivery",
+    "category": "Projects",
+    "title": "Tracking progress and downloading deliverables",
+    "summary": "Check project status and published deliverables.",
+    "steps": [
+      "Open the project detail to see current progress. Expand information panels to review submitted material.",
+      "Use the delivery section to download published files. Preparing means there is no published deliverable available yet.",
+      "If a download fails, check your session and connection, then reopen the project. Withdrawal or a membership change can invalidate an old link."
+    ],
+    "faq": [
+      {
+        "question": "Why is a completed project missing a file?",
+        "answer": "Project completion and publishing a deliverable are separate actions. Ask the project team whether the file has been published."
+      }
+    ],
+    "image": "customer-detail",
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "organization",
+    "category": "Organization and account",
+    "title": "Organization sharing and member profiles",
+    "summary": "Understand read access and creator-only actions.",
+    "steps": [
+      "Open My organization, search for a member and select their avatar or name to view the available profile and activity.",
+      "Members of the same organization can read projects, materials and files, including drafts. The creator column identifies ownership and links to the creator’s profile.",
+      "Only the creator can edit, delete, submit or reply to their project. Pending actions concern your own work, not actions you must perform for colleagues."
+    ],
+    "faq": [
+      {
+        "question": "Can I still see projects after leaving an organization?",
+        "answer": "Shared access is rechecked against current membership. Colleague projects may disappear after a change; your own projects follow your personal permissions."
+      },
+      {
+        "question": "Can I browse another organization?",
+        "answer": "Customer member links do not grant cross-organization access. Check your account and membership if an entry is unavailable."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "analytics",
+    "category": "Data and messages",
+    "title": "Using the overview and activity calendar",
+    "summary": "Explore your own project activity by date.",
+    "steps": [
+      "Open Overview and choose a month. Calendar intensity indicates activity count; select a day for details.",
+      "Select a trend point or an actionable status item to inspect activity or open a filtered project list. Interactive controls also support keyboard focus.",
+      "Check historical-coverage notices: absent records do not always mean no activity occurred. The personal overview and shared organization list use different scopes."
+    ],
+    "faq": [
+      {
+        "question": "Why do overview and list counts differ?",
+        "answer": "The customer overview focuses on your projects, while the list includes organization-shared projects. Filters also affect counts."
+      }
+    ],
+    "image": "customer-overview",
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "email",
+    "category": "Data and messages",
+    "title": "Verifying email and enabling reminders",
+    "summary": "Choose completion, revision, delivery and reply reminders.",
+    "steps": [
+      "In profile settings, request an email verification message and confirm verification on the linked page. Links expire; use the newest message.",
+      "After verification, separately enable email notifications and select completion, requested changes, delivery, replies and other desired categories.",
+      "In-app notifications and email reminders are separate. Disabling email keeps in-app notifications; enabling it does not replay all historical notifications."
+    ],
+    "faq": [
+      {
+        "question": "Why are there no reminders after verification?",
+        "answer": "Verification does not subscribe you. Check the master switch and categories. The administrator must enable email service, and already-read notifications may no longer trigger reminders."
+      },
+      {
+        "question": "What if email never arrives?",
+        "answer": "Check the address, spam folder and inbox rules, then wait briefly. Avoid repeated requests. Ask an administrator to inspect email status without sharing passwords or app credentials."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "password",
+    "category": "Organization and account",
+    "title": "Password recovery and signed-in devices",
+    "summary": "Recover through verified email and review sessions.",
+    "steps": [
+      "Choose Forgot password on the sign-in page and enter your email. A uniform response avoids revealing whether an account exists.",
+      "Open the newest recovery message, enter a new password and confirm. A successful reset invalidates previous sessions; sign in again.",
+      "Review signed-in devices in profile settings and revoke unfamiliar or unused sessions. Never forward recovery links."
+    ],
+    "faq": [
+      {
+        "question": "What if my email was never verified?",
+        "answer": "Self-service recovery does not send reset links to unverified addresses. Contact the platform owner for help."
+      },
+      {
+        "question": "What if a link is invalid?",
+        "answer": "Links are single-use and expire. Changing email or password may invalidate them. Request a new link from the original entry point."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "sso",
+    "category": "Organization and account",
+    "title": "Linking and using other sign-in methods",
+    "summary": "Link an existing account to an enabled identity provider.",
+    "steps": [
+      "Sign in with your platform password first. In profile settings, select a provider to link and confirm your current platform password.",
+      "Complete provider authorization and verify the linked state after returning. Later, choose that provider under Other sign-in options.",
+      "Providers are linked and unlinked separately. External roles do not automatically grant platform administration; platform permissions remain independently assigned."
+    ],
+    "faq": [
+      {
+        "question": "Can I still sign in if linking fails?",
+        "answer": "Platform-password sign-in and email recovery remain available. The provider may be disabled or misconfigured; contact an administrator rather than repeating authorization."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "feedback",
+    "category": "Help and troubleshooting",
+    "title": "Reporting platform issues and reading replies",
+    "summary": "Send reproduction steps and an optional screenshot; read replies in notifications.",
+    "steps": [
+      "Open Feedback in the top bar, choose a category and describe the page, reproduction steps, expected outcome and actual result.",
+      "Use Choose image for an optional PNG, JPEG or WebP screenshot up to 10 MB before compression. Hide credentials and unrelated personal data.",
+      "After submitting, watch in-app notifications. Administrator replies arrive there; platform feedback has no separate chat window."
+    ],
+    "faq": [
+      {
+        "question": "What should I do when a request fails?",
+        "answer": "Check connectivity and retry reading. For submission, reply or upload, verify whether the action already succeeded before repeating it. Report the visible error and time if it persists."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  }
+]

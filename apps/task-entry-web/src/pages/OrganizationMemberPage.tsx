@@ -20,6 +20,12 @@ export function OrganizationMemberPage() {
 
 function MemberContent({ user, language, memberId, returnSearch }: { user: CurrentUser; language: SupportedLocale; memberId: string; returnSearch: string }) {
   const { t } = useTranslation();
+  const parameters = new URLSearchParams(returnSearch);
+  const returnTo = parameters.get("returnTo");
+  const tasksPath = `/${language}/tasks`;
+  const fromProjects = returnTo === tasksPath || Boolean(returnTo?.startsWith(tasksPath + "?"));
+  parameters.delete("returnTo");
+  const backPath = fromProjects ? returnTo! : `/${language}/organization${parameters.size ? "?" + parameters.toString() : ""}`;
   const [selection, setSelection] = useState({ search: "", page: 1 });
   const query = useQuery({
     queryKey: ["organization-member", user.id, user.organization?.id, memberId, language],
@@ -38,8 +44,8 @@ function MemberContent({ user, language, memberId, returnSearch }: { user: Curre
   });
   const member = query.data;
   return <div className="page organization-member-page">
-    <Link className="organization-member-back" to={`/${language}/organization${returnSearch}`}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" /></svg>{t("organizationMember.back")}
+    <Link className="organization-member-back" to={backPath}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" /></svg>{t(fromProjects ? "organizationMember.backProjects" : "organizationMember.back")}
     </Link>
     {query.isError || activity.isError ? <ScreenError error={query.error ?? activity.error} onRetry={() => Promise.all([query.refetch(), activity.refetch()])} /> : !member ? <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div> : <><section className="organization-member-profile" aria-label={t("organizationMember.view", { name: member.displayName })}>
       <header className="organization-member-identity"><MemberAvatar key={`${member.id}:${member.avatarUrl}`} name={member.displayName} url={member.avatarUrl} /><div><h1>{member.displayName}</h1><span>{member.organizationName}</span></div></header>

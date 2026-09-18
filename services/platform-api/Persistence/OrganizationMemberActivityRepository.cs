@@ -9,15 +9,18 @@ internal sealed partial class UserRepository
     {
         const int size = 10;
         using var db = Open(); using var tx = db.BeginTransaction(deferred: true);
+        var canOpen = actorId == memberId;
         using (var access = db.CreateCommand())
         {
             access.Transaction = tx;
             access.CommandText = """
-                SELECT 1 FROM users a JOIN users m ON m.organization_id=a.organization_id JOIN organizations o ON o.id=a.organization_id
+                SELECT o.is_active FROM users a JOIN users m ON m.organization_id=a.organization_id JOIN organizations o ON o.id=a.organization_id
                 WHERE a.id=$actor AND a.is_active=1 AND a.closed_at IS NULL AND m.id=$member AND m.closed_at IS NULL
                 """;
             access.Parameters.AddWithValue("$actor", actorId); access.Parameters.AddWithValue("$member", memberId);
-            if (access.ExecuteScalar() is null) return null;
+            var active = access.ExecuteScalar();
+            if (active is null) return null;
+            canOpen |= Convert.ToInt32(active) == 1;
         }
         var presence = UserPresenceRepository.ReadPresence(db, tx, memberId, DateTimeOffset.UtcNow.ToUnixTimeSeconds())!;
         // Returned projects expose only their last submitted title, never the editable draft.
@@ -56,7 +59,7 @@ internal sealed partial class UserRepository
                 var status = reader.GetString(2);
                 var label = status == "awaiting_customer" ? (en ? "Changes or response requested" : "待修改或回复") : options.FirstOrDefault(o => o.Id == status)?.Label ?? (en ? "Submitted" : "已提交");
                 items.Add(new(reader.GetString(0), string.IsNullOrWhiteSpace(reader.GetString(1)) ? (en ? "Untitled request" : "未命名需求") : reader.GetString(1), label, status,
-                    reader.IsDBNull(3) ? null : reader.GetString(3), actorId == memberId));
+                    reader.IsDBNull(3) ? null : reader.GetString(3), canOpen));
             }
         }
         var labels = en ? new Dictionary<string, string> {

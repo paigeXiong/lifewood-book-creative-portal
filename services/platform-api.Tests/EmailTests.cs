@@ -38,6 +38,16 @@ public sealed class EmailTests : IDisposable
         return Regex.Match(mailer.Messages.Last().Body, "token=([A-F0-9]{64})").Groups[1].Value;
     }
     private async Task Verify() { Assert.True(emails.Consume("verify", await Link("verify"))); }
+    [Fact] public async Task DisabledTemplateBlocksNewAndQueuedBusinessEmails() {
+        await Verify(); Assert.True(emails.SavePreferences(owner,true));
+        Notify("template-pending"); emails.QueueNotifications();
+        Assert.Null(emails.Templates.Save("notice","zh-CN",new("default","通知","正文",false)));
+        await emails.DeliverOne(mailer,CancellationToken.None);
+        Assert.Single(mailer.Messages);
+        Assert.Equal("cancelled",Sql("SELECT status FROM email_outbox WHERE kind='notice'"));
+        Notify("template-disabled"); emails.QueueNotifications();
+        Assert.Equal(0L,Sql("SELECT COUNT(*) FROM email_outbox WHERE kind='notice' AND status='pending'"));
+    }
     [Fact] public async Task RichQueueAndLegacyProtectedBodiesBothDeliver()
     {
         var protection = new EphemeralDataProtectionProvider();

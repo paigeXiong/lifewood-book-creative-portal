@@ -15,6 +15,7 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSerializable(typeof(ProxyTestRequest))]
 [JsonSerializable(typeof(ProxyTestResult))]
 [JsonSerializable(typeof(MailTemplate[]))]
+[JsonSerializable(typeof(SaveMailTemplate))]
 [JsonSerializable(typeof(EmailSettingsDto))]
 [JsonSerializable(typeof(MailQueuePage))]
 [JsonSerializable(typeof(MailSettingsDocument))]

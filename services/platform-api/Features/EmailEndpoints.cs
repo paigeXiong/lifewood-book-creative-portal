@@ -11,11 +11,32 @@ internal static class EmailEndpoints
         api = api.MapGroup("");
         api.AddEndpointFilter(async (context, next) => { context.HttpContext.Response.Headers.CacheControl = "no-store"; return await next(context); });
         api.MapGet("/auth/email-status", (MailSettings settings) => Results.Ok(new MailAvailabilityDto(settings.Ready)));
-        api.MapGet("/admin/mail/templates", (HttpContext c, string? locale) => {
+        api.MapGet("/admin/mail/templates", (HttpContext c, EmailRepository repository, string? locale) => {
             if (currentUser(c) is not {} user) return Results.Unauthorized();
             if (!user.Roles.Contains("owner")) return Results.StatusCode(403);
             if (locale is not ("zh-CN" or "en-US")) return Failure(c, 400, "invalidFilter");
-            return Results.Ok(MailTemplates.Preview(locale));
+            return Results.Ok(repository.Templates.Preview(locale));
+        });
+        api.MapPost("/admin/mail/templates/{kind}/test", async (string kind, string locale, MailTestRequest input, HttpContext c, EmailRepository repository, MailSettingsStore store, IPlatformMailer mailer) => {
+            if(currentUser(c) is not {} user)return Results.Unauthorized();
+            if(!user.Roles.Contains("owner"))return Results.StatusCode(403);
+            if(!MailTemplateStore.Valid(kind,locale))return Results.BadRequest();
+            if(!await store.Operations.WaitAsync(0,c.RequestAborted))return SettingsFailure(c,409,"busy");
+            try {
+                var template=repository.Templates.Preview(locale).Single(t=>t.Kind==kind);
+                if(template.Revision!=input.Revision)return SettingsFailure(c,409,"conflict");
+                var error=store.BeginTest(store.Read(locale).Revision,out var recipient);
+                if(error is not null)return SettingsFailure(c,error=="cooldown"?429:409,error);
+                await mailer.SendContent(recipient,"[TEST] "+template.Subject,template.Body,c.RequestAborted);
+                return Results.NoContent();
+            }catch(Exception exception){return SettingsFailure(c,502,MailFailureClassifier.Classify(exception));}
+            finally {store.Operations.Release();}
+        }).RequireRateLimiting("authentication");
+        api.MapPut("/admin/mail/templates/{kind}", (string kind, string locale, SaveMailTemplate input, HttpContext c, EmailRepository repository) => {
+            if(currentUser(c) is not {} user)return Results.Unauthorized();
+            if(!user.Roles.Contains("owner"))return Results.StatusCode(403);
+            var error=repository.Templates.Save(kind,locale,input);
+            return error is null?Results.Ok(repository.Templates.Preview(locale)):SettingsFailure(c,error=="conflict"?409:400,error);
         });
         api.MapGet("/admin/mail/settings", (HttpContext c, MailSettingsStore store, string? locale) => {
             if (currentUser(c) is not {} user) return Results.Unauthorized();

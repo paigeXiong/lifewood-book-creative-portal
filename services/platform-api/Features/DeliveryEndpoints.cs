@@ -177,7 +177,7 @@ internal static class DeliveryEndpoints
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
             if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Read permission is required.");
-            return projects.Get(user.Id, id) is null
+            return projects.GetVisible(user.Id, id) is null
                 ? Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.")
                 : Results.Ok(deliveries.List(id));
         });
@@ -187,7 +187,7 @@ internal static class DeliveryEndpoints
             var user = CurrentUser(context);
             if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.");
             if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Read permission is required.");
-            if (projects.Get(user.Id, id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
+            if (projects.GetVisible(user.Id, id) is null) return Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.");
             return DeliveryFile(id, deliveryId, dataDirectory, deliveries, context);
         });
 

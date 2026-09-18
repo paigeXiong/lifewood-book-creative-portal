@@ -1,0 +1,281 @@
+[
+  {
+    "id": "admin-start",
+    "category": "Administration basics",
+    "title": "Admin workspace and permissions",
+    "summary": "Handle projects and manage the platform according to role.",
+    "steps": [
+      "Use the Admin center entry in the customer portal. Menus follow permissions; a missing entry is not necessarily a fault.",
+      "The owner handles privileged configuration; administrators manage business and accounts; operators handle assigned projects. Available actions follow current permissions.",
+      "Administrators can switch between customer and administration documentation here. Reading a guide does not grant the permissions it describes."
+    ],
+    "faq": [
+      {
+        "question": "Why can a colleague see a menu I cannot?",
+        "answer": "Ask the platform owner to check your role and permissions. Do not bypass restrictions with a shared account."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "project-operations",
+    "category": "Project operations",
+    "title": "Assignment, progress and requested changes",
+    "summary": "Work on submitted briefs and distinguish internal notes from customer replies.",
+    "steps": [
+      "Find and open the request under Projects and inspect submitted material. Administrators assign owners; operators work on assigned projects.",
+      "Update progress, priority and internal follow-up dates to reflect reality. For customer changes, provide a reason and specify editable sections.",
+      "Use project replies for customer-facing communication and internal notes for team follow-up. Verify saved content; read back the result before retrying an uncertain write."
+    ],
+    "faq": [
+      {
+        "question": "Can the previous operator continue after reassignment?",
+        "answer": "Subsequent requests check the current assignee. The previous operator loses access to process that project; open pages must refresh their state."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "publish-delivery",
+    "category": "Project operations",
+    "title": "Publishing and withdrawing deliverables",
+    "summary": "Upload deliverables and verify publication.",
+    "steps": [
+      "Open an authorized project and select a deliverable in its delivery section. MP4 and MOV are supported; check the displayed size limit.",
+      "Add the relevant note, wait for upload and processing, and verify the published list. Customers download from project details.",
+      "Use withdrawal for an incorrect file and verify the outcome. Withdrawal cannot remove copies already downloaded by customers."
+    ],
+    "faq": [
+      {
+        "question": "Should I upload again if the result is uncertain?",
+        "answer": "Use recovery or refresh to check whether it was saved first. Retrying the same attempt reuses its upload identifier to avoid duplicates."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "admin-analytics",
+    "category": "Project operations",
+    "title": "Overview and efficiency definitions",
+    "summary": "Interpret completion time, sample size and trends.",
+    "steps": [
+      "Select a date range in Overview to inspect submissions, completions and open-request aging.",
+      "Average completion time measures total elapsed time from first submission to completion, including customer revisions and waiting. Read it together with the median and valid sample count.",
+      "An absent value is not zero. Incomplete history and unknown timestamps must be treated separately rather than used to judge team efficiency."
+    ],
+    "faq": [
+      {
+        "question": "Is this production labor time?",
+        "answer": "No. It is end-to-end elapsed time, not labor hours or a delivery SLA commitment."
+      }
+    ],
+    "image": "admin-overview",
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "directory",
+    "category": "Accounts and organizations",
+    "title": "Creating accounts and managing organizations",
+    "summary": "Inspect membership and create users with the organization preselected.",
+    "steps": [
+      "Find an organization and expand its members to inspect names, avatars and roles.",
+      "Use Add member or Create member to preselect that organization. Verify the account, role and organization before saving.",
+      "Check the impact before disabling or moving an account. Project sharing follows the creator’s current organization, so membership changes can alter shared access."
+    ],
+    "faq": [
+      {
+        "question": "Can customers manage membership?",
+        "answer": "The customer organization page is read-only. Membership is maintained by authorized administrators."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "mail-service",
+    "category": "Sign-in and notifications",
+    "title": "Configuring email and sending a test",
+    "summary": "Configure SMTP as owner and verify actual receipt.",
+    "steps": [
+      "As platform owner, open Email service under the Messaging settings group, then Configure email.",
+      "Enter the SMTP host, STARTTLS port, sender, username, app credential and customer portal domain. Implicit TLS on port 465 is not supported; production domains should use HTTPS.",
+      "Save and enable the service, then choose Send test email and confirm the recipient. The test targets the configured sender itself; inspect inbox and spam folders afterwards.",
+      "A blank credential normally keeps the existing value. When changing host, port or username, follow the prompt to replace or clear credentials. Never include them in feedback, screenshots or chat."
+    ],
+    "faq": [
+      {
+        "question": "Does Ready mean email was received?",
+        "answer": "No. Ready means configuration is complete; a successful test means SMTP acceptance. Actual delivery must be confirmed in the inbox."
+      },
+      {
+        "question": "Can a local portal domain be used in production?",
+        "answer": "It cannot provide publicly accessible customer links. Configure the real public HTTPS domain and test verification and recovery links at deployment."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "mail-troubleshooting",
+    "category": "Help and troubleshooting",
+    "title": "Missing email and queue troubleshooting",
+    "summary": "Distinguish pending, retrying and SMTP-accepted messages.",
+    "steps": [
+      "Open Email service and filter by state and message type. First confirm the service is enabled and ready.",
+      "Waiting to retry means another attempt is pending. Exhausted retries require configuration and error-category checks. Handed to mail server means SMTP acceptance only.",
+      "For authentication errors, check username and app credentials. For connection or TLS errors, check host, STARTTLS port and server network. For recipient rejection, verify the address.",
+      "If a notification was not queued, check verified email, subscription switch, categories, unread status and project access. Notification preferences do not control verification or password-security messages."
+    ],
+    "faq": [
+      {
+        "question": "Will the global proxy fix SMTP connectivity?",
+        "answer": "SMTP currently connects directly and does not use the HTTP outbound proxy. Check connectivity from the server process to the mail host."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "oidc",
+    "category": "Sign-in and notifications",
+    "title": "Configuring multiple OIDC providers",
+    "summary": "Register callbacks, check metadata and test real sign-in.",
+    "steps": [
+      "As owner, open Settings → Sign-in and integrations → Sign-in methods. Add a provider with bilingual names, issuer, client ID, secret and portal domains.",
+      "After the first save, register the exact generated callback URL with the identity provider. Use the authorization-code flow with PKCE S256 support.",
+      "Check and enable the provider. Multiple providers can be enabled. A metadata check does not validate secrets or access policies; test linking and sign-in with a test account.",
+      "Users first sign in with their platform password and link an external identity. Matching email addresses do not automatically link, register or synchronize roles."
+    ],
+    "faq": [
+      {
+        "question": "Are intranet-only providers supported?",
+        "answer": "OIDC backend endpoints currently require public HTTPS and reject private-network targets. Intranet-only identity providers are not supported."
+      },
+      {
+        "question": "Is OIDC two-factor authentication?",
+        "answer": "No. OIDC is an identity protocol; multi-factor requirements depend on the provider’s policy."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "content",
+    "category": "System settings",
+    "title": "Form options, characters and voice references",
+    "summary": "Maintain the choices available in customer forms.",
+    "steps": [
+      "Open the Content settings group and select form options, file categories, character presets or voice references.",
+      "Check both Chinese and English labels when editing. Save, then verify the corresponding customer-side choice.",
+      "Consider existing projects before disabling or changing choices. Example images and reference voices are not customer deliverables."
+    ],
+    "faq": [
+      {
+        "question": "How should I handle a save conflict?",
+        "answer": "Read the latest configuration, compare changes and save after deciding what to preserve, rather than overwriting another administrator’s work."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "communication",
+    "category": "Sign-in and notifications",
+    "title": "Announcements, notifications and feedback",
+    "summary": "Publish announcements and answer feedback through notifications.",
+    "steps": [
+      "Save announcements as drafts, review audience and bilingual content, then publish. Use unpublish when an announcement should no longer be shown.",
+      "In Platform feedback, search for the issue, open details and inspect the screenshot, then choose a state and write a reply.",
+      "Customers read saved replies in notifications. Changing only the state does not send a reply notification; read back details if saving has an uncertain outcome."
+    ],
+    "faq": [
+      {
+        "question": "Is there a separate feedback chat?",
+        "answer": "No. Administrator replies are delivered through notifications."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "runtime",
+    "category": "System settings",
+    "title": "Runtime health, storage and outbound proxy",
+    "summary": "Inspect capacity and configure networking for AI and OIDC.",
+    "steps": [
+      "As owner, open Runtime and network under Operations to inspect health and storage usage details.",
+      "Choose direct, system or custom HTTP/HTTPS proxy globally. AI integrations and individual OIDC providers can override that setting.",
+      "New requests use saved changes; existing requests are not replayed. A failed proxy does not fall back to direct access, and SMTP and browser traffic are unaffected."
+    ],
+    "faq": [
+      {
+        "question": "Should I delete server directories to free space?",
+        "answer": "Do not remove business files directly. Review usage, retention and backups, then use supported cleanup or delete actions."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "backups",
+    "category": "System settings",
+    "title": "Backups, recovery and audit",
+    "summary": "Create verified backups and rehearse recovery in isolation.",
+    "steps": [
+      "As owner, create a manual backup and wait for snapshot, compression and verification before downloading.",
+      "Configure scheduling and retention as needed, and check successful runs regularly. Backups contain business and account data and require controlled storage and access.",
+      "Before recovery, verify the target environment, compatibility and impact. Rehearse in isolation first; a local rehearsal is not a production restore.",
+      "Use Audit filters for actor, operation and date to investigate changes. Share times and redacted errors, not credentials or customer data."
+    ],
+    "faq": [
+      {
+        "question": "Is a successful backup download enough?",
+        "answer": "Also store it safely off-host and verify recovery. Encrypted credentials depend on data-protection keys; confirm key usability when moving between machines."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "ai",
+    "category": "Sign-in and notifications",
+    "title": "Configuring AI book recognition",
+    "summary": "Enable assisted recognition and validate its output.",
+    "steps": [
+      "As owner, open Settings → Sign-in and integrations → AI integration. Add or edit a provider, choose its protocol and enter the endpoint, available models and key following that protocol’s field help.",
+      "After saving the provider, switch to Business integrations. Assign a provider and image-capable model to book recognition and enable the feature. Saving a provider alone does not enable recognition.",
+      "Test with a sample cover and inspect the result. Customers start recognition explicitly and review its output. This assists data entry; it does not automate video production."
+    ],
+    "faq": [
+      {
+        "question": "What should I check if recognition fails?",
+        "answer": "Check enabled state, endpoint, model, credentials and outbound proxy. Manual entry remains available; model output is not authoritative source material."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  },
+  {
+    "id": "notification-rules",
+    "category": "Sign-in and notifications",
+    "title": "Notification rules and delivery records",
+    "summary": "Configure event routing, bilingual templates and alerts.",
+    "steps": [
+      "Open Settings → Messaging → Notifications and choose an event. Check whether it is enabled and who receives it.",
+      "Edit and preview both language templates using only supported variables. Check alert level and whether users may mute it before saving.",
+      "Owners can inspect delivery records and queues and retry failed events through the provided action. Verify recipients and business state before interpreting a delivery as duplicated.",
+      "Set retention for read and archived notifications between 30 and 3650 days as needed. Unread and actionable items are retained; fixed rules such as feedback replies cannot simply be disabled."
+    ],
+    "faq": [
+      {
+        "question": "Does marking a notification read complete the task?",
+        "answer": "No. Reading and business completion are separate. A revision request requires its actual action, such as resubmission, to be completed."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-18"
+  }
+]

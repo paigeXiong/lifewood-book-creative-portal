@@ -1,3 +1,4 @@
+import { canRetainQueryData } from "./RefreshNotice";
 import { useConfirm, useConfirmLink } from "../useConfirm";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -76,13 +77,15 @@ export function RevisionWorkspace({children}: {children: ReactNode}) {
   if(!taskId)return <>{children}</>;
   // Wait for permission information before mounting autosaving forms.
   if(query.isPending)return <div role="status">{t("common.loading")}</div>;
-  if(query.isError&&!data)return <div role="alert">{localizedApiError(query.error,t)}<button onClick={()=>void query.refetch()}>{t("common.retry")}</button></div>;
+  if(query.isError&&(!data || !canRetainQueryData(query.error)))return <div role="alert">{localizedApiError(query.error,t)}<button onClick={()=>void query.refetch()}>{t("common.retry")}</button></div>;
   const editing=path.includes("/edit/");
+  if(editing && data?.canEdit === false)return <Navigate replace to={`/${lang}/tasks/${taskId}`}/>;
   const step=path.split("/").at(-1)!;
   const locked=editing&&round&&!round.submittedAt&&step!=="review"&&!round.reasons.some(r=>r.unit===step);
   if(locked)return <Navigate replace to={`/${lang}/tasks/${taskId}/edit/${round.reasons[0].unit}`}/>;
-  const showChat = Boolean(editing && round && round.messages.length > 0);
-  const active = editing && round && !round.submittedAt;
+  const shared = data?.canEdit === false;
+  const showChat = Boolean((editing || shared) && round && (round.messages.length > 0 || shared));
+  const active = (editing || shared) && round && !round.submittedAt;
   return <RevisionNavigation.Provider value={round&&!round.submittedAt?[...round.reasons.map(r=>r.unit),"review"]:null}>
     <div className={"revision-workspace"+(showChat&&open?" with-feedback":"")}>
     <div className="revision-content">
@@ -96,14 +99,14 @@ export function RevisionWorkspace({children}: {children: ReactNode}) {
         <header><strong>{round.submittedAt?data!.labels.submitted:data!.labels.pending}</strong><button type="button" onClick={()=>setOpen(false)} aria-label={data!.labels.close} data-icon-motion="press"><span aria-hidden="true" data-icon-glyph>×</span></button></header>
         <div className="revision-unit-picker">
         {round.reasons.length>1 ? <select disabled={send.isPending} aria-label={t("clientUx.requestedUnits")} value={selected} onChange={async e=>{const nextUnit=e.target.value;if(body.trim()&&!await confirm(t("wizard.unsavedChanges"), false))return;setUnit(nextUnit);setBody("");send.reset();}}>{round.reasons.map(r=><option key={r.unit} value={r.unit}>{data!.units.find(u=>u.id===r.unit)?.label}</option>)}</select> : <strong>{data!.units.find(u=>u.id===selected)?.label}</strong>}
-        <Link to={step==="review"?"/"+lang+"/tasks/"+taskId+"/edit/"+selected:"/"+lang+"/tasks/"+taskId+"/edit/review"} onClick={guardLink}>{step==="review"?t("review.edit"):data!.labels.review}</Link>
+        {!shared && <Link to={step==="review"?"/"+lang+"/tasks/"+taskId+"/edit/"+selected:"/"+lang+"/tasks/"+taskId+"/edit/review"} onClick={guardLink}>{step==="review"?t("review.edit"):data!.labels.review}</Link>}
         </div>
         <div className="revision-pinned-reason"><strong>{t("clientUx.returnReason")}</strong><p>{round.reasons.find(r=>r.unit===selected)?.body}</p></div>
         <div className="revision-messages" aria-live="polite">{round.messages.filter(m=>m.unit===selected).map(m=><article id={`notification-${m.id}`} key={m.id} className={m.isAdmin?"revision-message from-admin":"revision-message"}>
           {m.avatarUrl?<img src={m.avatarUrl} alt=""/>:<span className="revision-avatar">{m.authorName.slice(0,2)}</span>}
           <div><strong>{m.authorName}</strong><time>{new Date(m.createdAt).toLocaleString(lang)}</time><p>{m.body}</p></div>
         </article>)}</div>
-        {!round.submittedAt&&<form onSubmit={e=>{e.preventDefault();sendReply();}}><textarea disabled={send.isPending} aria-label={data!.labels.reply} placeholder={data!.labels.reply} maxLength={2000} value={body} onChange={e=>setBody(e.target.value)}/>{send.isError&&<p role="alert">{localizedApiError(send.error,t)}</p>}<button className="button" disabled={!body.trim()||send.isPending}>{send.isPending ? t("clientUx.sendingReply") : data!.labels.send}</button></form>}
+        {!shared&&!round.submittedAt&&<form onSubmit={e=>{e.preventDefault();sendReply();}}><textarea disabled={send.isPending} aria-label={data!.labels.reply} placeholder={data!.labels.reply} maxLength={2000} value={body} onChange={e=>setBody(e.target.value)}/>{send.isError&&<p role="alert">{localizedApiError(send.error,t)}</p>}<button className="button" disabled={!body.trim()||send.isPending}>{send.isPending ? t("clientUx.sendingReply") : data!.labels.send}</button></form>}
       </section>}
     </aside>}
     </div>

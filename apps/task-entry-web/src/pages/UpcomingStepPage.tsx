@@ -71,7 +71,7 @@ export function UpcomingStepPage() {
     !options.data
   )
     return <ScreenError error={project.error ?? options.error ?? (needsVoices ? voices.error : undefined)} onRetry={() => Promise.all([project.refetch(), options.refetch(), ...(needsVoices ? [voices.refetch()] : [])])} />;
-  if (project.data.status !== "draft")
+  if (project.data.status !== "draft" || project.data.canEdit === false)
     return <Navigate replace to={localizedPath(locale, `/tasks/${taskId}${receiptTask.current === taskId ? "/submitted" : ""}`)} />;
   if (!allowed && (!isProjectStepComplete(project.data)))
     return (

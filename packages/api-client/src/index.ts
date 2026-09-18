@@ -93,6 +93,13 @@ interface RequestOptions extends RequestInit {
 }
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api";
+export type HelpArticle = { id: string; category: string; title: string; summary: string; steps: string[]; faq: { question: string; answer: string }[]; image: string | null; updated: string };
+export type FunctionSearchResult = { title: string; category: string; path: string; kind: "function" | "admin" | "customer" };
+export const helpService = {
+  searchFunctions: (locale: string, q: string, signal?: AbortSignal) => request<FunctionSearchResult[]>("/admin/function-search?" + new URLSearchParams({ locale, q }), { signal }),
+  list: (locale: string, audience: string, q: string, signal?: AbortSignal) => request<HelpArticle[]>("/help?" + new URLSearchParams({ locale, audience, q }), { signal }),
+  imageUrl: (name: string, locale: string) => `${apiBaseUrl}/help/images/${encodeURIComponent(name)}?locale=${encodeURIComponent(locale)}`,
+};
 let boundAccount: string | undefined;
 let accountBlocked = false;
 export function captureAccountGuard(): () => void {
@@ -304,12 +311,14 @@ export const outboundProxyService = {
   test: (revision: string, scope: string) => request<{ status: number }>("/admin/outbound-proxy/test", { method: "POST", body: JSON.stringify({ revision, scope }) }),
 };
 export const mailSettingsService = {
+  testTemplate: (kind: string, locale: SupportedLocale, revision: string) => request<void>(`/admin/mail/templates/${encodeURIComponent(kind)}/test?locale=${locale}`, { method: "POST", body: JSON.stringify({revision}) }),
+  saveTemplate: (kind: string, locale: SupportedLocale, input: { revision: string; subject: string; introduction: string; enabled: boolean; reset?: boolean }) => request<MailTemplatePreview[]>(`/admin/mail/templates/${encodeURIComponent(kind)}?locale=${locale}`, { method: "PUT", body: JSON.stringify(input) }),
   templates: (locale: SupportedLocale, signal?: AbortSignal) => request<MailTemplatePreview[]>(`/admin/mail/templates?locale=${locale}`, { signal }),
   get: (locale: SupportedLocale, signal?: AbortSignal) => request<MailServiceSettings>(`/admin/mail/settings?locale=${locale}`, { signal }),
   save: (input: MailServiceInput, locale: SupportedLocale) => request<MailServiceSettings>(`/admin/mail/settings?locale=${locale}`, { method: "PUT", body: JSON.stringify(input) }),
   test: (revision: string, locale: SupportedLocale) => request<void>(`/admin/mail/test?locale=${locale}`, { method: "POST", body: JSON.stringify({ revision }) }),
 };
-export interface MailTemplatePreview { kind: string; subject: string; body: { text: string; html: string } }
+export interface MailTemplatePreview { introduction: string; enabled: boolean; revision: string; kind: string; subject: string; body: { text: string; html: string } }
 export interface OidcConfiguration { id: string; version: number; nameZh: string; nameEn: string; issuer: string; clientId: string; publicOrigin: string; adminOrigin: string; enabled: boolean; hasSecret: boolean }
 export interface OidcBindingStatus { id: string; available: boolean; bound: boolean; nameZh: string; nameEn: string }
 export type OidcInput = Omit<OidcConfiguration, "hasSecret"> & { secret?: string };
@@ -382,6 +391,7 @@ export const authService = {
 };
 
 export interface TaskListQuery {
+  scope?: "personal" | "organization";
   locale: SupportedLocale;
   status?: string;
   search?: string;
@@ -394,8 +404,9 @@ export interface TaskListQuery {
 export const projectService = {
   recognizeBook: (projectId: string, assetIds: string[], locale: SupportedLocale, signal?: AbortSignal) =>
     request<BookRecognition>(`/projects/${encodeURIComponent(projectId)}/recognize-book`, { method: "POST", locale, signal, body: JSON.stringify({ assetIds }) }),
-  listProjects: ({ locale, status, search, page = 1, pageSize = 10, sort = "updated", direction = "desc" }: TaskListQuery) => {
+  listProjects: ({ locale, status, search, scope, page = 1, pageSize = 10, sort = "updated", direction = "desc" }: TaskListQuery) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (scope) query.set("scope", scope);
     if (status) query.set("status", status);
     if (search) query.set("search", search);
     query.set("sort", sort);
@@ -403,8 +414,9 @@ export const projectService = {
     return request<PagedResult<TaskSummary>>(`/projects?${query}`, { locale });
   },
   getStats: () => request<ProjectStats>("/projects/stats"),
-  getDashboard: (params: { month: string; timeZone: string; day: number; page: number }, signal?: AbortSignal) =>
-    request<CustomerDashboard>(`/projects/dashboard?${new URLSearchParams({ month: params.month, timeZone: params.timeZone, day: String(params.day), page: String(params.page) })}`, { signal }),
+  getScopedStats: (scope: "personal" | "organization") => request<ProjectStats>(`/projects/stats?scope=${scope}`),
+  getDashboard: (params: { month: string; timeZone: string; day: number; page: number; scope?: "personal" | "organization" }, signal?: AbortSignal) =>
+    request<CustomerDashboard>(`/projects/dashboard?${new URLSearchParams({ scope: params.scope ?? "personal", month: params.month, timeZone: params.timeZone, day: String(params.day), page: String(params.page) })}`, { signal }),
   copyDraft: (id: string, requestId: string, locale: SupportedLocale) => request<TaskDraft>(`/projects/${encodeURIComponent(id)}/copy`, { method: "POST", locale, body: JSON.stringify({ requestId }) }),
   createDraft: (locale: SupportedLocale) =>
     request<TaskDraft>("/projects", { method: "POST", locale, body: "{}" }),
@@ -732,7 +744,7 @@ export const adminService = {
 export interface RevisionReason { unit: string; body: string }
 export interface RevisionMessage { id: string; unit: string; body: string; authorId: string; authorName: string; avatarUrl?: string; isAdmin: boolean; createdAt: string }
 export interface RevisionRound { id: string; createdAt: string; submittedAt?: string; reasons: RevisionReason[]; messages: RevisionMessage[]; beforeSnapshot?: string; afterSnapshot?: string }
-export interface RevisionView { units: {id: string; label: string}[]; rounds: RevisionRound[]; hasMore: boolean; labels: Record<string,string> }
+export interface RevisionView { canEdit?: boolean; units: {id: string; label: string}[]; rounds: RevisionRound[]; hasMore: boolean; labels: Record<string,string> }
 export const revisionService = {
   get: (id: string, locale: SupportedLocale, admin = false, page = 1) => request<RevisionView>(`/${admin ? "admin/" : ""}projects/${encodeURIComponent(id)}/revisions?page=${page}`, { locale }),
   returnProject: (id: string, version: number, reasons: RevisionReason[], locale: SupportedLocale, expectedWorkflowUpdatedAt: string) => request<RevisionView>(`/admin/projects/${encodeURIComponent(id)}/return`, { method: "POST", locale, body: JSON.stringify({version, reasons, expectedWorkflowUpdatedAt}) }),

@@ -6,7 +6,7 @@
 
 平台目前覆盖需求登记、人工跟进与成品交付，支持书籍资料辅助识别；视频生产、生成和详细制作工作流尚未纳入当前实现。
 
-当前版本为 [v0.3.17](docs/releases/v0.3.17.md)。功能范围和待验收事项见[剩余工作与待确认事项](docs/remaining-work.md)。
+当前版本为 [v0.3.18](docs/releases/v0.3.18.md)。功能范围和待验收事项见[剩余工作与待确认事项](docs/remaining-work.md)。
 
 ## 界面预览
 
@@ -239,6 +239,7 @@ Windows 可以使用：
 - [管理中心需求](docs/admin-center-requirements.md)：账号、组织、项目跟进和系统配置
 - [UI 设计规范](docs/ui-design-specification.md)：紧凑布局、品牌样式、响应式和国际化
 - [技术架构](docs/technical-architecture.md)：服务边界、Native AOT 和数据访问规则
+- [帮助中心](docs/help-center.md)：客户/管理双语文档、搜索、截图与维护方式
 - [正式部署与数据备份](docs/deployment-and-backup.md)：安装、首次设置、升级、备份和恢复
 - [发布就绪检查](docs/release-readiness.md)：自动化验证和上线前人工检查
 - [邮件服务](docs/email.md)／[OIDC 登录](docs/oidc.md)／[出站代理](docs/outbound-proxy.md)：可选外部服务的配置与验收边界

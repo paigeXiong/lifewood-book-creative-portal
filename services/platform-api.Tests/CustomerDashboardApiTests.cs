@@ -28,6 +28,15 @@ public sealed partial class VoiceSampleApiIntegrationTests
         foreach(var query in new[]{"month=2026-02&timeZone=UTC&day=29","month=invalid&timeZone=UTC","month=2026-02&timeZone=not-a-zone","month=1999-12&timeZone=UTC","month=2026-02&timeZone=UTC&day=0"})
             Assert.Equal(HttpStatusCode.BadRequest,(await customer.GetAsync("/api/projects/dashboard?"+query)).StatusCode);
         using var db=new Microsoft.Data.Sqlite.SqliteConnection("Data Source="+Path.Combine(root,"platform.db"));db.Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="INSERT INTO organizations VALUES('dashboard-org','Dashboard','dashboard',1,$now,$now); UPDATE users SET organization_id='dashboard-org' WHERE id IN ($owner,$member)";
+        cmd.Parameters.AddWithValue("$now",DateTimeOffset.UtcNow.ToString("O")); cmd.Parameters.AddWithValue("$owner",owner.Id); cmd.Parameters.AddWithValue("$member",user.Id); cmd.ExecuteNonQuery(); cmd.Parameters.Clear();
+        projects.Create("outside-org");
+        Assert.Equal(3,(await customer.GetFromJsonAsync<CustomerDashboardDto>(path+"&scope=organization"))!.Counts.Total);
+        Assert.Equal(2,(await customer.GetFromJsonAsync<CustomerDashboardDto>(path+"&scope=personal"))!.Counts.Total);
+        Assert.Equal(2,projects.List(user.Id,null,null,1,100,shared:true,personalOnly:true).Total);
+        Assert.Equal(HttpStatusCode.BadRequest,(await customer.GetAsync(path+"&scope=all")).StatusCode);
+        cmd.CommandText="UPDATE users SET organization_id=NULL WHERE id=$owner";cmd.Parameters.AddWithValue("$owner",owner.Id);cmd.ExecuteNonQuery();cmd.Parameters.Clear();
+        Assert.Equal(2,(await customer.GetFromJsonAsync<CustomerDashboardDto>(path+"&scope=organization"))!.Counts.Total);
         cmd.CommandText="UPDATE users SET is_active=0 WHERE id=$id";cmd.Parameters.AddWithValue("$id",user.Id);cmd.ExecuteNonQuery();
         Assert.Equal(HttpStatusCode.Unauthorized,(await customer.GetAsync(path)).StatusCode);
     }

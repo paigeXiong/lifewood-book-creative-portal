@@ -38,14 +38,15 @@ internal sealed class CustomerDashboardRepository(string connectionString)
         return new DateTimeOffset(local, offset).ToUniversalTime();
     }
 
-    public CustomerDashboardDto Get(string ownerId, DateTime month, TimeZoneInfo zone, int selectedDay, int page)
+    public CustomerDashboardDto Get(string ownerId, DateTime month, TimeZoneInfo zone, int selectedDay, int page, bool shared = false)
     {
         const int pageSize = 20;
+        var visibility = shared ? ProjectRepository.VisibleProjects.Replace("owner_id", "p.owner_id").Replace("$ownerId", "$owner") : "p.owner_id=$owner";
         var now = DateTimeOffset.UtcNow;
         using var db = Open(); using var tx = db.BeginTransaction(deferred: true);
         SqliteCommand Query(string sql)
         {
-            var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = sql;
+            var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = sql.Replace("p.owner_id=$owner", visibility);
             cmd.Parameters.AddWithValue("$owner", ownerId); return cmd;
         }
         string coverage;
@@ -55,13 +56,13 @@ internal sealed class CustomerDashboardRepository(string connectionString)
             SELECT COUNT(*),COALESCE(SUM(status='draft' AND workflow_status='awaiting_customer'),0),
               COALESCE(SUM(status='submitted' AND workflow_status NOT IN ('completed','closed')),0),
               COALESCE(SUM(EXISTS(SELECT 1 FROM project_deliveries d WHERE d.project_id=p.id AND d.revoked_at IS NULL)),0)
-            FROM projects p WHERE owner_id=$owner
+            FROM projects p WHERE p.owner_id=$owner
             """))
         { using var r = cmd.ExecuteReader(); r.Read(); counts = new(r.GetInt32(0),r.GetInt32(1),r.GetInt32(2),r.GetInt32(3)); }
         var statuses = new List<DashboardStatus>();
         using (var cmd = Query("""
             SELECT CASE WHEN status='draft' AND workflow_status!='awaiting_customer' THEN 'draft' ELSE workflow_status END AS state,COUNT(*)
-            FROM projects WHERE owner_id=$owner GROUP BY state ORDER BY COUNT(*) DESC,state
+            FROM projects p WHERE p.owner_id=$owner GROUP BY state ORDER BY COUNT(*) DESC,state
             """))
         { using var r = cmd.ExecuteReader(); while(r.Read()) statuses.Add(new(r.GetString(0),r.GetInt32(1))); }
 
@@ -79,7 +80,7 @@ internal sealed class CustomerDashboardRepository(string connectionString)
             }
             cmd.CommandText = $"""
                 WITH days(date,start,finish) AS (VALUES {string.Join(",",values)}),
-                owned AS (SELECT e.* FROM customer_activity_events e JOIN projects p ON p.id=e.project_id WHERE p.owner_id=$owner AND e.occurred_at>=$monthStart AND e.occurred_at<$monthEnd)
+                owned AS (SELECT e.* FROM customer_activity_events e JOIN projects p ON p.id=e.project_id WHERE {visibility} AND e.occurred_at>=$monthStart AND e.occurred_at<$monthEnd)
                 SELECT days.date,COALESCE(SUM(e.kind='submission'),0),COALESCE(SUM(e.kind='resubmission'),0),
                   COALESCE(SUM(e.kind='delivery'),0),COUNT(DISTINCT e.project_id)
                 FROM days LEFT JOIN owned e ON e.occurred_at>=days.start AND e.occurred_at<days.finish AND e.occurred_at<=$now
@@ -105,7 +106,7 @@ internal sealed class CustomerDashboardRepository(string connectionString)
             using var r=cmd.ExecuteReader();while(r.Read())events.Add(new(r.GetString(0),r.GetString(1),r.GetString(2),ReadProject(r,3)));
         }
         var recent=new List<DashboardProject>();
-        using(var cmd=Query("SELECT "+columns+" FROM projects p WHERE owner_id=$owner ORDER BY updated_at DESC,id LIMIT 5"))
+        using(var cmd=Query("SELECT "+columns+" FROM projects p WHERE p.owner_id=$owner ORDER BY updated_at DESC,id LIMIT 5"))
         {using var r=cmd.ExecuteReader();while(r.Read())recent.Add(ReadProject(r,0));}
         tx.Commit();
         return new(month.ToString("yyyy-MM",CultureInfo.InvariantCulture),zone.Id,coverage,now.ToString("O"),counts,[..statuses],[..days],new([..events],total,page,pageSize),[..recent]);

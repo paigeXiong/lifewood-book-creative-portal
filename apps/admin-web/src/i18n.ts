@@ -284,6 +284,7 @@ i18n.addResourceBundle(
       },
       settings: {
         sections: "系统配置分区",
+        groups: { content: "内容配置", access: "登录与接入", messages: "消息通知", operations: "系统运维" },
         formOptions: "表单选项",
         fileCategories: "文件类别",
         voices: "参考音色",
@@ -724,6 +725,7 @@ i18n.addResourceBundle(
       },
       settings: {
         sections: "System settings sections",
+        groups: { content: "Content", access: "Login & integrations", messages: "Communications", operations: "Operations" },
         formOptions: "Form options",
         fileCategories: "File categories",
         voices: "Voice references",
@@ -1031,3 +1033,19 @@ i18n.addResourceBundle("zh-CN", "translation", { organizationMembers: {
 i18n.addResourceBundle("en-US", "translation", { organizationMembers: {
   title: "{{name}} · Members", create: "Create member", addExisting: "Add existing member", manage: "Manage members", search: "Search member name or email", pickTitle: "Add members to {{name}}", assigned: "Already in an organization", unavailable: "This organization is unavailable or inactive. Return to organization management."
 } }, true, true);
+
+for (const [locale, functionSearch] of Object.entries({
+  "zh-CN": { title: "功能搜索", placeholder: "搜索功能或帮助…", example: "例如：注册、邮件、备份", hint: "输入功能名称或你想做的事", close: "关闭搜索", empty: "没有匹配的功能或帮助，请尝试其他关键词", function: "功能入口", admin: "管理员帮助", customer: "客户帮助" },
+  "en-US": { title: "Find a feature", placeholder: "Search features or help…", example: "Try registration, email or backups", hint: "Enter a feature or what you want to do", close: "Close search", empty: "No matching features or help. Try another keyword.", function: "Features", admin: "Administrator guides", customer: "Customer guides" },
+})) i18n.addResourceBundle(locale, "translation", { functionSearch }, true, true);
+
+for(const [locale,mailEditor] of Object.entries({
+"zh-CN":{title:"邮件模板",edit:"编辑模板",body:"正文",enabled:"已启用",disabled:"已停用",enable:"启用业务通知邮件",required:"必要邮件 · 始终启用",save:"保存并预览",reset:"恢复默认",resetConfirm:"恢复当前语言模板的默认内容并启用？",help:"分别配置中英文模板。标题和正文为纯文本，系统自动保留操作按钮、链接及安全提示。保存后用于新入队的邮件；停用业务通知会拦截尚未发送的通知，不影响站内通知及用户订阅偏好。"},
+"en-US":{title:"Email templates",edit:"Edit template",body:"Body",enabled:"Enabled",disabled:"Disabled",enable:"Enable notification emails",required:"Essential email · Always enabled",save:"Save and preview",reset:"Restore default",resetConfirm:"Restore and enable the default template for this language?",help:"Configure each language separately. Subject and body are plain text; action buttons, links and security notices remain system-managed. Changes apply to newly queued messages. Disabling notifications blocks unsent notification emails without changing in-app notifications or user preferences."}
+}))i18n.addResourceBundle(locale,"translation",{mailEditor},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{mailEditor:{test:"发送模板测试",testConfirm:"向当前配置的发件邮箱发送一封模板测试邮件？链接为无效示例，不会验证账号或重置密码。",testSent:"测试邮件已交给邮件服务器"}},true,true);
+i18n.addResourceBundle("en-US","translation",{mailEditor:{test:"Send template test",testConfirm:"Send one template test to the configured sender mailbox? Links are inactive examples and cannot verify an account or reset a password.",testSent:"Test email accepted by the mail server"}},true,true);
+
+i18n.addResourceBundle("zh-CN","translation",{mailEditor:{discard:"放弃尚未保存的模板修改？"}},true,true);
+i18n.addResourceBundle("en-US","translation",{mailEditor:{discard:"Discard unsaved template changes?"}},true,true);

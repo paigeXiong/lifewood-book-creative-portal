@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { localizedApiError, mailQueueService } from "@lifewood/api-client";
 import type { SupportedLocale } from "@lifewood/domain";
 import { SettingsTabs } from "./SettingsTabs";
 import { HelpPopover } from "./HelpPopover";
 import { MailServiceControls } from "./MailServiceControls";
-import { MailTemplatePreview } from "./MailTemplatePreview";
 import "./mail-status.css";
 
 export function MailStatusPage({ locale, allowed }: { locale: SupportedLocale; allowed: boolean }) {
@@ -28,7 +27,7 @@ export function MailStatusPage({ locale, allowed }: { locale: SupportedLocale; a
         </HelpPopover>}</div>}
         <div className="mail-status-actions">
         <MailServiceControls locale={locale} />
-        <MailTemplatePreview locale={locale} />
+        <Link className="mail-template-link" to={`/${locale}/settings/mail/templates`}>{t("mailEditor.title")}</Link>
         {data && <time dateTime={new Date(data.checkedAt * 1000).toISOString()}>{t("mailQueue.checked", { time: date(data.checkedAt) })}</time>}
         <button type="button" disabled={query.isFetching} onClick={() => void query.refetch()}>{t("mailQueue.refresh")}</button>
         <HelpPopover label={t("mailQueue.title")}>{t("mailQueue.help")}</HelpPopover>

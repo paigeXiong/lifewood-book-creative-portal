@@ -15,6 +15,7 @@ export function SubmissionSuccessPage() {
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (project.isPending || options.isPending) return <div className="screen-status" role="status" aria-busy="true">{t("common.loading")}</div>;
   if (project.isError || options.isError || !project.data || !options.data) return <ScreenError error={project.error ?? options.error} onRetry={() => Promise.all([project.refetch(), options.refetch()])} />;
+  if (project.data.canEdit === false) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
   if (project.data.status === "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/review`)} />;
   if (project.data.status !== "submitted") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
 

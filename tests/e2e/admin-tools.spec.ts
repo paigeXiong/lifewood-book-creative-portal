@@ -29,7 +29,10 @@ test("audit context, exports and runtime health work in both languages",async({p
   const wordmark=page.getByRole("img",{name:organizationName,exact:true});await expect(wordmark).toBeVisible();
   await expect.poll(()=>wordmark.evaluate((image:HTMLImageElement)=>image.complete&&image.naturalWidth===600&&image.naturalHeight===100)).toBeTruthy();
   await page.screenshot({path:`artifacts/organization-wordmarks-${locale}.png`});
-  await page.getByRole("link",{name:organizationName,exact:true}).click();await expect(page).toHaveURL(new RegExp("organization="+organization.id));
+  const membersToggle=page.getByRole("button").filter({has:wordmark});
+  await membersToggle.click();await expect(page).toHaveURL(url=>url.searchParams.get("members")===organization.id);
+  await expect(membersToggle).toHaveAttribute("aria-expanded","true");
+  await expect(page.locator(`#organization-members-${organization.id}`)).toBeVisible();
   await gotoInAccountLocale(page, `/${locale}/settings/runtime`);
   await expect(page.locator(".runtime-health-grid")).toBeVisible();
   await expect(page.locator(".runtime-listener")).toHaveCount(2);
@@ -40,7 +43,7 @@ test("audit context, exports and runtime health work in both languages",async({p
   try {
     await page.locator("#runtime-customer-port").fill("5293");
     const saved=page.waitForResponse(r=>r.url().endsWith("/api/admin/runtime-settings")&&r.request().method()==="PUT");
-    await page.locator(".runtime-actions button").click();expect((await saved).ok()).toBeTruthy();
+    await page.locator(".runtime-actions button.primary").click();expect((await saved).ok()).toBeTruthy();
     await expect(page.locator(".runtime-listener").first()).toContainText("5293");
     await expect(page.locator(".runtime-listener").first().locator(".runtime-current strong")).toContainText("5193");
     const conflicting=await page.request.put("/api/admin/runtime-settings",{headers:{"X-CSRF-TOKEN":csrf},data:{...original,customer:{...original.customer,port:original.port}}});expect(conflicting.status()).toBe(400);

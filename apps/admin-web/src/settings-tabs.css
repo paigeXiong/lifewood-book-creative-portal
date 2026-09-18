@@ -1,19 +1,36 @@
+.settings-navigation {
+  flex: 0 0 auto;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff;
+}
+.settings-groups { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.settings-groups a {
+  padding: 7px 12px; border-radius: 7px; color: #536b60; text-decoration: none;
+  font-size: 13px; font-weight: 550; line-height: 20px;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.settings-groups a:hover { background: #e9efeb; color: #173d2f; }
+.settings-groups a.selected { background: #dce7e0; color: #173d2f; font-weight: 650; }
+.settings-groups a:focus-visible { outline: 2px solid #477c63; outline-offset: 1px; }
 .settings-tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  width: fit-content;
+  width: 100%;
+  box-sizing: border-box;
   max-width: 100%;
   min-width: 0;
-  margin: 0 0 12px;
+  margin: 0;
   padding: 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
-  scrollbar-color: #b8c9bf transparent;
   border: 0;
   border-radius: 10px;
-  background: #e9efeb;
+  background: #f3f6f4;
 }
 .settings-tabs a {
   position: relative;
@@ -108,5 +125,6 @@
 ::view-transition-old(settings-label-runtime) { display: none; }
 ::view-transition-new(settings-label-runtime) { animation: none; }
 @media (prefers-reduced-motion: reduce) {
+  .settings-groups a { transition: none; }
   ::view-transition-group(settings-selection) { animation-duration: 0s; }
 }

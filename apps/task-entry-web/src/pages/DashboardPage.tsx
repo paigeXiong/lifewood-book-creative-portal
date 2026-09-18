@@ -1,7 +1,8 @@
+import "@lifewood/ui/segmented-control.css";
 import { customerStatusId, customerStatusLabel } from "../customerProjectStatus";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useOutletContext, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { optionService, projectService } from "@lifewood/api-client";
 import type { CurrentUser, DashboardDay, DashboardProject } from "@lifewood/domain";
@@ -25,6 +26,8 @@ export function DashboardPage() {
   const { locale } = useParams();
   const language = isSupportedLocale(locale) ? locale : "zh-CN";
   const { user } = useOutletContext<{ user: CurrentUser }>();
+  const [params, setParams] = useSearchParams();
+  const scope = params.get("scope") === "organization" && user.organization ? "organization" : "personal";
   const today = calendarDate(new Date());
   const [selection, setSelection] = useState({ month: today.slice(0, 7), day: Number(today.slice(8)), page: 1 });
   const { month, day, page } = selection;
@@ -49,10 +52,10 @@ export function DashboardPage() {
   }, [refreshFeedback]);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const report = useQuery({
-    queryKey: ["customer-dashboard", user.id, language, month, timeZone, day, page],
-    queryFn: ({ signal }) => projectService.getDashboard({ month, timeZone, day, page }, signal),
+    queryKey: ["customer-dashboard", user.id, language, month, timeZone, day, page, scope, user.organization?.id],
+    queryFn: ({ signal }) => projectService.getDashboard({ month, timeZone, day, page, scope }, signal),
     staleTime: 0, refetchInterval: 60_000,
-    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === user.id && previous?.month === month ? previous : undefined,
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === user.id && previous?.month === month && previousQuery?.queryKey[7] === scope && previousQuery?.queryKey[8] === user.organization?.id ? previous : undefined,
   });
   const options = useQuery({ queryKey: ["form-options", language], queryFn: () => optionService.getFormOptions(language) });
   const data = report.data;
@@ -60,7 +63,7 @@ export function DashboardPage() {
     new Intl.DateTimeFormat(language, { ...detail, timeZone }).format(new Date(value.length === 10 ? `${value}T12:00:00` : value));
   const fullDate = (value: string) => format(value, { year: "numeric", month: "long", day: "numeric" });
   const title = (project: DashboardProject) => project.projectName || project.bookTitle || project.taskNumber || t("dashboard.untitled");
-  const projectPath = (project: DashboardProject) => `/${language}/tasks/${project.id}${project.status === "draft" ? "/edit/project" : ""}`;
+  const projectPath = (project: DashboardProject) => `/${language}/tasks/${project.id}${project.status === "draft" && scope === "personal" ? "/edit/project" : ""}`;
   const changeMonth = (delta: number) => {
     const date = new Date(`${month}-01T12:00:00`); date.setMonth(date.getMonth() + delta);
     const next = calendarDate(date).slice(0, 7);
@@ -71,7 +74,7 @@ export function DashboardPage() {
   const incomplete = (date: string) => date <= coverageDate;
   const labels = new Map([...(options.data?.taskStatuses ?? []), ...(options.data?.workflowStatuses ?? [])].map(item => [item.id, item.label]));
   const statusLabel = (id: string) => customerStatusLabel(id, labels.get(id), t("clientUx.returnedStatus"));
-  const statusPath = (id: string) => `/${language}/tasks?${new URLSearchParams({ status: `stage:${id}` })}`;
+  const statusPath = (id: string) => `/${language}/tasks?${new URLSearchParams({ status: `stage:${id}`, scope })}`;
   const dailySummary = (item: DashboardDay) => `${t("dashboard.daySummary", { date: fullDate(item.date), count: activityCount(item), projects: item.projects })}. ${t("dashboard.breakdown", { ...item })}${incomplete(item.date) ? `. ${t("dashboard.partial")}` : ""}`;
   const fatalError = report.error && (!data || !canRetainQueryData(report.error));
   const max = Math.max(1, ...((data?.days ?? []).flatMap(item => [item.submissions + item.resubmissions, item.deliveries])));
@@ -82,6 +85,12 @@ export function DashboardPage() {
 
   return <div className="customer-dashboard">
     <div className="dashboard-toolbar">
+      <div className="dashboard-scope lw-segmented" data-scope={scope} role="group" aria-label={t("dashboard.scopeLabel")}>
+        {(["personal", "organization"] as const).map(value => <button key={value} type="button" disabled={value === "organization" && !user.organization} aria-pressed={scope === value} onClick={() => {
+          setParams(current => { const next = new URLSearchParams(current); next.set("scope", value); return next; });
+          setSelection(current => ({ ...current, page: 1 }));
+        }}>{t(`dashboard.scope.${value}`)}</button>)}
+      </div>
       <div className="dashboard-month-control">
         <button type="button" className="dashboard-icon" disabled={month <= "2000-01"} aria-label={t("dashboard.monthPrevious")} onClick={() => changeMonth(-1)}><Arrow /></button>
         <strong aria-live="polite">{format(`${month}-01`, { year: "numeric", month: "long" })}</strong>
@@ -94,11 +103,11 @@ export function DashboardPage() {
       <RefreshNotice error={report.error} onRetry={() => report.refetch()} />
       <div className="dashboard-metrics">
         {(["total", "actionRequired", "active", "downloadable"] as const).map(key => <div className={`dashboard-metric metric-${key}`} key={key}>
-          <span>{t(`dashboard.${key}`)}</span><strong>{data.counts[key].toLocaleString(language)}</strong>
-          {(key === "total" || key === "actionRequired") && <Link to={`/${language}/tasks${key === "actionRequired" ? "?status=action_required" : ""}`} aria-label={t(`dashboard.${key}`)}><Arrow next /></Link>}
+          <span>{t(scope === "organization" && key === "actionRequired" ? "dashboard.organizationActionRequired" : `dashboard.${key}`)}</span><strong>{data.counts[key].toLocaleString(language)}</strong>
+          {(key === "total" || key === "actionRequired") && <Link to={`/${language}/tasks?${new URLSearchParams({ scope, ...(key === "actionRequired" ? { status: "stage:awaiting_customer" } : {}) })}`} aria-label={t(scope === "organization" && key === "actionRequired" ? "dashboard.organizationActionRequired" : `dashboard.${key}`)}><Arrow next /></Link>}
         </div>)}
       </div>
-      {data.counts.total === 0 && <p className="dashboard-empty">{t("dashboard.noProjects")} <Link to={`/${language}/tasks`}>{t("dashboard.projectsLink")}</Link></p>}
+      {data.counts.total === 0 && <p className="dashboard-empty">{t("dashboard.noProjects")} <Link to={`/${language}/tasks?scope=${scope}`}>{t("dashboard.projectsLink")}</Link></p>}
       <div className="dashboard-activity-layout">
         <section className="dashboard-panel dashboard-calendar" aria-labelledby="dashboard-calendar-title">
           <h2 id="dashboard-calendar-title">{t("dashboard.calendar")}</h2>
@@ -159,10 +168,10 @@ export function DashboardPage() {
           </div>
         </section>
       </div>
-      <section className="dashboard-panel dashboard-recent" aria-labelledby="dashboard-recent-title"><div className="dashboard-panel-heading"><h2 id="dashboard-recent-title">{t("dashboard.recent")}</h2><Link to={`/${language}/tasks`}>{t("dashboard.allProjects")}</Link></div>
+      <section className="dashboard-panel dashboard-recent" aria-labelledby="dashboard-recent-title"><div className="dashboard-panel-heading"><h2 id="dashboard-recent-title">{t("dashboard.recent")}</h2><Link to={`/${language}/tasks?scope=${scope}`}>{t("dashboard.allProjects")}</Link></div>
         <ul>{data.recentProjects.map(project => <li key={project.id}><div><Link to={projectPath(project)}>{title(project)}</Link><small>{project.taskNumber || project.bookTitle}</small></div><span>{statusLabel(customerStatusId(project))}</span><time dateTime={project.updatedAt}>{format(project.updatedAt, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time></li>)}</ul>
       </section>
-      <details className="dashboard-method"><summary>{t("dashboard.rules")}</summary><p>{t("dashboard.rulesText")}</p><p>{t("dashboard.coverage", { date: format(data.historyCompleteFrom, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</p><p>{t("dashboard.timezone", { zone: timeZone })}</p></details>
+      <details className="dashboard-method"><summary>{t("dashboard.rules")}</summary><p>{t(scope === "organization" ? "dashboard.organizationRules" : "dashboard.rulesText")}</p><p>{t("dashboard.coverage", { date: format(data.historyCompleteFrom, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) })}</p><p>{t("dashboard.timezone", { zone: timeZone })}</p></details>
     </>}
   </div>;
 }

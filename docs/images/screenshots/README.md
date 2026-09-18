@@ -1,23 +1,25 @@
 # 产品截图 / Product screenshots
 
-截图日期 / Captured: **2026-09-17**。
+截图日期 / Captured: **2026-09-18**。
 
-这些图片来自本地运行中的应用，而非设计稿或生成图片。包含 v0.3.16 之后的工作区改动，不能据此推断发布包已包含所有功能。
+使用独立空数据库，通过真实 API 建立 Northstar Books 演示组织、Demo Administrator 和 Jamie Chen 两个虚构账号，以及 The Lantern Garden（已提交）、Across the Blue Horizon（草稿）两个虚构项目。未读取、复制或清空现有开发数据库。SMTP 关闭；不发送真实邮件，不复制 OIDC 或 AI 凭据。
 
-These are screenshots of the running local application, not mockups or generated images. They include workspace changes after v0.3.16 and do not imply that the release contains every pictured feature.
+Captured from a fresh isolated database using real API operations: one fictional publisher, two fictional accounts and two sample projects (one submitted, one draft). Existing development data was neither copied nor deleted. SMTP is disabled and no real credentials are copied.
 
-| 文件 / File | 内容 / Contents |
+| 文件前缀 / Prefix | 内容 / Contents |
 | --- | --- |
-| `customer-projects.jpg` | 客户项目列表、搜索筛选与进展入口 / Customer project list, filters and progress links |
-| `customer-intake.jpg` | 客户“上传图书”步骤局部与项目摘要 / Partial customer book-upload step and project summary |
-| `customer-detail.jpg` | 客户提交详情、进展与书籍资料 / Customer submission details, progress and book information |
-| `customer-overview.jpg` | 客户活动日历、活动趋势与状态分布 / Customer calendar, trends and status distribution |
-| `admin-overview.jpg` | 管理端效率指标、趋势与在办时长 / Admin efficiency metrics, trends and open-request aging |
+| customer-projects | 项目列表、创建人和状态 / Projects, creator and status |
+| customer-intake | 图书资料录入 / Book intake |
+| customer-detail | 提交详情 / Submitted project details |
+| customer-overview | 客户活动统计 / Customer activity |
+| admin-overview | 管理端统计 / Administrator statistics |
 
-截图展示现有本地样例项目、空白草稿和统计界面，未展示账号菜单、邮箱、电话或凭据。详情中的项目资料已折叠；截图过程中未创建或提交项目。数值为本地数据；历史覆盖不完整、零样本和未知时间按实际界面保留，没有编造完成时长。
+每组包含 `-zh-CN.jpg`、`-en-US.jpg`，帮助中心按当前语言加载。无后缀文件保留为中文 README 的兼容路径。统计仅反映本次演示操作；没有完成样本，不伪造历史、成品或完成耗时。示意封面复用仓库的水彩风格预览图，不代表真实出版物。
 
-The screenshots show existing local sample projects, a blank draft and analytics. The crops omit the account menu, email addresses, phone numbers and credentials. Project contact information is collapsed in the detail view; no projects were created or submitted for these captures. Counts are local data. Incomplete history, zero samples and unknown timestamps are preserved as displayed; no completion durations were fabricated.
+Each group has Chinese and English images selected by the help-center locale. Unsuffixed images retain the Chinese README paths. Statistics reflect actual demo operations, with no invented completions or historical activity. The illustrative cover reuses the repository watercolor preview, not a real publication.
 
-更新时在浏览器打开相应页面，使用本地样例项目或空白草稿，等待数据加载，截取相关区域并检查图片边界。避免包含个人信息、凭据、反馈正文和真实客户材料；同步更新截图日期、两种语言的 README 和功能发布状态。不要用需求原图替代实现截图。
+## 重新生成 / Regenerate
 
-To update, open the relevant page using local sample projects or blank drafts, wait for data to load, capture the relevant area and inspect the image boundaries. Exclude personal details, credentials, feedback text and real customer materials. Update the capture date, both READMEs and release status together. Requirement mockups must not be presented as implementation screenshots.
+先构建 API，再执行 `npx playwright test --config playwright.docs.config.ts`。使用独立的 5090 / 5193 / 5194 端口；每次运行生成新的 `artifacts/docs-demo-*` 数据目录，不复用历史测试数据。运行结束自动关闭专用进程，现有 5173 / 5174 本地服务保持运行。
+
+Build the API first, then run the command above. Dedicated ports and a fresh data directory keep captures independent from development and E2E fixtures. Inspect both languages before committing. Embedded help images require rebuilding/restarting the API after replacement.

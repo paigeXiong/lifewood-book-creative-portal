@@ -56,6 +56,10 @@ export function ProtectedLayout() {
 
   if (!isSupportedLocale(locale)) return null;
   if (userQuery.isPending) return <ScreenLoading />;
+  // Public help shares the authenticated shell without requiring a guest session.
+  if (location.pathname === `/${locale}/help` && (!userQuery.data || userQuery.isError)) {
+    return <Suspense fallback={<ScreenLoading />}><Outlet context={{ locale, user: undefined }} /></Suspense>;
+  }
   if (userQuery.error instanceof ApiError && userQuery.error.details.code === "auth.unauthorized") {
     return <Navigate replace state={{ from: location.pathname + location.search + location.hash }} to={localizedPath(locale, "/login")} />;
   }
@@ -72,6 +76,7 @@ export const appRoutes = createRoutesFromElements(<>
         <Route path="login" element={<LoginRoute />} />
         <Route path="email-action" lazy={async () => ({ Component: (await import("./pages/EmailActionPage")).EmailActionPage })} />
         <Route element={<ProtectedLayout />}>
+          <Route path="help" lazy={async () => ({ Component: (await import("./pages/HelpPage")).HelpPage })} />
           <Route path="notifications" element={<NotificationCenter/>}/>
           <Route path="tasks" element={<TaskListPage />} />
           <Route path="overview" element={<DashboardPage />} />

@@ -6,7 +6,7 @@
 
 The current scope covers intake, manual follow-up and final-file delivery, with assisted book-information recognition. Video generation and a detailed production/review workflow are outside the current implementation.
 
-The current version is [v0.3.17](docs/releases/v0.3.17.md). See [work status and pending decisions](docs/remaining-work.md) for implementation and acceptance boundaries.
+The current version is [v0.3.18](docs/releases/v0.3.18.md). See [work status and pending decisions](docs/remaining-work.md) for implementation and acceptance boundaries.
 
 ## Screenshots
 
@@ -16,25 +16,25 @@ Captured from the running local application on September 17, 2026. These cropped
 
 **Project list:** search and filter projects, check their status, resume drafts and view submitted-project progress.
 
-![Customer project list: search, filters, statuses and draft/progress links](docs/images/screenshots/customer-projects.jpg)
+![Customer project list: search, filters, statuses and draft/progress links](docs/images/screenshots/customer-projects-en-US.jpg)
 
 **Project intake:** submit materials through a step-by-step form. This partial view of the book-upload step shows cover, book-file and supporting-material uploads alongside the project summary.
 
-![Customer intake: book-upload step and project summary](docs/images/screenshots/customer-intake.jpg)
+![Customer intake: book-upload step and project summary](docs/images/screenshots/customer-intake-en-US.jpg)
 
 **Submission details:** current progress, delivery availability and grouped project information. The project-information section is collapsed to keep contact details out of the screenshot.
 
-![Customer submission details: progress, delivery status and book information](docs/images/screenshots/customer-detail.jpg)
+![Customer submission details: progress, delivery status and book information](docs/images/screenshots/customer-detail-en-US.jpg)
 
 **Customer overview:** activity calendar, trends and project statuses. Dates reveal daily activity, and statuses link to filtered project lists.
 
-![Customer overview: activity calendar, trends and project statuses](docs/images/screenshots/customer-overview.jpg)
+![Customer overview: activity calendar, trends and project statuses](docs/images/screenshots/customer-overview-en-US.jpg)
 
 ### Admin center
 
 **Overview:** average and median completion time, valid sample counts and open-request aging. Missing historical timestamps remain unknown rather than being inferred.
 
-![Admin overview: processing efficiency and open-request aging](docs/images/screenshots/admin-overview.jpg)
+![Admin overview: processing efficiency and open-request aging](docs/images/screenshots/admin-overview-en-US.jpg)
 
 See the [screenshot notes](docs/images/screenshots/README.md) for capture scope and update instructions.
 
@@ -103,6 +103,8 @@ For Native AOT checks, use `npm run publish:aot` and `npm run smoke:aot`. On a b
 Keep production data separate from application files. Default data locations are `C:\ProgramData\Lifewood\BookCreativePortal\data` on Windows MSI installations and `/var/lib/lifewood-book-portal` on Linux. Back up the database, files and protection keys; never commit them or SMTP/OIDC credentials. Follow the deployment guide for cross-machine restores and key handling.
 
 ## Remaining work
+
+The in-app [help center](docs/help-center.md) includes bilingual customer and administrator guides, full-text search, FAQs and expandable example screenshots. Customer accounts can access customer documentation only.
 
 - Business acceptance of intake, targeted returns, notifications and final delivery.
 - Production HTTPS domain, real email-link flows, identity-provider integration and outbound-network acceptance.

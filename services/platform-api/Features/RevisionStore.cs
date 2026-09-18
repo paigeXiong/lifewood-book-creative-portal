@@ -12,7 +12,7 @@ public sealed record ReturnProjectRequest(int Version, RevisionReason[] Reasons,
 public sealed record RevisionReplyRequest(string Id, string Unit, string Body);
 public sealed record RevisionMessage(string Id, string Unit, string Body, string AuthorId, string AuthorName, string? AvatarUrl, bool IsAdmin, string CreatedAt);
 public sealed record RevisionRound(string Id, string CreatedAt, string? SubmittedAt, RevisionReason[] Reasons, RevisionMessage[] Messages, string? BeforeSnapshot = null, string? AfterSnapshot = null);
-public sealed record RevisionView(RevisionUnit[] Units, RevisionRound[] Rounds, bool HasMore, Dictionary<string,string> Labels);
+public sealed record RevisionView(RevisionUnit[] Units, RevisionRound[] Rounds, bool HasMore, Dictionary<string,string> Labels, bool CanEdit = true);
 
 internal sealed class RevisionStore(string connectionString)
 {

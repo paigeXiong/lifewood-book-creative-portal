@@ -242,7 +242,7 @@ internal sealed partial class ProjectRepository(string connectionString)
         mark.ExecuteNonQuery();
     }
 
-    public PagedProjectsDto List(string ownerId, string? status, string? search, int page, int pageSize, string? sortBy = null, string? sortDirection = null)
+    public PagedProjectsDto List(string ownerId, string? status, string? search, int page, int pageSize, string? sortBy = null, string? sortDirection = null, bool shared = false, bool personalOnly = false)
     {
         using var connection = Open();
         var sortExpression = sortBy switch
@@ -253,7 +253,7 @@ internal sealed partial class ProjectRepository(string connectionString)
             _ => "updated_at"
         };
         var direction = string.Equals(sortDirection, "asc", StringComparison.OrdinalIgnoreCase) ? "ASC" : "DESC";
-        const string where = """
+        var where = """
             WHERE owner_id = $ownerId
               AND ($status = '' OR status = $status OR ($status = 'action_required' AND status = 'draft' AND workflow_status = 'awaiting_customer')
                    OR ($stage != '' AND CASE WHEN status = 'draft' AND workflow_status != 'awaiting_customer' THEN 'draft' ELSE workflow_status END = $stage))
@@ -262,6 +262,8 @@ internal sealed partial class ProjectRepository(string connectionString)
                    json_extract(book_json, '$.title') LIKE '%' || $search || '%' COLLATE NOCASE OR
                    json_extract(book_json, '$.authorName') LIKE '%' || $search || '%' COLLATE NOCASE)
             """;
+        if (shared) where = where.Replace("WHERE owner_id = $ownerId", $"WHERE {VisibleProjects} AND ($status <> 'action_required' OR owner_id = $ownerId)");
+        if (personalOnly) where += " AND owner_id = $ownerId";
         // Substring search scans a compact expression index instead of every full JSON record.
         // Keep the existing update-order index for ordinary, unfiltered browsing.
         var hasSearch = !string.IsNullOrWhiteSpace(search);
@@ -275,6 +277,7 @@ internal sealed partial class ProjectRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT id, task_number, status, version, project_json, book_json, created_at, updated_at, workflow_status
+                {(shared ? ", owner_id, (SELECT display_name FROM users WHERE users.id = projects.owner_id AND closed_at IS NULL)" : "")}
             FROM {source}
             {where}
             ORDER BY {sortExpression} {direction}, id ASC
@@ -286,12 +289,19 @@ internal sealed partial class ProjectRepository(string connectionString)
 
         var rows = new List<ProjectSummaryDto>();
         using var reader = command.ExecuteReader();
-        while (reader.Read()) rows.Add(ReadSummary(reader));
+        while (reader.Read()) {
+            var row = ReadSummary(reader);
+            if (shared) {
+                var owner = reader.GetString(9);
+                row = row with { CanEdit = owner == ownerId, Creator = reader.IsDBNull(10) ? null : new(owner, reader.GetString(10), $"/api/me/organization/members/{Uri.EscapeDataString(owner)}/avatar") };
+            }
+            rows.Add(row);
+        }
 
         return new PagedProjectsDto(rows.ToArray(), page, pageSize, total);
     }
 
-    public ProjectStatsDto GetStats(string ownerId)
+    public ProjectStatsDto GetStats(string ownerId, bool shared = false)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
@@ -306,6 +316,8 @@ internal sealed partial class ProjectRepository(string connectionString)
             WHERE owner_id = $ownerId;
             """;
         command.Parameters.AddWithValue("$ownerId", ownerId);
+        if (shared) command.CommandText = command.CommandText.Replace("WHERE owner_id = $ownerId", $"WHERE {VisibleProjects}")
+            .Replace("status = 'draft' AND workflow_status = 'awaiting_customer'", "owner_id = $ownerId AND status = 'draft' AND workflow_status = 'awaiting_customer'");
         using var reader = command.ExecuteReader();
         if (!reader.Read()) return new ProjectStatsDto(0, 0, 0, 0);
         return new ProjectStatsDto(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4));

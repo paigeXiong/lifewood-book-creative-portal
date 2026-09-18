@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate, type NavigateFunction } from "react-router-dom";
 import type { SupportedLocale } from "@lifewood/domain";
 import { useTranslation } from "react-i18next";
@@ -46,41 +46,36 @@ function SettingsTab({ locale, name, children }: { locale: SupportedLocale; name
   </NavLink>;
 }
 
+const settingsGroups = [
+  { id: "content", items: ["options", "files", "characters", "voices"] },
+  { id: "access", items: ["oidc", "ai"] },
+  { id: "messages", items: ["mail", "announcements", "notifications"] },
+  { id: "operations", items: ["runtime", "backups"] },
+] as const;
+const settingsLabels: Record<keyof typeof settingsIconPaths, string> = {
+  options: "admin.settings.formOptions", files: "admin.settings.fileCategories",
+  characters: "admin.presets.title", voices: "admin.settings.voices",
+  ai: "admin.settings.ai", oidc: "oidc.settings", mail: "mailQueue.title",
+  announcements: "announcements.title", notifications: "notifications.title",
+  backups: "backups.title", runtime: "admin.settings.runtime",
+};
+
 export function SettingsTabs({ locale }: { locale: SupportedLocale }) {
   const { t } = useTranslation();
-  const { pathname } = useLocation();
-  const navigation = useRef<HTMLElement>(null);
-  useLayoutEffect(() => {
-    const nav = navigation.current;
-    if (!nav) return;
-    // Scroll this strip only, without moving the settings page vertically.
-    const revealCurrent = () => {
-      const current = nav.querySelector<HTMLElement>('[aria-current="page"]');
-      if (!current) return;
-      const strip = nav.getBoundingClientRect(), item = current.getBoundingClientRect();
-      if (item.left < strip.left + 4) nav.scrollLeft += item.left - strip.left - 4;
-      else if (item.right > strip.right - 4) nav.scrollLeft += item.right - strip.right + 4;
-    };
-    revealCurrent();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", revealCurrent);
-      return () => window.removeEventListener("resize", revealCurrent);
-    }
-    const observer = new ResizeObserver(revealCurrent);
-    observer.observe(nav);
-    return () => observer.disconnect();
-  }, [pathname, locale]);
-  return <nav ref={navigation} className="settings-tabs" aria-label={t("admin.settings.sections")}>
-    <SettingsTab locale={locale} name="options">{t("admin.settings.formOptions")}</SettingsTab>
-    <SettingsTab locale={locale} name="files">{t("admin.settings.fileCategories")}</SettingsTab>
-    <SettingsTab locale={locale} name="characters">{t("admin.presets.title")}</SettingsTab>
-    <SettingsTab locale={locale} name="voices">{t("admin.settings.voices")}</SettingsTab>
-    <SettingsTab locale={locale} name="ai">{t("admin.settings.ai")}</SettingsTab>
-    <SettingsTab locale={locale} name="oidc">{t("oidc.settings")}</SettingsTab>
-    <SettingsTab locale={locale} name="mail">{t("mailQueue.title")}</SettingsTab>
-    <SettingsTab locale={locale} name="announcements">{t("announcements.title")}</SettingsTab>
-    <SettingsTab locale={locale} name="notifications">{t("notifications.title")}</SettingsTab>
-    <SettingsTab locale={locale} name="backups">{t("backups.title")}</SettingsTab>
-    <SettingsTab locale={locale} name="runtime">{t("admin.settings.runtime")}</SettingsTab>
+  const { pathname, search, hash } = useLocation();
+  const current = pathname.split("/")[3];
+  const group = settingsGroups.find(group => group.items.some(name => name === current)) ?? settingsGroups[0];
+  return <nav className="settings-navigation" aria-label={t("admin.settings.sections")}>
+    <div className="settings-groups">
+      {settingsGroups.map(item => <NavLink key={item.id}
+        to={item.id === group.id ? pathname + search + hash : `/${locale}/settings/${item.items[0]}`}
+        aria-current={item.id === group.id ? "true" : undefined}
+        className={item.id === group.id ? "selected" : undefined}>
+        {t(`admin.settings.groups.${item.id}`)}
+      </NavLink>)}
+    </div>
+    <div className="settings-tabs">
+      {group.items.map(name => <SettingsTab key={name} locale={locale} name={name}>{t(settingsLabels[name])}</SettingsTab>)}
+    </div>
   </nav>;
 }

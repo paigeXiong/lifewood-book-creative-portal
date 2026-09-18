@@ -98,6 +98,7 @@ export function LoginPage() {
       <footer className="login-footer" role="contentinfo">
         <span translate="no">© {new Date().getFullYear()} {t("app.name")}</span>
         <nav aria-label={t("auth.footerLinks")}>
+          <Link to={`/${locale}/help`}>{t("help.title")}</Link>
           <a href="https://lifewood.com/" target="_blank" rel="noopener noreferrer">{t("auth.officialWebsite")}<span aria-hidden="true">↗</span></a>
           <a href="https://lifewood.com/contact" target="_blank" rel="noopener noreferrer">{t("auth.contactUs")}<span aria-hidden="true">↗</span></a>
         </nav>

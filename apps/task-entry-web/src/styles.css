@@ -4,7 +4,8 @@ body { margin: 0; min-height: 100vh; overflow-x: hidden; background: linear-grad
 button, input, select, textarea { font: inherit; }
 button, a, select, label[for] { cursor: pointer; touch-action: manipulation; }
 button:disabled { cursor: not-allowed; opacity: .58; }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--lw-castleton); outline-offset: 2px; box-shadow: 0 0 0 4px rgb(255 179 71 / 28%); }
+button:focus-visible, a:focus-visible, input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 2px solid var(--lw-castleton); outline-offset: 2px; box-shadow: 0 0 0 4px rgb(255 179 71 / 28%); }
+input:not([type=checkbox]):not([type=radio]):not([type=file]):focus, select:focus, textarea:focus { border-color: var(--lw-castleton); outline: 2px solid var(--lw-castleton); outline-offset: -2px; box-shadow: none; }
 h1, h2, h3, p { margin-top: 0; }
 h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .sr-only, .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
@@ -44,7 +45,7 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .password-dialog form { display: grid; gap: 12px; }
 .password-dialog label { display: grid; gap: 5px; color: var(--lw-dark-serpent); font-weight: 650; }
 .password-dialog input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--lw-border); border-radius: 7px; }
-.password-dialog input:focus-visible { outline: 3px solid rgb(0 100 75 / 20%); border-color: var(--lw-castleton); }
+
 .password-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 5px; }
 .password-actions button { min-height: 38px; padding: 0 14px; }
 .password-dialog .account-error { margin: 0; }
@@ -240,8 +241,8 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .password-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; overflow: hidden; border-radius: var(--lw-radius-control); }
 .password-control input { min-width: 0; border-radius: var(--lw-radius-control) 0 0 var(--lw-radius-control); }
 .password-control button { min-width: 72px; padding: 0 10px; border: 1px solid var(--lw-border-strong); border-left: 0; border-radius: 0 var(--lw-radius-control) var(--lw-radius-control) 0; background: var(--lw-sea-salt); color: var(--lw-castleton); font-size: 11px; font-weight: 700; }
-.password-control:focus-within { border-radius: var(--lw-radius-control); box-shadow: 0 0 0 3px rgb(47 106 80 / 18%); }
-.password-control:focus-within input, .password-control:focus-within button { outline: 0; border-color: var(--lw-castleton); }
+.password-control:focus-within { border-radius: var(--lw-radius-control); outline: 2px solid var(--lw-castleton); outline-offset: -2px; box-shadow: none; }
+.password-control:focus-within input:not([type=checkbox]):not([type=radio]):focus, .password-control:focus-within button { outline: 0; box-shadow: none; border-color: var(--lw-castleton); }
 .remember-control { display: inline-flex; width: fit-content; align-items: center; gap: 8px; color: var(--lw-text-secondary); font-size: 12px; cursor: pointer; }
 .remember-control input { width: 16px; height: 16px; }
 .login-submit { width: 100%; min-height: 42px; margin-top: 2px; }

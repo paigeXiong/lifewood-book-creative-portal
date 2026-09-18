@@ -26,6 +26,10 @@
     <None Remove="data/**" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Help\*.json" LogicalName="Lifewood.PlatformApi.Help.%(Filename)%(Extension)" WithCulture="false" />
+    <EmbeddedResource Include="..\..\docs\images\screenshots\*.jpg" LogicalName="Lifewood.PlatformApi.Help.%(Filename)%(Extension)" WithCulture="false" />
+  </ItemGroup>
+  <ItemGroup>
     <InternalsVisibleTo Include="Lifewood.PlatformApi.Tests" />
     <InternalsVisibleTo Include="Lifewood.OidcNativeSmoke" />
   </ItemGroup>

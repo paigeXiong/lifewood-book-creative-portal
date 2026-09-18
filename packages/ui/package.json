@@ -1,9 +1,10 @@
 {
   "name": "@lifewood/ui",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "private": true,
   "type": "module",
   "exports": {
+    "./help-center": "./src/HelpCenter.tsx",
     "./help-popover": "./src/HelpPopover.tsx",
     "./email": "./src/Email.tsx",
     "./oidc": "./src/Oidc.tsx",
@@ -21,6 +22,7 @@
     "./icon-feedback": "./src/IconFeedback.tsx",
     "./overlay-motion.css": "./src/overlay-motion.css",
     "./saved-views": "./src/SavedViews.tsx",
-    "./login-sessions": "./src/LoginSessions.tsx"
+    "./login-sessions": "./src/LoginSessions.tsx",
+    "./segmented-control.css": "./src/segmented-control.css"
   }
 }

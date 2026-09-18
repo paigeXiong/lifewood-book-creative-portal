@@ -1,3 +1,4 @@
+import { FunctionSearch } from "./FunctionSearch";
 import { AccountLocaleRedirect } from "@lifewood/ui/account-locale";
 import { ForgotPasswordButton } from "@lifewood/ui/email";
 import { OtherLoginMethods } from "@lifewood/ui/oidc";
@@ -45,6 +46,7 @@ useParams
 } from "react-router-dom";
 import { ToastHost } from "./Toast";
 
+const MailTemplatePage = lazy(() => import("./MailTemplatePage").then(m => ({ default: m.MailTemplatePage })));
 const FeedbackPage = lazy(()=>import("./FeedbackPage").then(m=>({default:m.FeedbackPage})));
 const ProjectsPage = lazy(() => import("./ProjectsPage").then(module => ({ default: module.ProjectsPage })));
 const UsersPage = lazy(() => import("./UsersPage").then(module => ({ default: module.UsersPage })));
@@ -60,6 +62,7 @@ const FileCategoryConfigPage = lazy(() => import("./FileCategoryConfigPage").the
 const CharacterPresetsPage = lazy(() => import("./CharacterPresetsPage").then(module => ({ default: module.CharacterPresetsPage })));
 const VoiceConfigPage = lazy(() => import("./VoiceConfigPage").then((module) => ({ default: module.VoiceConfigPage })));
 const AiSettingsPage = lazy(() => import("./AiSettingsPage").then(module => ({ default: module.AiSettingsPage })));
+const HelpCenter = lazy(() => import("@lifewood/ui/help-center").then(module => ({ default: module.HelpCenter })));
 const BackupsPage = lazy(() => import("./BackupsPage").then(module => ({ default: module.BackupsPage })));
 const SystemRuntimePage = lazy(() => import("./SystemRuntimePage").then((module) => ({ default: module.SystemRuntimePage })));
 
@@ -110,7 +113,7 @@ function IdentityGate({
     rememberMe: boolean;
   }) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -214,6 +217,7 @@ function IdentityGate({
         </form>
         {!requiresBootstrap && <ForgotPasswordButton />}
         {!requiresBootstrap && <OtherLoginMethods portal="admin" />}
+        <a href={customerPortalUrl(i18n.language === "en-US" ? "en-US" : "zh-CN").replace(/\/tasks$/, "/help")}>{t("help.title")}</a>
       </section>
     </main>
   );
@@ -238,7 +242,7 @@ function AdminShell({
     notifications: "notifications.title",
     feedback: "feedback.adminTitle", overview: "admin.nav.overview", projects: "admin.nav.projects",
     users: "admin.nav.users", organizations: "admin.nav.organizations",
-    audit: "admin.nav.audit", settings: "admin.nav.settings",
+    help: "help.title", audit: "admin.nav.audit", settings: "admin.nav.settings",
   };
   const [accountOpen, setAccountOpen] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
@@ -293,20 +297,11 @@ function AdminShell({
         {t("nav.skipToContent")}
       </a>
       <aside className="sidebar">
-        <div className="brand">
-          <span>LW</span>
-          <div>
-            <strong translate="no">{t("app.name")}</strong>
-            <small>{t("admin.productName")}</small>
-          </div>
+        <div className="admin-sidebar-brand" aria-label={t("app.name")}>
+          <span className="admin-sidebar-brand-mark" aria-hidden="true">LW</span>
+          <strong translate="no">{t("app.name")}</strong>
         </div>
         <nav className="admin-navigation" aria-label={t("admin.navGroups.label")}>
-          {user.permissions.includes("tasks.read") && <a className="nav-home" href={`/api/portals/customer?locale=${locale}`}>
-            <span className="nav-icon" aria-hidden="true">
-              <AdminNavIcon name="home" />
-            </span>
-            <span className="nav-label">{t("admin.nav.home")}</span>
-          </a>}
           <section className="nav-group" aria-labelledby="nav-group-operations">
             <h2 id="nav-group-operations">{t("admin.navGroups.operations")}</h2>
             <div className="nav-grid">
@@ -348,11 +343,18 @@ function AdminShell({
               </NavLink>
             </div>
           </section>}
+          <NavLink to={localizedPath(locale, "/help?audience=admin")}><span className="nav-icon" aria-hidden="true">?</span><span className="nav-label">{t("help.title")}</span></NavLink>
         </nav>
       </aside>
       <div className="workspace">
         <header className={`topbar ${currentArea==="notifications"?"notification-topbar":""}`}>
-          <span>{t(areaTitles[currentArea] ?? "admin.internalWorkspace")}</span>
+          <div className="topbar-leading">
+            {user.permissions.includes("tasks.read") && <a className="topbar-home" href={`/api/portals/customer?locale=${locale}`} aria-label={t("admin.nav.home")} title={t("admin.nav.home")}>
+              <AdminNavIcon name="home" /><span>{t("admin.nav.home")}</span>
+            </a>}
+            <span className="topbar-title">{t(areaTitles[currentArea] ?? "admin.internalWorkspace")}</span>
+          </div>
+          <FunctionSearch key={user.id} user={user} locale={locale} />
           <div className="topbar-actions"><NotificationBell key={user.id} admin/>
             <label>
               <span className="sr-only">{t("nav.language")}</span>
@@ -524,6 +526,7 @@ function AdminRoot() {
       {required && !me.data.permissions.includes(required) ? <Navigate replace to={localizedPath(locale, "/" + home)} /> :
       <Suspense fallback={<main className="center-state" role="status" aria-busy="true">{t("common.loading")}</main>}>
         <Routes>
+        <Route path="help" element={<HelpCenter key={me.data.id} userId={me.data.id} locale={locale} canReadAdmin={me.data.permissions.includes("admin.access")} />} />
         <Route index element={<Navigate replace to={home} />} />
         <Route path="notifications" element={<NotificationCenter key={me.data.id} admin/>}/><Route path="settings/notifications" element={<NotificationSettingsPage/>}/>
         <Route path="overview" element={<OverviewPage locale={locale} />} />
@@ -538,6 +541,7 @@ function AdminRoot() {
         <Route path="settings/characters" element={<CharacterPresetsPage locale={locale} imageBase={customerPortalUrl(locale)} />} />
         <Route path="settings/ai" element={<AiSettingsPage locale={locale} />} />
         <Route path="settings/oidc" element={<OidcSettingsPage key={me.data.id} locale={locale} allowed={me.data.roles.includes("owner")} />} />
+        <Route path="settings/mail/templates" element={<MailTemplatePage key={me.data.id} locale={locale} allowed={me.data.roles.includes("owner")} />} />
         <Route path="settings/mail" element={<MailStatusPage key={me.data.id} locale={locale} allowed={me.data.roles.includes("owner")} />} />
         <Route path="settings" element={<Navigate replace to="options" />} />
         <Route

@@ -25,7 +25,7 @@ test("platform feedback is submitted and answered through notifications in both 
   await fileInput.dispatchEvent("cancel",{bubbles:true});
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel(zh?"问题描述":"Description",{exact:true})).toHaveValue(description);
-  const [chooser]=await Promise.all([page.waitForEvent("filechooser"),fileInput.click()]);
+  const [chooser]=await Promise.all([page.waitForEvent("filechooser"),dialog.getByRole("button",{name:zh?"选择图片":"Choose image",exact:true}).click()]);
   await expect(dialog).toBeVisible();
   const source=await page.evaluate(()=>{
    const canvas=document.createElement("canvas");canvas.width=1000;canvas.height=600;

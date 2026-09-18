@@ -429,7 +429,11 @@ export interface AdminProjectDetail {
   workflowUpdatedAt: string;
   notes: AdminNote[];
 }
+export interface ProjectCreator { id: string; displayName: string; avatarUrl: string }
+
 export interface TaskDraft {
+  creator?: ProjectCreator;
+  canEdit?: boolean;
   id: string;
   taskNumber?: string;
   status: string;
@@ -444,6 +448,8 @@ export interface TaskDraft {
 }
 
 export interface TaskSummary {
+  creator?: ProjectCreator;
+  canEdit?: boolean;
   id: string;
   taskNumber?: string;
   version: number;

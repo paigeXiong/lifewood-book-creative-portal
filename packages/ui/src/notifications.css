@@ -186,3 +186,6 @@
 .admin-shell .notification-center.content > .notification-results { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 
 .feedback-notice-content p{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border-radius:8px;background:#f2f6f3;line-height:1.6}.feedback-notice-content h4{margin:16px 0 8px}
+
+/* Focus follows the existing field edge instead of drawing a second outer frame. */
+:is(.notification-center, .notification-dialog) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea):focus { border-color: #00644b; outline: 2px solid #00644b; outline-offset: -2px; box-shadow: none; }

@@ -88,6 +88,9 @@ export function AppShell({ user, children }: PropsWithChildren<{ user: CurrentUs
           <NavLink className="portal-projects-link" to={`/${locale}/organization`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
             <span>{t("nav.myOrganization")}</span>
           </NavLink>
+          <NavLink className="portal-projects-link" to={`/${locale}/help`} onClick={event => guardLink(event, () => setAccountOpen(false))}>
+            <span>{t("help.title")}</span>
+          </NavLink>
         </PortalNavigation>
         <div className="topbar-actions">
           <FeedbackButton key={user.id} userId={user.id} locale={locale}/><NotificationBell key={`notifications-${user.id}`}/><Announcements key={user.id} userId={user.id} locale={locale} />

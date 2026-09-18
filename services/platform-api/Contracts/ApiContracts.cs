@@ -302,6 +302,8 @@ public sealed record VoiceAndReferencesInfoDto(
     string[] CompetitorUrls,
     CreativeDirectionDto CreativeDirection);
 
+public sealed record ProjectCreatorDto(string Id, string DisplayName, string AvatarUrl);
+
 public sealed record TaskDraftDto(
     string Id,
     string? TaskNumber,
@@ -313,7 +315,9 @@ public sealed record TaskDraftDto(
     VoiceAndReferencesInfoDto VoiceAndReferences,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    string? WorkflowStatus = null);
+    string? WorkflowStatus = null,
+    ProjectCreatorDto? Creator = null,
+    bool CanEdit = true);
 
 public sealed record ProjectSummaryDto(
     string Id,
@@ -327,7 +331,9 @@ public sealed record ProjectSummaryDto(
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    string? WorkflowStatus = null);
+    string? WorkflowStatus = null,
+    ProjectCreatorDto? Creator = null,
+    bool CanEdit = true);
 
 public sealed record PagedProjectsDto(
     ProjectSummaryDto[] Items,

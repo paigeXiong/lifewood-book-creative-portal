@@ -532,6 +532,7 @@ api.MapGet("/portals/{portal}", (string portal, string? locale, HttpContext cont
     return Results.Redirect(portal switch { "profile" => destination[..^6] + "/profile", "backups" => destination[..^9] + "/settings/backups", _ => destination });
 });
 api.MapDeliveryEndpoints(dataDirectory);
+api.MapHelpEndpoints();
 api.MapAuditTools(CurrentUser);
 api.MapGet("/admin/runtime-health", (HttpContext c, RuntimeMonitor monitor) =>
 {
@@ -1122,19 +1123,20 @@ api.MapGet("/admin/projects/{id}", (string id, HttpContext context, AdminReposit
     return project is null ? Error(context, 404, "project.not_found", "errors.project.notFound", "The application was not found.", false) : Results.Ok(project);
 });
 
-api.MapGet("/projects/{id}/revision-avatar/{messageId}", (string id,string messageId,HttpContext context,RevisionStore store,UserRepository accounts, AdminRepository admin) => {
+api.MapGet("/projects/{id}/revision-avatar/{messageId}", (string id,string messageId,HttpContext context,RevisionStore store,UserRepository accounts, AdminRepository admin, ProjectRepository projects) => {
     var user=CurrentUser(context);
-    if(user is null || ((store.Owner(id)!=user.Id || !Can(user,"tasks.read")) && (!Can(user,"admin.projects.read") || admin.GetProject(id,user.Id) is null)))return Results.NotFound();
+    if(user is null || ((projects.GetVisible(user.Id,id) is null || !Can(user,"tasks.read")) && (!Can(user,"admin.projects.read") || admin.GetProject(id,user.Id) is null)))return Results.NotFound();
     var actor=store.MessageAuthor(id,messageId);if(actor is null)return Results.NotFound();
     context.Response.Headers.CacheControl="private, no-store";
     var avatar=accounts.OpenAvatar(actor);
     return avatar is null?Results.Text(AvatarImage.Create(actor,"?"),"image/svg+xml",Encoding.UTF8):Results.Stream(avatar.Stream,avatar.ContentType);
 });
-api.MapGet("/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store) => {
+api.MapGet("/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store, ProjectRepository projects) => {
     var user=CurrentUser(context);
     if(user is null)return Error(context,401,"auth.unauthorized","errors.auth.unauthorized","Sign in required.",false);
-    if(!Can(user,"tasks.read") || store.Owner(id)!=user.Id)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
-    return Results.Ok(store.View(id,false,Locale(context)));
+    var visible = Can(user,"tasks.read") ? projects.GetVisible(user.Id,id) : null;
+    if(visible is null)return Error(context,404,"project.not_found","errors.project.notFound","Project not found.",false);
+    return Results.Ok(store.View(id,false,Locale(context)) with { CanEdit = visible.CanEdit });
 });
 api.MapGet("/admin/projects/{id}/revisions", (string id, HttpContext context, RevisionStore store, AdminRepository admin, int page=1) => {
     var user=CurrentUser(context);
@@ -1542,25 +1544,27 @@ api.MapGet("/voices/{id}/sample", async (string id, HttpContext context, VoiceRe
     await using var sampleStream = snapshot.Value.Stream;
     await Results.Stream(sampleStream, snapshot.Value.ContentType, enableRangeProcessing: true).ExecuteAsync(context);
 });
-api.MapGet("/projects", (HttpContext context, ProjectRepository projects, string? status, string? search, string? sort, string? direction, int page = 1, int pageSize = 10) =>
+api.MapGet("/projects", (HttpContext context, ProjectRepository projects, string? status, string? search, string? sort, string? direction, string? scope, int page = 1, int pageSize = 10) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
     page = Math.Max(1, page);
     pageSize = Math.Clamp(pageSize, 1, 100);
-    return Results.Ok(projects.List(user.Id, status, search, page, pageSize, sort, direction));
+    if (scope is not (null or "personal" or "organization")) return Results.BadRequest();
+    return Results.Ok(projects.List(user.Id, status, search, page, pageSize, sort, direction, shared: true, personalOnly: scope == "personal"));
 });
 
-api.MapGet("/projects/stats", (HttpContext context, ProjectRepository projects) =>
+api.MapGet("/projects/stats", (HttpContext context, ProjectRepository projects, string? scope) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
-    return Results.Ok(projects.GetStats(user.Id));
+    if (scope is not (null or "personal" or "organization")) return Results.BadRequest();
+    return Results.Ok(projects.GetStats(user.Id, shared: scope != "personal"));
 });
 
-api.MapGet("/projects/dashboard", (HttpContext context, CustomerDashboardRepository dashboard, string? month, string? timeZone, int day = 1, int page = 1) =>
+api.MapGet("/projects/dashboard", (HttpContext context, CustomerDashboardRepository dashboard, string? month, string? timeZone, string? scope, int day = 1, int page = 1) =>
 {
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
@@ -1573,7 +1577,8 @@ api.MapGet("/projects/dashboard", (HttpContext context, CustomerDashboardReposit
     catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
     { return Error(context, 400, "validation.failed", "errors.validation.failed", "Invalid time zone.", false); }
     context.Response.Headers.CacheControl = "private, no-store";
-    return Results.Ok(dashboard.Get(user.Id, start, zone, day, page));
+    if (scope is not (null or "personal" or "organization")) return Results.BadRequest();
+    return Results.Ok(dashboard.Get(user.Id, start, zone, day, page, shared: scope == "organization"));
 });
 
 api.MapPost("/projects/{id}/copy", async (string id, CopyProjectRequest request, HttpContext context, ProjectRepository projects, PlatformLimits limits) =>
@@ -1690,10 +1695,10 @@ api.MapGet("/projects/{id}", (string id, HttpContext context, ProjectRepository 
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
-    var project = projects.Get(user.Id, id);
+    var project = projects.GetVisible(user.Id, id);
     return project is null
         ? Error(context, 404, "project.not_found", "errors.project.notFound", "The task was not found.", false)
-        : Results.Ok(project.Status == "draft" ? project with { Project = CreatorInfo.FillMissing(project.Project, user) } : project);
+        : Results.Ok(project.Status == "draft" && project.CanEdit ? project with { Project = CreatorInfo.FillMissing(project.Project, user) } : project);
 });
 
 api.MapDelete("/projects/{id}", async (string id, int version, HttpContext context, ProjectRepository projects) =>
@@ -1752,7 +1757,8 @@ api.MapGet("/projects/{id}/submission-snapshot", (string id, HttpContext context
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Permission is required.", false);
-    var snapshot = projects.GetSubmissionSnapshot(user.Id, id);
+    var visible = projects.GetVisible(user.Id, id);
+    var snapshot = visible is null ? null : projects.GetSubmissionSnapshotForAdmin(id);
     return snapshot is null
         ? Error(context, 404, "submission.snapshot_not_found", "errors.http.notFound", "The submission configuration snapshot was not found.", false)
         : Results.Ok(snapshot);
@@ -2101,10 +2107,10 @@ api.MapGet("/projects/{id}/files/{fileId}", (string id, string fileId, HttpConte
     var user = CurrentUser(context);
     if (user is null) return Error(context, 401, "auth.unauthorized", "errors.auth.unauthorized", "Sign in is required.", false);
     if (!Can(user, "tasks.read")) return Error(context, 403, "auth.forbidden", "errors.auth.forbidden", "Read permission is required.", false);
-    var project = projects.Get(user.Id, id);
+    var project = projects.GetVisible(user.Id, id);
     var asset = project is null ? null : AllProjectAssets(project).FirstOrDefault(item => item.Id == fileId);
     if (asset is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
-    var folder = Path.Combine(dataDirectory, "uploads", user.Id, id);
+    var folder = Path.Combine(dataDirectory, "uploads", project!.Creator!.Id, id);
     var path = Directory.Exists(folder) ? Directory.EnumerateFiles(folder, $"{fileId}_*").Where(IsStoredFile).SingleOrDefault() : null;
     if (path is null) return Error(context, 404, "file.not_found", "errors.http.notFound", "The file was not found.", false);
     return asset.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)

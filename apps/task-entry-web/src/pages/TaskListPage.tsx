@@ -1,3 +1,5 @@
+import "@lifewood/ui/segmented-control.css";
+import { MemberAvatar } from "./MyOrganizationPage";
 import { HelpPopover } from "@lifewood/ui/help-popover";
 import { customerStatusId, customerStatusLabel } from "../customerProjectStatus";
 import { TaskMoreActions } from "../components/TaskMoreActions";
@@ -48,6 +50,7 @@ export function TaskListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const search = searchParams.get("q")?.trim() ?? "";
+  const scope = searchParams.get("scope") === "personal" ? "personal" : "organization";
   const status = searchParams.get("status") ?? "";
   const [searchDraft, setSearchDraft] = useState(search);
   const [composingSearch, setComposingSearch] = useState(false);
@@ -72,14 +75,15 @@ export function TaskListPage() {
   const validLocale = isSupportedLocale(locale) ? locale : "zh-CN";
 
   const options = useQuery({ queryKey: ["form-options", validLocale], queryFn: () => optionService.getFormOptions(validLocale) });
-  const tasks = useQuery({
-    queryKey: ["projects", validLocale, status, search, sort, direction, page],
-    queryFn: () => projectService.listProjects({ locale: validLocale, status: status || undefined, search: search || undefined, sort, direction, page, pageSize: 10 }),
-  });
-  const resumeIds=tasks.data?.items.filter(task=>task.status==="draft").map(task=>task.id)??[];
-  const resume=useQuery({queryKey:["project-resume",resumeIds],queryFn:()=>personalWorkspaceService.resumeSteps(resumeIds),enabled:resumeIds.length>0,staleTime:0});
-  const stats = useQuery({ queryKey: ["project-stats"], queryFn: projectService.getStats });
   const account = useQuery({ queryKey: ["current-user"], queryFn: authService.getCurrentUser, retry: false });
+  const tasks = useQuery({
+    enabled: account.isSuccess,
+    queryKey: ["projects", validLocale, status, search, sort, direction, page, scope, account.data?.id, account.data?.organization?.id],
+    queryFn: () => projectService.listProjects({ locale: validLocale, scope, status: status || undefined, search: search || undefined, sort, direction, page, pageSize: 10 }),
+  });
+  const resumeIds=tasks.data?.items.filter(task=>task.status==="draft" && task.canEdit !== false).map(task=>task.id)??[];
+  const resume=useQuery({queryKey:["project-resume",resumeIds],queryFn:()=>personalWorkspaceService.resumeSteps(resumeIds),enabled:resumeIds.length>0,staleTime:0});
+  const stats = useQuery({ enabled: account.isSuccess, queryKey: ["project-stats", scope, account.data?.id, account.data?.organization?.id], queryFn: () => projectService.getScopedStats(scope) });
   const hasOrganization = Boolean(account.data?.organization?.id && account.data.organization.name.trim());
   const supportsCopy = options.data?.projectCopyEnabled === true;
   const canCreate = account.isSuccess && hasOrganization;
@@ -238,7 +242,7 @@ export function TaskListPage() {
         {tasks.isError && <div className="inline-error" role="alert">{localizedApiError(tasks.error, t)} <button className="button button-secondary" type="button" onClick={() => void tasks.refetch()}>{t("common.retry")}</button></div>}
           <div className="task-list-toolbar">
           <div className="task-list-navigation">
-            <div className="task-attention-tabs" aria-label={t("tasks.filterLabel")}>
+            <div className="task-attention-tabs lw-segmented" aria-label={t("tasks.filterLabel")}>
               <button type="button" aria-pressed={status!=="action_required"} onClick={()=>updateFilters({status:"",page:1})}>{t("tasks.tabs.all")}</button>
               <button type="button" aria-pressed={status==="action_required"} onClick={()=>updateFilters({status:"action_required",page:1})}>{t("tasks.tabs.pending")}</button>
             </div>
@@ -265,6 +269,7 @@ export function TaskListPage() {
               </button>
             </div>
           </div>
+          {searchParams.has("scope") && <div className="task-filter-chips"><button type="button" className="task-filter-chip" onClick={() => { const next = new URLSearchParams(searchParams); next.delete("scope"); next.delete("page"); setSearchParams(next); }}>{t("dashboard.scopeLabel")}: {t(`dashboard.scope.${scope}`)} ×</button></div>}
           {hasFilterChips && <div className="task-filter-chips" aria-label={t("tasks.listUx.activeFilters")}>
             {search && <button type="button" className="task-filter-chip" aria-label={t("tasks.listUx.removeSearch", { value: search })} onClick={() => updateFilters({ q: "", page: 1 })}><span>{t("tasks.filters.keyword")}: {search}</span><span aria-hidden="true">×</span></button>}
             {chipStatus && <button type="button" className="task-filter-chip" aria-label={t("tasks.listUx.removeStatus", { value: statusLabel })} onClick={() => updateFilters({ status: "", page: 1 })}><span>{statusLabel}</span><span aria-hidden="true">×</span></button>}
@@ -274,17 +279,17 @@ export function TaskListPage() {
             <table className="task-table data-table">
               <thead><tr>
                 {sortHeader("project", t("tasks.columns.project"))}{sortHeader("author", t("tasks.columns.book"))}{sortHeader("status", t("tasks.columns.status"))}
-                {sortHeader("updated", t("tasks.columns.updated"))}
+                <th>{t("tasks.columns.creator")}</th>{sortHeader("updated", t("tasks.columns.updated"))}
                 <th>{t("tasks.columns.action")}</th>
               </tr></thead>
               <tbody>
                 {tasks.isPending && Array.from({ length: 4 }, (_, row) => (
                   <tr key={`loading-${row}`} className="task-loading-row" aria-hidden="true">
-                    {Array.from({ length: 5 }, (_, column) => <td key={column}><span className="task-loading-placeholder" /></td>)}
+                    {Array.from({ length: 6 }, (_, column) => <td key={column}><span className="task-loading-placeholder" /></td>)}
                   </tr>
                 ))}
                 {!tasks.isPending && tasks.data?.items.length === 0 && (
-                  <tr className="task-empty-row"><td colSpan={5}>
+                  <tr className="task-empty-row"><td colSpan={6}>
                     <div className="empty-state">
                       <TaskEmptyIllustration kind={emptyKind} />
                       <div><h2>{t(emptyKind === "new" ? "tasks.emptyTitle" : `tasks.listUx.${emptyKind}Title`)}</h2><p>{t(emptyKind === "new" ? "tasks.emptyDescription" : `tasks.listUx.${emptyKind}Description`)}</p>
@@ -297,7 +302,7 @@ export function TaskListPage() {
                 const returned = task.status === "draft" && task.workflowStatus === "awaiting_customer";
                 const statusId = customerStatusId(task);
                 const statusOption = statusMap.get(statusId);
-                const target = task.status === "draft" ? `/tasks/${task.id}/edit/${resume.data?.find(item=>item.projectId===task.id)?.step??"project"}` : `/tasks/${task.id}`;
+                const target = task.status === "draft" && task.canEdit !== false ? `/tasks/${task.id}/edit/${resume.data?.find(item=>item.projectId===task.id)?.step??"project"}` : `/tasks/${task.id}`;
                 const projectTitle = presentValue(task.bookTitle) ?? presentValue(task.projectName) ?? t("tasks.untitledDraft");
                 const projectContext = presentValue(task.clientName) ?? presentValue(task.projectName) ?? t("tasks.pendingInput");
                 const authorName = presentValue(task.authorName) ?? t("tasks.pendingInput");
@@ -308,8 +313,9 @@ export function TaskListPage() {
                   </Link></td>
                   <td data-label={t("tasks.columns.book")}>{authorName}</td>
                   <td data-label={t("tasks.columns.status")}><span className={`status-badge status-${returned ? "danger" : statusOption?.tone ?? "neutral"}`}>{customerStatusLabel(statusId, statusOption?.label, t("clientUx.returnedStatus"))}</span></td>
+                  <td data-label={t("tasks.columns.creator")}>{task.creator ? <Link className="task-creator" to={localizedPath(locale, task.creator.id === account.data?.id ? "/profile" : `/organization/members/${task.creator.id}?${new URLSearchParams({ returnTo: localizedPath(locale, "/tasks") + (searchParams.size ? "?" + searchParams.toString() : "") })}`)}><MemberAvatar name={task.creator.displayName} url={task.creator.id === account.data?.id ? "/api/me/avatar" : task.creator.avatarUrl}/><span>{task.creator.displayName}</span></Link> : "—"}</td>
                   <td data-label={t("tasks.columns.updated")}><time dateTime={task.updatedAt}>{formatter.format(new Date(task.updatedAt))}</time></td>
-                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{(supportsCopy || task.status === "draft") && <TaskMoreActions label={t("clientUx.more")}>{supportsCopy && <><button className="button button-quiet button-small task-copy" type="button" title={t("tasks.copyHelp")} disabled={!canCreate || copyDraft.isPending} onClick={() => {
+                  <td data-label={t("tasks.columns.action")}><div className="task-actions"><Link className="button button-secondary button-small" to={localizedPath(locale, target)}>{t(task.canEdit === false ? "tasks.viewProject" : returned ? "clientUx.handleReturn" : task.status === "draft" ? "clientUx.continueDraft" : "clientUx.viewProgress")}</Link>{task.canEdit !== false && (supportsCopy || task.status === "draft") && <TaskMoreActions label={t("clientUx.more")}>{supportsCopy && <><button className="button button-quiet button-small task-copy" type="button" title={t("tasks.copyHelp")} disabled={!canCreate || copyDraft.isPending} onClick={() => {
                     if(copying.current || !account.data?.id)return;copying.current=true;
                     const key=`${account.data.id}:${task.id}`;const requestId=copyKeys.current.get(key)??crypto.randomUUID();copyKeys.current.set(key,requestId);
                     copyDraft.mutate({id:task.id,requestId,userId:account.data.id});

@@ -9,6 +9,7 @@ namespace Lifewood.PlatformApi.Persistence;
 
 internal sealed class EmailRepository(string connectionString, IDataProtectionProvider protection, MailSettings settings, UserRepository users, NotificationRepository notifications)
 {
+    public MailTemplateStore Templates { get; } = new(connectionString);
     private readonly IDataProtector protector = protection.CreateProtector("BookCreativePortal.EmailOutbox.v1");
     private readonly SemaphoreSlim deliveryLock = new(1, 1);
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -18,6 +19,7 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
     private static void Exec(SqliteConnection c, SqliteTransaction? tx, string sql, params (string, object?)[] values) { using var q = Cmd(c, tx, sql, values); q.ExecuteNonQuery(); }
     public void Initialize()
     {
+        Templates.Initialize();
         using var c = Open(); Exec(c, null, """
         CREATE TABLE IF NOT EXISTS email_settings(user_id TEXT PRIMARY KEY,email TEXT NOT NULL,verified INTEGER NOT NULL DEFAULT 0,notifications INTEGER NOT NULL DEFAULT 0,cursor INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS email_notification_scope(user_id TEXT PRIMARY KEY,topics TEXT NOT NULL);
@@ -125,7 +127,7 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         Exec(c, tx, "INSERT INTO email_tokens VALUES($hash,$id,$email,$purpose,$version,$expires)", ("$hash", hash), ("$id", id), ("$email", email), ("$purpose", purpose), ("$version", version), ("$expires", Now + 600));
         Exec(c, tx, "INSERT INTO email_requests VALUES($id,$purpose,$now) ON CONFLICT(user_id,purpose) DO UPDATE SET issued=excluded.issued", ("$id", id), ("$purpose", purpose), ("$now", Now));
         var url = $"{settings.PublicUrl}/{(en ? "en-US" : "zh-CN")}/email-action#purpose={purpose}&token={token}";
-        Queue(c, tx, id, email, MailTemplates.Render(purpose, en ? "en-US" : "zh-CN", url), Now + 600);
+        Queue(c, tx, id, email, Templates.Render(purpose, en ? "en-US" : "zh-CN", url), Now + 600);
         tx.Commit(); return true;
     }
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
@@ -144,7 +146,7 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         else
         {
             users.ApplyEmailPasswordReset(c, tx, id, password!);
-            Queue(c, tx, id, email, MailTemplates.Render("security", en ? "en-US" : "zh-CN"), Now + 86400);
+            Queue(c, tx, id, email, Templates.Render("security", en ? "en-US" : "zh-CN"), Now + 86400);
         }
         Exec(c, tx, "DELETE FROM email_tokens WHERE hash=$hash", ("$hash", Hash(token)));
         Exec(c, tx, "DELETE FROM email_outbox WHERE user_id=$id AND kind=$kind", ("$id", id), ("$kind", purpose));
@@ -166,10 +168,14 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
             using var get = Cmd(c, tx, "SELECT u.email,COALESCE(u.locale,'zh-CN'),s.cursor FROM users u JOIN email_settings s ON s.user_id=u.id AND s.email=u.email WHERE u.id=$id AND u.is_active=1 AND u.closed_at IS NULL AND s.notifications=1 AND s.verified=1", ("$id", id));
             using var r = get.ExecuteReader(); if (!r.Read()) continue;
             var email = r.GetString(0); var locale = r.GetString(1); var cursor = r.GetInt64(2); r.Close();
+            if (!Templates.Render("notice",locale,$"{settings.PublicUrl}/{locale}/notifications").Enabled) {
+                Exec(c,tx,"UPDATE email_settings SET cursor=MAX(cursor,$watermark) WHERE user_id=$id",("$id",id),("$watermark",watermark));
+                tx.Commit(); continue;
+            }
             // Reads use the notification repository's current permission checks. Mail contains no project/user content.
             if (notifications.HasEmailCandidate(id,cursor,watermark,ReadTopics(c,tx,id))) {
                 using var pending = Cmd(c, tx, "UPDATE email_outbox SET notification_before=$before WHERE user_id=$id AND kind='notice' AND status='pending' AND expires>$now", ("$before", watermark), ("$id", id), ("$now", Now));
-                if (pending.ExecuteNonQuery() == 0) Queue(c, tx, id, email, MailTemplates.Render("notice", locale, $"{settings.PublicUrl}/{(locale == "en-US" ? "en-US" : "zh-CN")}/notifications"), Now + 86400, cursor, watermark);
+                if (pending.ExecuteNonQuery() == 0) Queue(c, tx, id, email, Templates.Render("notice", locale, $"{settings.PublicUrl}/{(locale == "en-US" ? "en-US" : "zh-CN")}/notifications"), Now + 86400, cursor, watermark);
             }
             Exec(c, tx, "UPDATE email_settings SET cursor=MAX(cursor,$watermark) WHERE user_id=$id", ("$id", id), ("$watermark", watermark));
             tx.Commit();
@@ -200,6 +206,10 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         using var r = q.ExecuteReader(); if (!r.Read()) return;
         var id = r.GetString(0); var address = r.GetString(1); var subject = r.GetString(2); var encrypted = r.GetString(3);
         var userId = r.GetString(4); var kind = r.GetString(5); var after = r.GetInt64(6); var before = r.GetInt64(7); r.Close();
+        using var languageQuery=Cmd(c,null,"SELECT COALESCE(locale,'zh-CN') FROM users WHERE id=$id",("$id",userId));
+        if (kind=="notice" && !Templates.Render("notice",(string)languageQuery.ExecuteScalar()!,$"{settings.PublicUrl}/notifications").Enabled) {
+            Exec(c,null,"UPDATE email_outbox SET status='cancelled',body='' WHERE id=$id",("$id",id)); return;
+        }
         if (kind == "notice" && !notifications.HasEmailCandidate(userId,after,before,ReadTopics(c,null,userId))) {
             Exec(c, null, "UPDATE email_outbox SET status='cancelled',body='' WHERE id=$id", ("$id", id));
             return;

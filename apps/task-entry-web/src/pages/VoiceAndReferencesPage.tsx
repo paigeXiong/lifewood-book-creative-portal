@@ -245,7 +245,7 @@ export function VoiceAndReferencesPage({ stage }: { stage: "voice" | "references
   if (!taskId || !isSupportedLocale(locale)) return null;
   if (draftQuery.isPending || optionsQuery.isPending) return <div className="screen-status" aria-busy="true"><UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} />{t("common.loading")}</div>;
   if (draftQuery.isError || optionsQuery.isError || !draftQuery.data || !optionsQuery.data) return <><UnsavedChangesGuard dirty={form.formState.isDirty || transfers.length > 0} /><ScreenError error={draftQuery.error ?? optionsQuery.error} onRetry={() => Promise.all([draftQuery.refetch(), optionsQuery.refetch()])} /></>;
-  if (draftQuery.data.status !== "draft") return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
+  if (draftQuery.data.status !== "draft" || draftQuery.data.canEdit === false) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}`)} />;
   if (!recoveringInput && !isCharactersComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/characters`)} />;
   if (!recoveringInput && stage === "references" && !isVoicePreferencesComplete(draftQuery.data.voiceAndReferences)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/voice`)} />;
   if (!recoveringInput && stage === "references" && !isStyleComplete(draftQuery.data.creative)) return <Navigate replace to={localizedPath(validLocale, `/tasks/${taskId}/edit/style`)} />;

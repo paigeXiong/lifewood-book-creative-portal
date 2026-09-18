@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Routes, Route, Outlet, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { revisionService, type RevisionView } from "@lifewood/api-client";
+import { ApiError, revisionService, type RevisionView } from "@lifewood/api-client";
 import { useWizardNavigate } from "./wizard-motion";
 import { StepProgress } from "./components/StepProgress";
 import { RevisionNavigation, RevisionLink, ReviewSection } from "./revision-navigation";
@@ -23,13 +23,29 @@ async function render(view:RevisionView|undefined,step:string,check:(container:H
  const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
  if(view)client.setQueryData(["revision","task",locale],view);
  const container=document.createElement("div");document.body.append(container);const root=createRoot(container);
- try { await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/task/edit/${step}`]}><Routes><Route path="/:locale" element={<RevisionWorkspace><Outlet/></RevisionWorkspace>}><Route path="tasks/:taskId/edit/:step" element={<Form/>}/><Route path="tasks" element={<Form/>}/></Route></Routes></MemoryRouter></QueryClientProvider>));await check(container,client);}
+ try { await act(async()=>root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/tasks/task/edit/${step}`]}><Routes><Route path="/:locale" element={<RevisionWorkspace><Outlet/></RevisionWorkspace>}><Route path="tasks/:taskId/edit/:step" element={<Form/>}/><Route path="tasks/:taskId" element={<div data-read-only/>}/><Route path="tasks" element={<Form/>}/></Route></Routes></MemoryRouter></QueryClientProvider>));await check(container,client);}
  finally {await act(async()=>root.unmount());client.clear();container.remove();}
 }
 describe("revision workspace",()=>{
+ it.each(["zh-CN","en-US"])("redirects shared editors to readable feedback without write controls in %s",async locale=>{
+  await render({...data(),canEdit:false},"style",async c=>{
+   expect(c.querySelector("#form")).toBeNull();
+   expect(c.querySelector("[data-read-only]")).not.toBeNull();
+   expect(c.querySelector(".revision-pinned-reason")?.textContent).toContain("Clarify");
+   expect(c.querySelector(".revision-chat form, .revision-unit-picker a")).toBeNull();
+  },locale);
+ });
+ it("unmounts editing when previously cached permission is revoked",async()=>{
+  const get=vi.spyOn(revisionService,"get").mockRejectedValue(new ApiError({code:"project.not_found",retryable:false}));
+  try { await render({...data(),rounds:[]},"project",async(c,client)=>{
+   expect(c.querySelector("#form")).not.toBeNull();
+   await act(async()=>{await client.refetchQueries({queryKey:["revision","task","zh-CN"]}); await new Promise(resolve=>setTimeout(resolve,25));});
+   expect(c.querySelector("#form")).toBeNull();
+  }); } finally {get.mockRestore();}
+ });
  it.each(["zh-CN","en-US"])("preserves mounted edits through refetch failure and recovery in %s",async locale=>{
   const view={...data(),rounds:[]};
-  const get=vi.spyOn(revisionService,"get").mockRejectedValue(new Error("Offline"));
+  const get=vi.spyOn(revisionService,"get").mockRejectedValue(new ApiError({code:"network.unavailable",retryable:true}));
   try {
    await render(view,"project",async(c,client)=>{
     await act(async()=>c.querySelector<HTMLButtonElement>("#edit")!.click());
@@ -47,7 +63,7 @@ describe("revision workspace",()=>{
   }finally{get.mockRestore();}
  });
  it("does not mount an autosaving form when the initial permission request fails",async()=>{
-  const get=vi.spyOn(revisionService,"get").mockRejectedValue(new Error("Offline"));
+  const get=vi.spyOn(revisionService,"get").mockRejectedValue(new ApiError({code:"network.unavailable",retryable:true}));
   try{await render(undefined,"project",async c=>{
    await act(async()=>{await new Promise(r=>setTimeout(r,10));});
    expect(c.querySelector('[role="alert"]')).not.toBeNull();

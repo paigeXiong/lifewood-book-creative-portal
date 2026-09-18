@@ -602,7 +602,7 @@ public sealed partial class VoiceSampleApiIntegrationTests : IAsyncLifetime
 
         using var otherCustomer = await CreateCustomerClient(csrf);
         using var isolated = await otherCustomer.GetAsync($"/api/projects/{projectId}/submission-snapshot");
-        Assert.Equal(HttpStatusCode.NotFound, isolated.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, isolated.StatusCode);
         using var forbiddenAdmin = await otherCustomer.GetAsync($"/api/admin/projects/{projectId}/submission-snapshot");
         Assert.Equal(HttpStatusCode.Forbidden, forbiddenAdmin.StatusCode);
     }
@@ -1335,7 +1335,8 @@ public sealed partial class VoiceSampleApiIntegrationTests : IAsyncLifetime
         using var returned=await Send(ownerClient,HttpMethod.Post,$"/api/admin/projects/{draft.Id}/return",adminCsrf,JsonContent.Create(request));
         Assert.Equal(HttpStatusCode.OK,returned.StatusCode);
         using var foreign=await ownerClient.GetAsync(route+"/revisions");
-        Assert.Equal(HttpStatusCode.NotFound,foreign.StatusCode);
+        Assert.Equal(HttpStatusCode.OK,foreign.StatusCode);
+        Assert.False((await foreign.Content.ReadFromJsonAsync<Lifewood.PlatformApi.Features.RevisionView>())!.CanEdit);
         var view=(await customer.GetFromJsonAsync<Lifewood.PlatformApi.Features.RevisionView>(route+"/revisions"))!;
         var round=Assert.Single(view.Rounds);
         Assert.Null(round.BeforeSnapshot);

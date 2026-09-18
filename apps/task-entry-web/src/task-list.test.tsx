@@ -36,6 +36,17 @@ async function mount(locale: SupportedLocale, query = "", total = 30, items: Tas
 
 for (const locale of ["zh-CN", "en-US"] as const) {
   describe(`project list (${locale})`, () => {
+    it("opens shared drafts read-only and links their creator without edit actions", async () => {
+      const item: TaskSummary = { id: "shared", version: 1, status: "draft", canEdit: false, creator: { id: "member", displayName: "Colleague", avatarUrl: "/api/me/organization/members/member/avatar" }, projectName: "Project", bookTitle: "Book", authorName: "Author", clientName: "Client", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
+      const page = await mount(locale, "", 1, [item]);
+      try {
+        expect(page.container.querySelector(".task-identity")?.getAttribute("href")).toBe(`/${locale}/tasks/shared`);
+        expect(page.container.querySelector(".task-creator")?.getAttribute("href")).toBe(`/${locale}/organization/members/member?${new URLSearchParams({returnTo: `/${locale}/tasks`})}`);
+        expect(page.container.querySelector(".task-creator img")?.getAttribute("src")).toBe(item.creator!.avatarUrl);
+        expect(page.container.querySelector(".task-actions")?.textContent).toBe(i18n.t("tasks.viewProject"));
+        expect(page.container.querySelector(".task-copy, .task-delete")).toBeNull();
+      } finally { await page.close(); }
+    });
     it("copies submitted projects and reuses the request key after a failed response", async () => {
       const item: TaskSummary = { id: "submitted", version: 1, status: "submitted", projectName: "Project", bookTitle: "Book", authorName: "Author", clientName: "Client", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" };
       const copy = vi.spyOn(projectService,"copyDraft").mockRejectedValue(new Error("offline"));

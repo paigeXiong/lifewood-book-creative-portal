@@ -1,0 +1,202 @@
+[
+  {
+    "path": "/users",
+    "title": "Users · Create user",
+    "category": "Directory / Users",
+    "keywords": "注册 开户 新建账号 添加用户 成员 密码 register registration signup sign up account create user password",
+    "permissions": [
+      "admin.users.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/organizations",
+    "title": "Organizations",
+    "category": "Directory",
+    "keywords": "公司 团队 成员 organization company team members",
+    "permissions": [
+      "admin.users.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/projects",
+    "title": "Project follow-up",
+    "category": "Operations",
+    "keywords": "项目 需求 退回 完成 指派 project request return complete assign",
+    "permissions": [
+      "admin.projects.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/workbench",
+    "title": "Operations workbench",
+    "category": "Operations",
+    "keywords": "待办 跟进 todo follow up workbench",
+    "permissions": [
+      "admin.projects.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/overview",
+    "title": "Analytics overview",
+    "category": "Operations",
+    "keywords": "统计 效率 平均 完成 时间 analytics efficiency average duration",
+    "permissions": [
+      "admin.overview.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/feedback",
+    "title": "Platform feedback",
+    "category": "Operations",
+    "keywords": "问题 反馈 回复 bug feedback reply",
+    "permissions": [
+      "admin.feedback.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/audit",
+    "title": "Audit log",
+    "category": "Governance",
+    "keywords": "日志 审计 操作 log audit activity",
+    "permissions": [
+      "admin.audit.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/oidc",
+    "title": "Login methods",
+    "category": "Settings / Access",
+    "keywords": "注册 登录 单点 第三方 身份 绑定 sso oidc login registration signup identity",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": true
+  },
+  {
+    "path": "/settings/mail",
+    "title": "Mail service and delivery",
+    "category": "Settings / Messaging",
+    "keywords": "邮箱 邮件 smtp 授权码 发信 通知 email mail smtp notification",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": true
+  },
+  {
+    "path": "/settings/notifications",
+    "title": "Notification settings",
+    "category": "Settings / Messaging",
+    "keywords": "通知 提醒 notification reminder",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/announcements",
+    "title": "Announcements",
+    "category": "Settings / Messaging",
+    "keywords": "公告 发布 announcement publish",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/options",
+    "title": "Form options",
+    "category": "Settings / Content",
+    "keywords": "品牌 类型 语言 表单 选项 brand genre language form options",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/files",
+    "title": "File categories",
+    "category": "Settings / Content",
+    "keywords": "文件 上传 分类 file upload category",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/characters",
+    "title": "Character presets",
+    "category": "Settings / Content",
+    "keywords": "角色 人物 预设 character preset",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/voices",
+    "title": "Reference voices",
+    "category": "Settings / Content",
+    "keywords": "音色 配音 声音 voice audio",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/ai",
+    "title": "AI integration",
+    "category": "Settings / Access",
+    "keywords": "人工智能 模型 接口 ai model api",
+    "permissions": [
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/runtime",
+    "title": "Runtime and network",
+    "category": "Settings / Operations",
+    "keywords": "存储 用量 代理 网络 域名 端口 proxy storage network domain port runtime",
+    "permissions": [
+      "admin.runtime.manage",
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/settings/backups",
+    "title": "Backup and restore",
+    "category": "Settings / Operations",
+    "keywords": "备份 恢复 数据 backup restore recovery",
+    "permissions": [
+      "admin.runtime.manage",
+      "admin.config.manage"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/reports",
+    "title": "Project reports",
+    "category": "Operations",
+    "keywords": "报表 导出 csv report export",
+    "permissions": [
+      "admin.projects.read"
+    ],
+    "owner": false
+  },
+  {
+    "path": "/notifications",
+    "title": "Notification center",
+    "category": "Messages",
+    "keywords": "通知 消息 未读 notification message unread",
+    "permissions": [],
+    "owner": false
+  }
+]

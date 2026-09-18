@@ -1,0 +1,46 @@
+.help-center { background: #fff; border-radius: 16px; padding: 20px; margin: 16px 20px; min-width: 0; color: #163e35; }
+.public-help { max-width: 1440px; margin: 0 auto; }
+.public-help-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; gap: 16px; color: #163e35; }
+.public-help-header nav { display: flex; gap: 20px; }
+.public-help-header a { color: inherit; }
+.workspace-main > .help-center { min-height: 0; overflow-y: auto; }
+.help-center button { font: inherit; border: 0; border-radius: 8px; padding: 9px 14px; background: #e8f0ec; color: #1d5143; font-weight: 600; cursor: pointer; }
+.help-center button:hover { background: #dceae2; }
+.help-center .help-search input { font: inherit; border: 1px solid #c8d7d0; border-radius: 9px; padding: 9px 12px; background: white; color: inherit; }
+.help-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
+.help-audiences { display: flex; gap: 4px; padding: 4px; background: #f1f5f3; border-radius: 10px; }
+.help-center .help-audiences button { background: transparent; box-shadow: none; }
+.help-center .help-audiences button[aria-pressed="true"] { background: #225b49; color: white; }
+.help-search { display: flex; gap: 8px; align-items: center; max-width: 520px; }
+.help-center .help-search input { width: 320px; max-width: 100%; min-width: 0; }
+.help-catalog { display: grid; gap: 20px; }
+.help-center h2 { font-size: 17px; margin: 0 0 12px; }
+.help-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.help-card { display: flex; flex-direction: column; gap: 6px; background: #f4f7f5; border-radius: 10px; padding: 16px; text-decoration: none; color: inherit; }
+.help-card:hover { background: #e9f1ec; }
+.help-card span, .help-article small, .help-category, .help-result-count { color: #587169; font-size: 14px; }
+.help-reading { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 28px; }
+.help-contents { display: flex; flex-direction: column; align-self: start; gap: 4px; }
+.help-contents a { padding: 9px 12px; border-radius: 8px; text-decoration: none; color: inherit; font-size: 14px; }
+.help-contents a[aria-current="page"] { background: #e5f0e9; font-weight: 700; }
+.help-article { max-width: 880px; min-width: 0; overflow-wrap: anywhere; line-height: 1.8; }
+.help-article h1 { font-size: 25px; margin: 4px 0 8px; }
+.help-article h2 { margin-top: 24px; }
+.help-article ol { padding-left: 25px; }
+.help-article li { padding-left: 5px; margin-bottom: 12px; }
+.help-article figure { margin: 20px 0; }
+.help-center .help-screenshot { display: block; padding: 0; width: 100%; background: #f4f7f5; border-radius: 10px; overflow: hidden; cursor: zoom-in; box-shadow: none; }
+.help-screenshot img { width: 100%; display: block; }
+.help-article figcaption { font-size: 12px; color: #647a72; margin-top: 8px; }
+.help-article details { background: #f4f7f5; padding: 12px 16px; border-radius: 8px; margin: 8px 0; }
+.help-article summary { cursor: pointer; font-weight: 600; }
+.help-article details p { margin-bottom: 0; }
+.help-image-dialog { max-width: min(1100px, 94vw); max-height: 92dvh; padding: 16px; border: 0; border-radius: 14px; }
+.help-image-dialog::backdrop { background: rgb(15 35 28 / 55%); }
+.help-image-dialog[open] { animation: help-image-enter 160ms ease-out; }
+@keyframes help-image-enter { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .help-image-dialog[open] { animation: none; } }
+.help-image-dialog form { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.help-image-dialog img { display: block; max-width: 100%; height: auto; }
+@media (max-width: 900px) { .help-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .help-reading { grid-template-columns: 190px minmax(0, 1fr); gap: 18px; } }
+@media (max-width: 600px) { .help-center { padding: 14px; margin: 12px 8px; } .help-cards, .help-reading { grid-template-columns: minmax(0, 1fr); } .help-search { width: 100%; flex-wrap: wrap; } .help-center .help-search input { width: 100%; } .help-contents a:not(:first-child) { display: none; } .help-article h1 { font-size: 21px; } }
