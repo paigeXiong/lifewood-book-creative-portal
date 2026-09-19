@@ -101,6 +101,20 @@ public sealed class EmailTests : IDisposable
         Assert.Equal("pending", Sql("SELECT status FROM email_outbox WHERE id='record-01'")); // Projection must not mutate expired records.
         Sql("UPDATE users SET is_active=0"); Assert.Single(emails.QueueStatus("paused", "verify", 1).Items);
     }
+    [Fact] public void QueueSearchCombinesFiltersWithoutExposingRecipientsOrChangingCounts() {
+        Assert.True(emails.Request("verify", owner));
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        for (var i = 0; i < 28; i++) Sql($"INSERT INTO email_outbox(id,user_id,email,kind,body,subject,status,attempts,next_attempt,expires) VALUES('search-{i:00}','{owner}','other_%@example.test','notice','private','private','sent',0,{now},{now + 3600})");
+        var result = emails.QueueStatus("sent", "notice", 99, "  OTHER_%@EXAMPLE.TEST  ");
+        Assert.Equal(28, result.Total); Assert.Equal(2, result.Page); Assert.Equal(3, result.Items.Count);
+        Assert.All(result.Items, item => Assert.Equal("o***@example.test", item.Recipient));
+        Assert.Equal(29, result.Counts.Sum(item => item.Count));
+        Assert.Equal(1, emails.QueueStatus(null, "verify", 1, "OWNER@").Total);
+        Assert.Equal(0, emails.QueueStatus("sent", "verify", 1, "owner").Total);
+        Assert.Equal(0, emails.QueueStatus(null, null, 1, "' OR 1=1 --").Total);
+        Assert.Equal(28, emails.QueueStatus(null, null, 1, "_%").Total);
+        Assert.Equal(29, emails.QueueStatus(null, null, 1, "example.test").Total);
+    }
     [Fact] public void QueueStatusProjectsDisabledSendingWithoutChangingQueue() {
         Assert.True(emails.Request("verify", owner));
         var disabled = new MailSettings(new ConfigurationBuilder().Build());

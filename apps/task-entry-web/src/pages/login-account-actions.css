@@ -1,0 +1,25 @@
+.login-page .login-account-actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:4px 16px; margin:10px 0 14px; }
+.login-page .login-account-actions > a,
+.login-page .login-account-actions > .email-forgot { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; margin:0; padding:4px 0; border:0; border-radius:4px; background:transparent; box-shadow:none; color:#527064; font-family:inherit; font-size:.82rem; font-weight:500; line-height:1.4; text-decoration:none; cursor:pointer; }
+.login-page .login-account-actions > a:hover,
+.login-page .login-account-actions > .email-forgot:hover { color:#18513c; background:transparent; box-shadow:none; text-decoration:underline; text-underline-offset:4px; }
+.login-page .login-account-actions > a:focus-visible,
+.login-page .login-account-actions > .email-forgot:focus-visible { outline:2px solid #47816a; outline-offset:4px; }
+@media(prefers-reduced-motion:no-preference) { .login-page .login-account-actions > a,.login-page .login-account-actions > .email-forgot { transition:color 150ms ease; } }
+@media(max-width:640px) { .login-page .login-account-actions > a,.login-page .login-account-actions > .email-forgot { min-height:44px; } }
+
+.login-page .login-account-actions { justify-content:space-between; }
+.login-page .login-account-actions .remember-control { margin:0; font-size:.8rem; }
+.login-page .login-panel > .login-submit { width:100%; margin:0; }
+.login-page .oidc-login { border-top:0; margin-top:12px; padding-top:0; }
+.login-page .oidc-login > .field-help-heading { justify-content:center; gap:6px; }
+.login-page .oidc-login .oidc-toggle { width:auto; min-height:36px; padding:6px 4px; border:0; background:transparent; font-size:.82rem; color:#527064; }
+.login-page .oidc-login .oidc-toggle:hover { color:#18513c; background:transparent; }
+
+
+.login-page .login-heading { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0 0 22px; }
+.login-page .login-heading h1 { margin:0; font-size:1.65rem; }
+.login-page .login-mode-link { display:inline-flex; align-items:center; gap:4px; margin-left:auto; padding:6px 0 6px 8px; min-height:36px; color:#527064; font-size:.82rem; font-weight:500; text-decoration:none; white-space:nowrap; }
+.login-page .login-mode-link:hover { color:#18513c; text-decoration:underline; text-underline-offset:4px; }
+.login-page .login-mode-link:focus-visible { outline:2px solid #47816a; outline-offset:3px; border-radius:4px; }
+@media(max-width:640px) { .login-page .login-mode-link { min-height:44px; } }

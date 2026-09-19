@@ -4,6 +4,7 @@ export function readNoticeListState(search:string) {
  const status=params.get("status")??"",placement=params.get("placement")??"";
  const rawPages=params.get("pages")??"1";
  return {
+  ...(/^[a-f0-9]{32}$/.test(params.get("notice")??"")?{notice:params.get("notice")!}:{}),
   search:(params.get("q")??"").trim().slice(0,160),
   status:["draft","scheduled","published","withdrawn"].includes(status)?status:"",
   placement:["login","personal","banner"].includes(placement)?placement:"",
@@ -12,6 +13,7 @@ export function readNoticeListState(search:string) {
 }
 export function noticeListSearch(state:ReturnType<typeof readNoticeListState>) {
  const params=new URLSearchParams();
+ if(state.notice)params.set("notice",state.notice);
  if(state.search)params.set("q",state.search);
  if(state.status)params.set("status",state.status);
  if(state.placement)params.set("placement",state.placement);

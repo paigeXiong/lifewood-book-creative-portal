@@ -562,3 +562,6 @@ h1, h2, h3 { text-wrap: balance; scroll-margin-top: 66px; }
 .draft-recovery-dialog footer { margin-top: 14px; justify-content: space-between; }
 .draft-recovery-dialog footer .button { min-height: 40px; }
 @media (max-width: 520px) { .draft-recovery-dialog { padding: 14px; } .draft-recovery-choices { grid-template-columns: minmax(0, 1fr); } .draft-recovery-dialog footer > div { width: 100%; flex-wrap: nowrap; } .draft-recovery-dialog footer > div .button { flex: 1; min-width: 0; } }
+
+.character-count { display:block; text-align:right; font-variant-numeric:tabular-nums; color:var(--lw-text-muted); }
+.character-count.near-limit { color:#896322; font-weight:600; }

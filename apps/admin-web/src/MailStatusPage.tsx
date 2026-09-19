@@ -10,9 +10,9 @@ import "./mail-status.css";
 
 export function MailStatusPage({ locale, allowed }: { locale: SupportedLocale; allowed: boolean }) {
   const { t } = useTranslation(), [params, setParams] = useSearchParams();
-  const status = params.get("status") ?? "", kind = params.get("kind") ?? "";
+  const status = params.get("status") ?? "", kind = params.get("kind") ?? "", search = (params.get("q") ?? "").trim();
   const rawPage = Number(params.get("page") ?? 1), page = Number.isInteger(rawPage) && rawPage > 0 && rawPage <= 100000 ? rawPage : 1;
-  const query = useQuery({ queryKey: ["admin-mail-queue", status, kind, page], queryFn: ({ signal }) => mailQueueService.list(status, kind, page, signal), enabled: allowed, retry: false, refetchInterval: query => query.state.data?.rate?.resumeAt ? 15000 : false });
+  const query = useQuery({ queryKey: ["admin-mail-queue", status, kind, page, search], queryFn: ({ signal }) => search ? mailQueueService.list(status, kind, page, signal, search) : mailQueueService.list(status, kind, page, signal), enabled: allowed, retry: false, refetchInterval: query => query.state.data?.rate?.resumeAt ? 15000 : false });
   const data = query.data;
   function filter(key: string, value: string) {
     setParams(current => { const next = new URLSearchParams(current); if (value) next.set(key, value); else next.delete(key); if (key !== "page") next.delete("page"); return next; });
@@ -38,14 +38,18 @@ export function MailStatusPage({ locale, allowed }: { locale: SupportedLocale; a
       {query.isPending ? <p role="status">{t("common.loading")}</p> : data && <>
         <div className="mail-status-counts">{data.counts.map(item => <button key={item.status} type="button" aria-pressed={status === item.status} onClick={() => filter("status", status === item.status ? "" : item.status)}><span>{t(`mailQueue.states.${item.status}`)}</span> <strong>{item.count.toLocaleString(locale)}</strong></button>)}</div>
         <div className="mail-status-toolbar mail-status-filters">
+          <form className="mail-recipient-search" key={search} role="search" onSubmit={event => { event.preventDefault(); filter("q", String(new FormData(event.currentTarget).get("q") ?? "").trim()); }}>
+            <input type="search" name="q" maxLength={254} defaultValue={search} aria-label={t("mailQueue.searchRecipient")} placeholder={t("mailQueue.searchRecipient")} />
+            <button type="submit">{t("common.search")}</button>
+          </form>
           <label>{t("mailQueue.status")}<select value={status} onChange={e => filter("status", e.target.value)}><option value="">{t("mailQueue.all")}</option>{data.counts.map(item => <option key={item.status} value={item.status}>{t(`mailQueue.states.${item.status}`)}</option>)}</select></label>
           <label>{t("mailQueue.kind")}<select value={kind} onChange={e => filter("kind", e.target.value)}><option value="">{t("mailQueue.all")}</option>{data.kinds.map(item => <option key={item} value={item}>{t(`mailQueue.kinds.${item}`)}</option>)}</select></label>
-          {(status || kind) && <button type="button" onClick={() => setParams({})}>{t("mailQueue.clear")}</button>}
+          {(status || kind || search) && <button type="button" onClick={() => setParams({})}>{t("mailQueue.clear")}</button>}
         </div>
         {!data.items.length ? <p className="mail-status-empty pagination-scroll" role="status">{t("mailQueue.empty")}</p> : <div className="mail-status-table pagination-scroll"><table><thead><tr><th>{t("mailQueue.recipient")}</th><th>{t("mailQueue.kind")}</th><th>{t("mailQueue.status")}</th><th>{t("mailQueue.failures")}</th><th>{t("mailQueue.next")}</th><th>{t("mailQueue.expires")}</th></tr></thead><tbody>{data.items.map(item => <tr key={item.id}><td>{item.recipient}</td><td>{t(`mailQueue.kinds.${item.kind}`)}</td><td>{t(`mailQueue.states.${item.status}`)}</td><td>{item.failures}</td><td>{item.nextAttempt == null ? "—" : date(item.nextAttempt)}</td><td>{date(item.expires)}</td></tr>)}</tbody></table></div>}
         <div className="mail-status-toolbar mail-status-pagination pagination-footer"><span>{t("mailQueue.page", { page: data.page, pages: Math.max(1, Math.ceil(data.total / data.pageSize)), count: data.total })}</span><div className="mail-status-page-actions"><button type="button" disabled={query.isFetching || data.page <= 1} onClick={() => filter("page", String(data.page - 1))}>{t("mailQueue.previous")}</button><button type="button" disabled={query.isFetching || data.page * data.pageSize >= data.total} onClick={() => filter("page", String(data.page + 1))}>{t("mailQueue.nextPage")}</button></div></div>
       </>}
-      {!data && query.error && (status || kind) && <button type="button" onClick={() => setParams({})}>{t("mailQueue.clear")}</button>}
+      {!data && query.error && (status || kind || search) && <button type="button" onClick={() => setParams({})}>{t("mailQueue.clear")}</button>}
     </section>}
   </main>;
 }

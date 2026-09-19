@@ -1,3 +1,4 @@
+import { AnnouncementPreview } from "./AnnouncementPreview";
 import { AnnouncementScheduleDialog } from "./AnnouncementScheduleDialog";
 import { HelpPopover } from "@lifewood/ui/help-popover";
 import { useEffect, useRef, useState } from "react";
@@ -41,13 +42,13 @@ export function AnnouncementsPage({locale,userId}:{locale:SupportedLocale;userId
    writeNoticeDraft(next);
    navigate(location.pathname+(params.size?"?"+params:"")+location.hash,{replace:true,state:{...location.state,announcementEditor:next}});
  },[location.key,location.pathname,location.search,location.hash,navigate,userId]);
- const filters=readNoticeListState(location.search),{search,status,placement,pages}=filters;
+ const filters=readNoticeListState(location.search),{search,status,placement,pages,notice}=filters;
  const loadingMore=useRef(false);
  const locationRef=useRef({key:location.key,generation:0});
  if(locationRef.current.key!==location.key){locationRef.current={key:location.key,generation:locationRef.current.generation+1};loadingMore.current=false;}
  const setFilters=(patch:Partial<typeof filters>)=>navigate(location.pathname+noticeListSearch({...filters,pages:1,...patch}),{state:location.state,flushSync:true});
  useEffect(()=>{if(!editor)return;const prevent=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue="";};window.addEventListener("beforeunload",prevent);return()=>window.removeEventListener("beforeunload",prevent);},[!!editor]);
- const list=useInfiniteQuery({queryKey:["admin-announcements",userId,search,status,placement],initialPageParam:undefined as number|undefined,queryFn:({pageParam})=>announcementService.list(search,pageParam,status,placement),getNextPageParam:p=>p.nextCursor??undefined});
+ const list=useInfiniteQuery({queryKey:["admin-announcements",userId,search,status,placement,notice],initialPageParam:undefined as number|undefined,queryFn:({pageParam})=>notice?announcementService.list(search,pageParam,status,placement,notice):announcementService.list(search,pageParam,status,placement),getNextPageParam:p=>p.nextCursor??undefined});
  const loaded=list.data?.pages.length??0;
  useEffect(()=>{if(loaded>0&&loaded<pages&&list.hasNextPage&&!list.isFetching&&!list.error)void list.fetchNextPage();},[loaded,pages,list.hasNextPage,list.isFetching,list.error,list.fetchNextPage]);
  const loadMore=async()=>{
@@ -93,6 +94,7 @@ export function AnnouncementsPage({locale,userId}:{locale:SupportedLocale;userId
  const cancelSchedule=useMutation({mutationFn:(item:AnnouncementDocument)=>announcementService.cancelSchedule(item.id,item.version),onSuccess:()=>{void list.refetch();}});
  const error=saveError??list.error??cancelSchedule.error;
  return <main className="content announcement-admin">
+ {notice&&<div className="notice-source"><span>{t("automation.linkedNotice")}</span><button onClick={()=>setFilters({notice:undefined})}>{t("automation.clear")}</button></div>}
  <section className="page-toolbar"><form role="search" onSubmit={e=>{e.preventDefault();setFilters({search:String(new FormData(e.currentTarget).get("q")??"").trim().slice(0,160)});}}><input key={location.key} name="q" type="search" maxLength={160} aria-label={t("announcements.search")} placeholder={t("announcements.search")} defaultValue={search}/><button>{t("common.search")}</button></form><select aria-label={t("announcements.status")} value={status} onChange={e=>setFilters({status:e.target.value})}><option value="">{t("announcements.allStatuses")}</option>{["draft","scheduled","published","withdrawn"].map(value=><option key={value} value={value}>{t(`announcements.${value}`)}</option>)}</select><select aria-label={t("announcements.placement")} value={placement} onChange={e=>setFilters({placement:e.target.value})}><option value="">{t("announcements.allPlacements")}</option>{["login","personal","banner"].map(value=><option key={value} value={value}>{t(`announcements.${value}`)}</option>)}</select><button disabled={actions.busy} onClick={()=>void actions.refresh()}>{t("announcements.refresh")}</button><button className="primary push-right" disabled={actions.busy} onClick={()=>open()}>{t("announcements.new")}</button></section>
  {actions.failure && !editor && <div role="alert" className="message error"><strong>{t(actions.failure.action==="delete"?"announcements.deleteDraft":`announcements.${actions.failure.action}`)} · {actions.failure.title}</strong><p>{t(`announcements.${actions.failure.hint}`)}</p>{!["actionConflict","actionMissing"].includes(actions.failure.hint)&&<p>{localizedApiError(actions.failure.cause,t)}</p>}</div>}
  {actions.refreshFailed&&!editor&&<p role="alert" className="message error">{t("announcements.actionRefreshFailed")}</p>}
@@ -109,6 +111,6 @@ export function AnnouncementsPage({locale,userId}:{locale:SupportedLocale;userId
  <div className="field-help-heading"><label className="notice-duration">{t("announcements.displayDays")}<input type="number" inputMode="numeric" required min={1} max={3650} step={1} value={editor.content.displayDays??""} onChange={e=>update({displayDays:e.target.value===""?null:Number(e.target.value)})}/></label><HelpPopover label={t("announcements.displayDays")}>{t("announcements.displayDaysHint")}</HelpPopover></div>
  </fieldset>{saveConflict?<div role="alert" className="message error"><p>{t("announcements.recoveryConflict")}</p><div className="notice-actions"><Link to={`/${locale}/announcements`} target="_blank" rel="noopener noreferrer">{t("announcements.recoveryReview")}</Link><button type="button" disabled={savePending} onClick={()=>void recoverAsNew()}>{t("announcements.recoveryCopy")}</button></div></div>:saveError&&<div role="alert" className="message error"><p>{localizedApiError(saveError,t)}</p>{canRetry&&<p>{t("announcements.recoveryRetryHint")}</p>}</div>}
  <div className="notice-actions"><button type="button" disabled={savePending} onClick={()=>setPreview(!preview)}>{t("announcements.preview")}</button><button type="button" disabled={savePending} onClick={()=>void close()}>{t("announcements.cancel")}</button><button className="primary" disabled={savePending||saveConflict}>{t(savePending?"announcements.loading":canRetry?"announcements.recoveryRetry":editor.scheduleAfterSave?"automation.saveAndSchedule":"announcements.save")}</button></div>
- {preview&&<article className="notice-preview"><h3>{noticeTitle(editor.content,locale)}</h3><p>{noticeBody(editor.content,locale)}</p></article>}
+ {preview&&<AnnouncementPreview key={editor.content.placement} content={editor.content} locale={locale} onClose={()=>setPreview(false)}/>}
  </form></ModalFrame>}</main>;
 }

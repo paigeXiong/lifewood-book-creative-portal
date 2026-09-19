@@ -10,6 +10,16 @@
     "owner": false
   },
   {
+    "path": "/invitations",
+    "title": "Invitation codes · Customer registration",
+    "category": "People & organizations",
+    "keywords": "邀请 邀请码 注册 组织 新用户 过期 停用 invitation invite code registration signup organization expire disable",
+    "permissions": [
+      "admin.users.manage"
+    ],
+    "owner": false
+  },
+  {
     "path": "/organizations",
     "title": "Organizations",
     "category": "Directory",

@@ -20,7 +20,7 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
     public void Initialize()
     {
         Templates.Initialize();
-        using var c = Open(); Exec(c, null, """
+        using var c = Open(); InvitationRepository.EnsureSchema(c); Exec(c, null, """
         CREATE TABLE IF NOT EXISTS email_settings(user_id TEXT PRIMARY KEY,email TEXT NOT NULL,verified INTEGER NOT NULL DEFAULT 0,notifications INTEGER NOT NULL DEFAULT 0,cursor INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS email_notification_scope(user_id TEXT PRIMARY KEY,topics TEXT NOT NULL);
         CREATE TRIGGER IF NOT EXISTS email_scope_cleanup AFTER DELETE ON email_settings BEGIN DELETE FROM email_notification_scope WHERE user_id=OLD.user_id; END;
@@ -61,8 +61,8 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         return q.ExecuteScalar() is string json?System.Text.Json.JsonSerializer.Deserialize(json,Lifewood.PlatformApi.Serialization.AppJsonContext.Default.StringArray)??[]:TopicIds;
     }
     internal static readonly string[] QueueStates = ["pending", "retrying", "sent", "failed", "expired", "cancelled", "paused"];
-    internal static readonly string[] QueueKinds = ["verify", "reset", "notice", "security"];
-    public MailQueuePage QueueStatus(string? status, string? kind, int page)
+    internal static readonly string[] QueueKinds = ["verify", "reset", "notice", "security", "invite"];
+    public MailQueuePage QueueStatus(string? status, string? kind, int page, string? search = null)
     {
         const int size = 25;
         var now = Now;
@@ -72,6 +72,8 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         WITH queue AS (
           SELECT m.id,m.email,m.kind,m.attempts,m.next_attempt,m.expires,
           CASE WHEN m.status='pending' AND m.expires<=$now THEN 'expired'
+               WHEN m.status='pending' AND m.kind='invite' AND NOT EXISTS(SELECT 1 FROM invitation_challenges ic JOIN invitations iv ON iv.id=ic.invitation_id JOIN organizations io ON io.id=iv.organization_id WHERE ic.hash=m.user_id AND upper(ic.email)=upper(m.email) AND ic.expires>$now AND iv.expires>$now AND iv.disabled=0 AND io.is_active=1 AND (SELECT COUNT(*) FROM invitation_members im WHERE im.invitation_id=iv.id)<iv.capacity) THEN 'cancelled'
+               WHEN m.status='pending' AND m.kind='invite' THEN CASE WHEN $ready=0 THEN 'paused' WHEN m.attempts>0 THEN 'retrying' ELSE 'pending' END
                WHEN m.status='pending' AND ($ready=0 OR u.id IS NULL OR u.is_active=0 OR u.closed_at IS NOT NULL
                  OR (m.kind='notice' AND NOT EXISTS(SELECT 1 FROM email_settings s WHERE s.user_id=u.id AND s.email=u.email AND s.verified=1 AND s.notifications=1))) THEN 'paused'
                WHEN m.status='pending' AND m.attempts>0 THEN 'retrying' ELSE m.status END AS state
@@ -79,11 +81,11 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
           WHERE m.expires >= $old
         )
         """;
-        (string, object?)[] parameters = [("$now", now), ("$ready", settings.Ready ? 1 : 0), ("$old", now - 7 * 86400), ("$status", status ?? ""), ("$kind", kind ?? "")];
+        (string, object?)[] parameters = [("$now", now), ("$ready", settings.Ready ? 1 : 0), ("$old", now - 7 * 86400), ("$status", status ?? ""), ("$kind", kind ?? ""), ("$search", search?.Trim() ?? "")];
         var totals = new Dictionary<string, long>();
         using (var q = Cmd(c, tx, source + "SELECT state,COUNT(*) FROM queue GROUP BY state", parameters))
         using (var r = q.ExecuteReader()) while (r.Read()) totals[r.GetString(0)] = r.GetInt64(1);
-        const string filter = " WHERE ($status='' OR state=$status) AND ($kind='' OR kind=$kind)";
+        const string filter = " WHERE ($status='' OR state=$status) AND ($kind='' OR kind=$kind) AND ($search='' OR instr(lower(email),lower($search))>0)";
         long total;
         using (var q = Cmd(c, tx, source + "SELECT COUNT(*) FROM queue" + filter, parameters)) total = Convert.ToInt64(q.ExecuteScalar());
         page = (int)Math.Clamp(page, 1, Math.Max(1, (total + size - 1) / size));
@@ -152,6 +154,12 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         Exec(c, tx, "DELETE FROM email_outbox WHERE user_id=$id AND kind=$kind", ("$id", id), ("$kind", purpose));
         tx.Commit(); return true;
     }
+    public void QueueInvitation(InvitationChallenge challenge) {
+        var en=challenge.Locale=="en-US";
+        var template=MailTemplates.Render("verify",challenge.Locale,$"{settings.PublicUrl}/{challenge.Locale}/register#token={challenge.Token}",customSubject:en?"Complete your invited registration":"完成邀请注册",customIntroduction:en?"Verify your email, then choose your name and password to join the organization. The invitation is checked again when you register.":"请验证邮箱，然后设置姓名和密码以加入组织。完成注册时会再次校验邀请码是否有效。") with { Kind="invite" };
+        using var c=Open();using var tx=c.BeginTransaction(deferred:false);
+        Queue(c,tx,Hash(challenge.Token),challenge.Email,template,Now+600);tx.Commit();
+    }
     private void Queue(SqliteConnection c, SqliteTransaction tx, string id, string email, MailTemplate template, long expires, long after = 0, long before = 0)
     { Exec(c, tx, "INSERT INTO email_outbox(id,user_id,email,kind,subject,body,next_attempt,expires,notification_after,notification_before) VALUES($key,$id,$email,$kind,$subject,$body,$now,$expires,$after,$before)", ("$key", Guid.NewGuid().ToString("N")), ("$id", id), ("$email", email), ("$kind", template.Kind), ("$subject", template.Subject), ("$body", protector.Protect(template.Body.Encode())), ("$now", Now), ("$expires", expires), ("$after", after), ("$before", before)); }
     public void QueueNotifications()
@@ -193,15 +201,17 @@ internal sealed class EmailRepository(string connectionString, IDataProtectionPr
         var now = Now;
         Exec(c, null, """
         DELETE FROM email_tokens WHERE expires<=$now;
+        DELETE FROM invitation_challenges WHERE expires<=$now;
+        UPDATE email_outbox AS m SET status='cancelled',body='' WHERE m.kind='invite' AND m.status='pending' AND m.expires>$now AND NOT EXISTS(SELECT 1 FROM invitation_challenges ic JOIN invitations iv ON iv.id=ic.invitation_id JOIN organizations io ON io.id=iv.organization_id WHERE ic.hash=m.user_id AND upper(ic.email)=upper(m.email) AND ic.expires>$now AND iv.expires>$now AND iv.disabled=0 AND io.is_active=1 AND (SELECT COUNT(*) FROM invitation_members im WHERE im.invitation_id=iv.id)<iv.capacity);
         UPDATE email_outbox SET status='expired',body='' WHERE status='pending' AND expires<=$now;
         UPDATE email_outbox SET body='' WHERE status<>'pending' AND body<>'';
         DELETE FROM email_outbox WHERE expires<$old;
         """, ("$now", now), ("$old", now - 7 * 86400));
         if (!settings.Ready) return;
         using var q = Cmd(c, null, """
-        SELECT m.id,m.email,m.subject,m.body,m.user_id,m.kind,m.notification_after,m.notification_before FROM email_outbox m JOIN users u ON u.id=m.user_id AND u.email=m.email
-        WHERE m.status='pending' AND m.next_attempt<=$now AND m.expires>$now AND u.is_active=1 AND u.closed_at IS NULL
-        AND (m.kind<>'notice' OR EXISTS(SELECT 1 FROM email_settings s WHERE s.user_id=u.id AND s.email=u.email AND s.verified=1 AND s.notifications=1)) ORDER BY CASE WHEN m.kind IN ('verify','reset') THEN 0 ELSE 1 END,m.next_attempt LIMIT 1
+        SELECT m.id,m.email,m.subject,m.body,m.user_id,m.kind,m.notification_after,m.notification_before FROM email_outbox m LEFT JOIN users u ON u.id=m.user_id AND u.email=m.email
+        WHERE m.status='pending' AND m.next_attempt<=$now AND m.expires>$now AND ((m.kind='invite' AND EXISTS(SELECT 1 FROM invitation_challenges ic JOIN invitations iv ON iv.id=ic.invitation_id JOIN organizations io ON io.id=iv.organization_id WHERE ic.hash=m.user_id AND upper(ic.email)=upper(m.email) AND ic.expires>$now AND iv.expires>$now AND iv.disabled=0 AND io.is_active=1 AND (SELECT COUNT(*) FROM invitation_members im WHERE im.invitation_id=iv.id)<iv.capacity)) OR (m.kind<>'invite' AND u.is_active=1 AND u.closed_at IS NULL))
+        AND (m.kind<>'notice' OR EXISTS(SELECT 1 FROM email_settings s WHERE s.user_id=u.id AND s.email=u.email AND s.verified=1 AND s.notifications=1)) ORDER BY CASE WHEN m.kind IN ('verify','reset','invite') THEN 0 ELSE 1 END,m.next_attempt LIMIT 1
         """, ("$now", Now));
         using var r = q.ExecuteReader(); if (!r.Read()) return;
         var id = r.GetString(0); var address = r.GetString(1); var subject = r.GetString(2); var encrypted = r.GetString(3);

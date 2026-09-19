@@ -38,8 +38,8 @@ test("customer keyboard navigation, feedback file selection and narrow layout",a
     await page.keyboard.press(key);
     expect(await dialog.evaluate(el=>el.contains(document.activeElement))).toBeTruthy();
    }}
-   const file=dialog.locator('input[type="file"]');await tabTo(page,file,12);
-   expect(await dialog.locator(".feedback-file-control").evaluate(el=>getComputedStyle(el).outlineStyle)).not.toBe("none");
+   const file=dialog.getByRole("button",{name:locale==="zh-CN"?"选择图片":"Choose image",exact:true});await tabTo(page,file,12);
+   expect(await file.evaluate(el=>getComputedStyle(el).outlineStyle)).not.toBe("none");
    const chooser=page.waitForEvent("filechooser");await page.keyboard.press("Enter");await(await chooser).setFiles({name:"keyboard.png",mimeType:"image/png",buffer:png});
    await expect(dialog.locator(".feedback-image-preview img")).toBeVisible();
    for(const key of ["Tab","Shift+Tab"]){for(let i=0;i<10;i++){

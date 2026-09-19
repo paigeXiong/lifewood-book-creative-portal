@@ -100,3 +100,6 @@
 .mail-status-actions .mail-template-link { display: inline-flex; align-items: center; padding: 10px 14px; border-radius: 8px; background: #e8efeb; color: #164c3d; font-weight: 600; text-decoration: none; }
 .mail-status-actions .mail-template-link:hover { background: #dce8e1; }
 @media (max-width: 600px) { .mail-template-page { padding: 12px; } }
+
+.mail-recipient-search { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; }
+.mail-recipient-search input { width:220px; min-width:0; max-width:100%; }

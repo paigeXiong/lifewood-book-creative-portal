@@ -67,3 +67,24 @@ for(const locale of ["zh-CN","en-US"] as const) it(`creates a scheduled announce
   expect(document.querySelector('.notice-copy-fields')).toBeNull();
  } finally {await act(async()=>root.unmount());c.remove();client.clear();router.dispose();}
 });
+
+for(const locale of ["zh-CN","en-US"] as const) it(`restores task filters and links the exact announcement (${locale})`,async()=>{
+ await i18n.changeLanguage(locale);
+ const id="a".repeat(32);
+ const jobs=vi.spyOn(announcementService,"jobs").mockResolvedValue({items:[{id:"job",announcementId:id,title:"Same title",status:"cancelled",runAt:"2027-01-01T00:00:00Z"}],page:2,total:22,pending:4});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const router=createMemoryRouter([{path:"/:locale/automation",element:<AutomationPage locale={locale} userId="operator" canBackup={false}/>}],{initialEntries:[`/${locale}/automation?q=Same&status=cancelled&page=2`]});
+ const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
+ try{
+  await act(async()=>root.render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>));
+  await act(async()=>{await new Promise(r=>setTimeout(r,30));});
+  expect(jobs).toHaveBeenCalledWith(2,locale,"Same","cancelled");
+  expect(c.querySelector(`a[href="/${locale}/announcements?notice=${id}"]`)?.textContent).toBe("Same title");
+  jobs.mockResolvedValue({items:[],page:1,total:0,pending:4});
+  await act(async()=>{const select=c.querySelector(".automation-filters select") as HTMLSelectElement;select.value="failed";select.dispatchEvent(new Event("change",{bubbles:true}));});
+  await act(async()=>{await new Promise(r=>setTimeout(r,30));});
+  expect(jobs).toHaveBeenLastCalledWith(1,locale,"Same","failed");
+  expect(router.state.location.search).not.toContain("page=");
+  expect(router.state.location.search).toContain("status=failed");
+ }finally{await act(async()=>root.unmount());c.remove();client.clear();router.dispose();}
+});

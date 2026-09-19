@@ -33,10 +33,20 @@ public sealed class AccountSwitchTests : IDisposable {
     [Fact] public void InvalidSavedSlotsDoNotEvictValidAccountsWhenAddingFifth(){
         var context=new DefaultHttpContext();for(var i=0;i<5;i++){var id=AddUser("user"+i);store.Remember(context,users.Get(id,0)!,0,DateTimeOffset.UtcNow.AddHours(i+1),true);}
         Sql("UPDATE users SET session_version=1 WHERE id='user4'");
-        var next=Next(context);var added=AddUser("new-user");Assert.True(store.HasRoom(next,added,"user0"));
+        var next=Next(context);var added=AddUser("new-user");Assert.False(store.HasRoom(next,added,"user0"));store.Remove(next,"user4");Assert.True(store.HasRoom(next,added,"user0"));
         store.Remember(next,users.Get(added,0)!,0,DateTimeOffset.UtcNow.AddHours(8),true);
         foreach(var id in new[]{"user0","user1","user2","user3",added})Assert.NotNull(store.Find(next,id));
         Assert.Null(store.Find(next,"user4"));
+    }
+    [Fact] public void RememberedIdentitiesSurviveExpiryRestartAndLogoutWithoutRestoringSessions(){
+        var a=AddUser("a");var b=AddUser("b");var context=new DefaultHttpContext();
+        store.Remember(context,users.Get(a)!,0,DateTimeOffset.UtcNow.AddHours(8),false);store.Remember(context,users.Get(b)!,0,DateTimeOffset.UtcNow.AddDays(30),true);
+        var restarted=Next(context,true);Assert.Null(store.Find(restarted,a));Assert.Contains(store.List(restarted,users.Get(b)!).Items,x=>x.Id==a&&x.RequiresLogin);
+        store.LogoutCurrent(restarted,b);Assert.Null(store.Find(restarted,b));
+        store.Remember(restarted,users.Get(b)!,0,DateTimeOffset.UtcNow.AddDays(30),true);
+        Assert.Contains(store.List(restarted,users.Get(b)!).Items,x=>x.Id==a&&x.RequiresLogin);
+        store.Remove(restarted,a);Assert.DoesNotContain(store.List(restarted,users.Get(b)!).Items,x=>x.Id==a);
+        store.Remove(restarted);Assert.Null(store.Find(restarted,b));
     }
     public void Dispose(){SqliteConnection.ClearAllPools();Directory.Delete(root,true);}
 }

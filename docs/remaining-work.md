@@ -1,6 +1,6 @@
 # 剩余工作与待确认事项
 
-核对日期：2026-09-18。发布基准：[v0.3.18](./releases/v0.3.18.md)。本页是继续推进的入口，不把原型设想、建议或已有功能重新列为开发承诺。
+核对日期：2026-09-19。发布基准：[v0.3.19](./releases/v0.3.19.md)。本页是继续推进的入口，不把原型设想、建议或已有功能重新列为开发承诺。
 
 会议准备：[中英文验收清单与演示流程](./acceptance-meeting.md)已整理，包含通过标准与记录空表；业务验收尚未执行。 / The bilingual meeting guide is ready; business acceptance has not yet taken place.
 
@@ -148,6 +148,24 @@ All customer and admin changes must support `zh-CN` and `en-US`, use stable iden
 
 2026-09-18 组织项目共享：客户项目列表增加创建人头像及资料链接。同组织成员可只读查看项目、附件、成品和退回意见；待处理仅统计本人需操作的项目，复制与所有写入仍限创建人。组织移除或变更后重新检查访问权限。数据概览支持个人与组织口径切换。 / Organization project sharing: members can read drafts and submitted projects, attachments, deliveries and return feedback; creator-only editing and writes remain enforced. Pending actions remain personal; the dashboard supports personal and organization scopes. Creator avatars link to member profiles; membership changes revoke shared access.
 
-2026-09-18 后续完善（未发布）：邮件模板增加不保存、不发信的正文预览与换行支持，类型/语言保存在路由；仅实际修改才阻止离开。模板修改、恢复默认和测试接入既有操作审计，帮助文档与功能搜索已同步。 / Unreleased follow-up: unsaved template preview, preserved line breaks, URL selections, dirty-only navigation protection, template audit events and updated help/search.
+2026-09-18 后续完善（v0.3.19 已发布）：邮件模板增加不保存、不发信的正文预览与换行支持，类型/语言保存在路由；仅实际修改才阻止离开。模板修改、恢复默认和测试接入既有操作审计，帮助文档与功能搜索已同步。 / Released in v0.3.19: unsaved template preview, preserved line breaks, URL selections, dirty-only navigation protection, template audit events and updated help/search.
 
-2026-09-18 邮件发送额度（未发布）：现有配置增加滚动每分钟及24小时上限，SMTP尝试统一扣额，计数持久化；限速不消耗重试，队列保留原有效期。邮件服务展示使用量和预计恢复时间，中英文及隔离并发测试覆盖。 / Unreleased: persistent rolling minute/day quotas cover SMTP attempts, preserve queued message expiry and retry counts, and expose usage/resumption in the mail service panel.
+2026-09-18 邮件发送额度（v0.3.19 已发布）：现有配置增加滚动每分钟及24小时上限，SMTP尝试统一扣额，计数持久化；限速不消耗重试，队列保留原有效期。邮件服务展示使用量和预计恢复时间，中英文及隔离并发测试覆盖。 / Released in v0.3.19: persistent rolling minute/day quotas cover SMTP attempts, preserve queued message expiry and retry counts, and expose usage/resumption in the mail service panel.
+
+2026-09-19 本地完善（未发布）：定时任务支持服务端标题搜索、状态筛选、URL 分页和关联公告精确跳转；公告编辑增加顶部滚动条与弹窗效果预览，不会保存或发布。三浏览器反馈键盘验收改为操作可见的选择图片按钮。 / Local follow-up (unreleased): server-filtered task history, persistent URL filters, exact announcement links, placement previews and keyboard tests targeting the visible image-selection button.
+
+### 2026-09-19 邮件记录检索（本地未发布）
+
+- 邮件记录支持按收件邮箱或域名搜索，可组合状态、类型筛选；分页和浏览器历史保留条件，结果地址继续脱敏，顶部数量保持全局口径。
+- 已同步中英文界面和邮件排障帮助；12 项前端测试、25 项邮件后端测试与后台构建通过，并在本地页面验证搜索及清除筛选。
+
+### 2026-09-19 组织邀请注册（本地未发布）
+
+- 保留管理员创建账号，新增后台“主体管理 → 邀请码管理”和客户登录页邀请注册入口。
+- 邀请码绑定启用中的组织，默认 7 天 / 1 人，可配置 1–90 天和 1–100 人；支持搜索、组织与状态筛选、分页、查看/复制、停用及注册成员记录。过期自动失效，不删除历史。
+- 客户先验证邮箱，再设置姓名和密码；创建客户账号、邮箱验证、名额占用在 SQLite 写事务内完成。已有账号不迁移组织，邮件通知默认关闭。
+- 邀请码加密保存，验证令牌仅存哈希；注册邮件复用现有队列、限速、重试、取消与过期处理。公开发信接口统一响应，避免泄漏账号存在性。
+- 中英文帮助、后台功能搜索、邀请码操作审计已接入。真实页面检查完成；客户前端 637 项、后台前端 277 项、API 505 项全量测试通过，两端构建通过；独立安全审查问题已修复并复审通过。
+- 正式门户 HTTPS 域名仍待确定；生产发信与跨设备邀请注册需使用正式域名验收。本次只使用隔离测试数据库和模拟邮件，未创建真实客户账号或发送真实邮件。
+
+2026-09-19 邀请注册衔接（本地未发布）：邀请码查看窗口增加复制邀请链接，使用服务器配置的客户门户地址和当前语言，邀请码放在 URL 片段中并在页面读取后移除；不会自动发信或注册。成功注册后返回登录自动填入已验证邮箱，密码不传递、不持久保存。

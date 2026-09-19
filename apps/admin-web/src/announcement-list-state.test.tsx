@@ -101,3 +101,19 @@ it.each(["refresh","back"] as const)("ignores stale load-more completion after %
   if(mode==="back"){await act(async()=>{await router.navigate(1);});expect(router.state.location.search).toBe("?q=B");}
  }finally{await act(async()=>root.unmount());router.dispose();cache.clear();c.remove();}
 });
+
+it("keeps exact notice links across filter changes and clears them without exposing IDs",async()=>{
+ await i18n.changeLanguage("zh-CN");const id="b".repeat(32);
+ const list=vi.spyOn(announcementService,"list").mockResolvedValue({items:[notice(id,"Linked announcement")],nextCursor:null});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const router=createMemoryRouter([{path:"/:locale/announcements",element:<AnnouncementsPage locale="zh-CN" userId="owner"/>}],{initialEntries:[`/zh-CN/announcements?notice=${id}`]});
+ const c=document.createElement("div");document.body.append(c);const root=createRoot(c);
+ try{
+  await act(async()=>root.render(<QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider>));await act(settle);
+  expect(list).toHaveBeenCalledWith("",undefined,"","",id);expect(c.querySelector(".notice-source")?.textContent).not.toContain(id);
+  await act(async()=>c.querySelector<HTMLButtonElement>(".notice-source button")!.click());await act(settle);
+  expect(router.state.location.search).toBe("");expect(list).toHaveBeenLastCalledWith("",undefined,"","");
+  await act(async()=>{await router.navigate(-1);});await act(settle);
+  expect(router.state.location.search).toContain(`notice=${id}`);expect(c.querySelector(".notice-source")).not.toBeNull();
+ }finally{await act(async()=>root.unmount());c.remove();client.clear();router.dispose();}
+});

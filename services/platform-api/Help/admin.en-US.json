@@ -129,6 +129,7 @@
     "title": "Missing email and queue troubleshooting",
     "summary": "Distinguish pending, retrying and SMTP-accepted messages.",
     "steps": [
+      "Search by recipient email or domain and combine status and type filters. Addresses stay masked, and the counts at the top remain global.",
       "Open Email service and filter by state and message type. First confirm the service is enabled and ready.",
       "Waiting to retry means another attempt is pending. Exhausted retries require configuration and error-category checks. Handed to mail server means SMTP acceptance only.",
       "For authentication errors, check username and app credentials. For connection or TLS errors, check host, STARTTLS port and server network. For recipient rejection, verify the address.",
@@ -316,7 +317,8 @@
       "Content appears as entered and is not automatically translated. The interface supports Chinese and English and legacy bilingual notices remain readable; review content and audiences for each language.",
       "Set a display duration of 1–3650 days, defaulting to 30, starting at actual publication. Accounts added later do not automatically receive previously published targeted notices.",
       "The customer banner scrolls its title and body and supports pause, details and View all. Dismissal persists for that account across sign-ins and devices; it does not hide future notices.",
-      "Published content is locked. To correct it, withdraw the original and create or copy a new notice, which is presented to its target audience again."
+      "Published content is locked. To correct it, withdraw the original and create or copy a new notice, which is presented to its target audience again.",
+      "Choose Preview while editing to inspect the banner or popup placement. Pause scrolling, inspect full text or close the preview. Previewing neither saves a draft nor publishes or notifies anyone."
     ],
     "faq": [
       {
@@ -343,7 +345,8 @@
       "For an existing draft, choose Select draft to schedule and use its Schedule publication action. Scheduled content is locked; cancel the schedule before editing or choosing a new time.",
       "To publish early, find the scheduled notice under Announcements and publish it. Its original schedule will not publish it again. Cancelling retains the draft and cancellation record.",
       "The running service checks due jobs. Missed jobs run after service recovery and maintenance may delay them. Actual publication determines recipients and the display period.",
-      "Review succeeded, cancelled and failed jobs under Scheduled tasks. A failed notice returns to draft; inspect content and service health before scheduling again. Refresh uncertain results before repeating publication."
+      "Review succeeded, cancelled and failed jobs under Scheduled tasks. A failed notice returns to draft; inspect content and service health before scheduling again. Refresh uncertain results before repeating publication.",
+      "Search titles and filter run states; filters and page are retained in the URL. Select a task title to open its exact announcement. Deleted drafts retain job history but have no matching announcement. Pending totals and the next run remain global."
     ],
     "faq": [
       {
@@ -385,5 +388,48 @@
     ],
     "image": null,
     "updated": "2026-09-18"
+  },
+  {
+    "id": "invitations",
+    "category": "People & organizations",
+    "title": "Manage organization invitations",
+    "summary": "Let customers verify their email and register within an assigned organization.",
+    "steps": [
+      "Open Invitation codes under People & organizations. The organization row also opens this page with its organization selected.",
+      "Choose Create invitation, select an active organization, add a note, and set validity (1–90 days) and capacity (1–100). The defaults are 7 days and one registration.",
+      "New codes contain 6 uppercase letters and accept lowercase input. Existing long codes remain valid. Share codes only with intended members; use View code to copy an available code again.",
+      "Customers choose Register with invitation on the sign-in page, enter their display name, email and code, and select Verify email. The emailed link restores their name and email; they set a password and select Register. Only successful registration consumes a slot. The role is customer member and email notifications start disabled.",
+      "Filter codes by organization, state or note. Registration history shows the created accounts and dates; click a member to locate their user record.",
+      "Disable a code to stop unfinished registrations. Expired or full codes stop automatically; history is retained and existing accounts are unaffected.",
+      "Registration mail uses the shared mail queue, quota and retries. Check Invitation registration in Mail service records when troubleshooting."
+    ],
+    "faq": [
+      {
+        "question": "Does this replace administrator-created accounts?",
+        "answer": "No. Both methods remain available. Invitations never transfer existing accounts or grant administrator roles."
+      },
+      {
+        "question": "Why is invitation management missing?",
+        "answer": "Check that the administrator has user-management permission. Creating codes also requires an active organization. Enter from organization management to prefill it."
+      },
+      {
+        "question": "Is a code tied to one recipient email?",
+        "answer": "No. Codes are organization-bound. Holders can verify their own email and register. Set the required capacity and share only with intended members."
+      },
+      {
+        "question": "Are expired codes automatically deleted?",
+        "answer": "No. Expiration makes a code unusable while preserving its history. Disabling a code does not delete existing accounts or revoke their organization membership."
+      },
+      {
+        "question": "Why can a customer not register after receiving the email?",
+        "answer": "Check invitation state, expiry, used slots and organization activation. The email link itself expires after 10 minutes. If needed, issue a new code and have the customer request verification again. Existing accounts cannot register again."
+      },
+      {
+        "question": "How do I check invitation mail delivery?",
+        "answer": "In Mail status, filter by Invitation registration and search by recipient. Check paused, retrying, expired or cancelled states; quotas and rate limits also apply. Acceptance by the mail server does not prove receipt or registration. Check the invitation registration history for created accounts."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-19"
   }
 ]

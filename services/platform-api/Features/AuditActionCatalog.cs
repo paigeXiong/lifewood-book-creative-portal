@@ -11,6 +11,9 @@ internal static class AuditActionCatalog
 
     private static readonly Definition[] Definitions =
     [
+        new("invitation.create", "创建邀请码", "Created invitation"),
+        new("invitation.disable", "停用邀请码", "Disabled invitation"),
+        new("invitation.reveal", "查看邀请码", "Viewed invitation code"),
         new("mail.template_update", "修改邮件模板", "Updated email template"),
         new("mail.template_reset", "恢复默认邮件模板", "Restored default email template"),
         new("mail.template_test", "发送模板测试", "Sent template test"),
@@ -74,6 +77,9 @@ internal static class AuditActionCatalog
         var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments is null || segments.Length < 3 || segments[0] != "api" || segments[1] != "admin") return null;
         string? Value(int index) => segments.Length > index ? Uri.UnescapeDataString(segments[index]) : null;
+        if (method == "POST" && segments is ["api", "admin", "invitations"]) return new("invitation.create", "invitation", null);
+        if (method == "POST" && segments is ["api", "admin", "invitations", _, "disable"]) return new("invitation.disable", "invitation", Value(3));
+        if (method == "POST" && segments is ["api", "admin", "invitations", _, "reveal"]) return new("invitation.reveal", "invitation", Value(3));
         if (method == "PUT" && segments is ["api", "admin", "mail", "templates", _]) return new("mail.template_update", "mail_template", Value(4));
         if (method == "POST" && segments is ["api", "admin", "mail", "templates", _, "test"]) return new("mail.template_test", "mail_template", Value(4));
         if (method == "PUT" && segments is ["api", "admin", "mail", "settings"]) return new("mail.settings_update", "mail_settings", "smtp");

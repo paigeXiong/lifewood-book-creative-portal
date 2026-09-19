@@ -37,7 +37,7 @@ export function AuditPage({locale,userId}:{locale:SupportedLocale;userId:string}
  const download=()=>downloadState.run(signal=>adminService.exportAuditEvents(filters,locale,signal),"audit.csv");
  const value=(field:string,text?:string)=>text==null?t("auditTools.noValue"):["enabled","allowMute","allowsCustomValue","removed"].includes(field)?t(["1","True","true"].includes(text)?"auditTools.yes":"auditTools.no"):["level","audience"].includes(field)?t("auditTools.values."+text,{defaultValue:t("runtimeHealth.unknown")}):text;
  return <main className="content audit-content pagination-layout">
-  <div className="audit-tools-toolbar">
+  <div className="page-toolbar audit-tools-toolbar">
    <form role="search" onSubmit={e=>{e.preventDefault();update("q",input.trim());}}><input type="search" value={input} onChange={e=>setInput(e.target.value)} aria-label={t("auditTools.search")} placeholder={t("auditTools.search")}/></form>
    <select aria-label={t("admin.audit.actionFilter")} value={actionId} onChange={e=>update("action",e.target.value)}><option value="">{t("admin.audit.allActions")}</option>{actions.data?.map(x=><option value={x.id} key={x.id}>{x.label}</option>)}</select>
    <label>{t("admin.audit.from")}<input type="date" value={from} max={to||undefined} onChange={e=>update("from",e.target.value)}/></label><label>{t("admin.audit.to")}<input type="date" value={to} min={from||undefined} onChange={e=>update("to",e.target.value)}/></label>

@@ -1071,3 +1071,12 @@ i18n.addResourceBundle("en-US", "translation", {"automation": {"title": "Schedul
 
 i18n.addResourceBundle("zh-CN", "translation", {automation:{createAnnouncement:"创建定时公告",saveAndSchedule:"保存并设置发布时间"}}, true, true);
 i18n.addResourceBundle("en-US", "translation", {automation:{createAnnouncement:"Create scheduled announcement",saveAndSchedule:"Save and set publication time"}}, true, true);
+
+i18n.addResourceBundle("zh-CN","translation",{automation:{search:"搜索公告标题",allStates:"全部执行状态",clear:"清除筛选",linkedNotice:"来自定时任务的公告"},noticePreview:{label:"展示效果预览",hint:"仅预览当前内容，不会保存或发布。实际宽度随客户设备变化。",emptyTitle:"公告标题",emptyBody:"公告正文",pause:"暂停滚动",resume:"继续滚动",details:"查看详情",close:"关闭预览",all:"查看全部",popup:"公告"}},true,true);
+i18n.addResourceBundle("en-US","translation",{automation:{search:"Search announcement titles",allStates:"All run states",clear:"Clear filters",linkedNotice:"Announcement from scheduled tasks"},noticePreview:{label:"Display preview",hint:"Previews current content without saving or publishing. Actual width depends on the customer's device.",emptyTitle:"Announcement title",emptyBody:"Announcement body",pause:"Pause scrolling",resume:"Resume scrolling",details:"View details",close:"Close preview",all:"View all",popup:"Announcement"}},true,true);
+
+i18n.addResourceBundle("zh-CN", "translation", {mailQueue:{searchRecipient:"搜索收件邮箱或域名"}}, true, true);
+i18n.addResourceBundle("en-US", "translation", {mailQueue:{searchRecipient:"Search recipient email or domain"}}, true, true);
+
+i18n.addResourceBundle("zh-CN","translation",{mailQueue:{kinds:{invite:"邀请注册验证"}}},true,true);
+i18n.addResourceBundle("en-US","translation",{mailQueue:{kinds:{invite:"Invitation registration"}}},true,true);

@@ -115,3 +115,69 @@ tbody tr:hover {
 @media(max-width:600px){.project-actions{gap:6px}.project-actions button{padding:7px 9px}.project-workflow-summary{gap:6px 16px}}
 
 .project-actions > [data-project-action] { display: contents; }
+
+/* Group surfaces keep the narrow navigation legible without adding height. */
+@media (min-width: 641px) {
+  .sidebar .nav-group {
+    background: rgba(255, 255, 255, .46);
+    border-radius: .75rem;
+    gap: .2rem;
+    padding-bottom: .2rem;
+  }
+  .sidebar .nav-group h2 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .3rem;
+    padding: .3rem .2rem;
+    border-radius: .75rem .75rem .25rem .25rem;
+    color: #52665b;
+    background: #e6e9e0;
+    font-weight: 750;
+    letter-spacing: .025em;
+    text-align: center;
+    line-height: 1.25;
+  }
+  .sidebar .nav-group:has(a.active) h2 {
+    color: #245a46;
+    background: #d8e6dc;
+  }
+  .sidebar .nav-group h2::before {
+    content: "";
+    width: .25rem;
+    height: .25rem;
+    flex: 0 0 .25rem;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .65;
+  }
+  .sidebar nav a { position: relative; }
+  .sidebar nav a.active {
+    background: #d8e8df;
+    box-shadow: none;
+  }
+  .sidebar nav a.active::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 0;
+    top: 24%;
+    bottom: 24%;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--admin-brand-700);
+  }
+  .sidebar nav a:hover:not(.active) { background: #e5eee7; }
+  .sidebar nav a:focus-visible { outline-offset: -2px; }
+}
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+  .sidebar nav a, .sidebar .nav-icon, .sidebar .nav-group h2 {
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+  .sidebar nav a.active::before { animation: admin-nav-marker 160ms ease-out; }
+  @keyframes admin-nav-marker { from { opacity: 0; transform: scaleY(.5); } to { opacity: 1; transform: scaleY(1); } }
+}
+
+@media (min-width: 641px) {
+  .admin-shell:lang(en) { grid-template-columns: 8rem minmax(0, 1fr); }
+  .admin-shell:lang(en) .nav-label { overflow-wrap: normal; }
+}

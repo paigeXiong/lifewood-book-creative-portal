@@ -293,7 +293,7 @@ export interface MailQueuePage {
   total: number; page: number; pageSize: number;
 }
 export const mailQueueService = {
-  list: (status: string, kind: string, page: number, signal?: AbortSignal) => request<MailQueuePage>(`/admin/mail/status?${new URLSearchParams({ status, kind, page: String(page) })}`, { signal }),
+  list: (status: string, kind: string, page: number, signal?: AbortSignal, search = "") => request<MailQueuePage>(`/admin/mail/status?${new URLSearchParams({ status, kind, page: String(page), q: search })}`, { signal }),
 };
 export interface MailServiceSettings {
   revision: string; enabled: boolean; host: string; port: number; from: string; username: string;
@@ -355,9 +355,10 @@ export const authService = {
     request<MyOrganizationPage>(`/me/organization?${new URLSearchParams({ locale, search, page: String(page) })}`, { locale, signal }),
   getStatus: () => request<{ requiresBootstrap: boolean }>("/auth/status"),
   getCurrentUser: async () => { const user=await request<CurrentUser>("/me"); boundAccount=user.id; return user; },
-  savedAccounts: () => request<{items: Array<{id:string;displayName:string;email?:string;current:boolean;expiresAt:string}>;limit:number}>("/auth/accounts"),
+  savedAccounts: () => request<{items: Array<{id:string;displayName:string;email?:string;current:boolean;expiresAt:string;requiresLogin?:boolean}>;limit:number}>("/auth/accounts"),
   addAccount: async (credentials: LoginCredentials) => { const user=await request<CurrentUser>("/auth/accounts/add",{method:"POST",body:JSON.stringify(credentials)}); clearCsrfToken();return user; },
   switchAccount: async (id:string) => { const user=await request<CurrentUser>("/auth/accounts/switch",{method:"POST",body:JSON.stringify({id})});clearCsrfToken();return user; },
+  clearAccounts: () => request<void>("/auth/accounts/clear",{method:"POST"}),
   removeAccount: (id:string) => request<void>(`/auth/accounts/${encodeURIComponent(id)}`,{method:"DELETE"}),
   notifyAccountChanged: reportAccountChange,
   checkActiveAccount: async (id:string) => { const r=await fetchResponse(`${apiBaseUrl}/auth/active`,{credentials:"include",cache:"no-store"});if(r.status===401)return false;if(!r.ok)throw new Error("Account check unavailable");return await r.text()===id; },
@@ -757,7 +758,7 @@ export const revisionService = {
 };
 
 export const announcementService = {
-  jobs: (page=1, locale: SupportedLocale="zh-CN") => request<import("@lifewood/domain").AnnouncementJobsPage>(`/admin/announcements/jobs?page=${page}`,{locale}),
+  jobs: (page=1, locale: SupportedLocale="zh-CN", search="", status="") => request<import("@lifewood/domain").AnnouncementJobsPage>(`/admin/announcements/jobs?page=${page}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`,{locale}),
   schedule: (id:string,version:number,runAt:string) => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}/schedule`,{method:"POST",body:JSON.stringify({version,runAt})}),
   cancelSchedule: (id:string,version:number) => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}/cancel-schedule`,{method:"POST",body:JSON.stringify({version})}),
   banner: (locale: SupportedLocale) => request<import("@lifewood/domain").AnnouncementFeed>("/announcements/banner", { locale }),
@@ -766,7 +767,7 @@ export const announcementService = {
   dismissMany: (ids: string[]) => request<void>("/announcements/dismiss", { method: "POST", body: JSON.stringify({ids}) }),
   feed: (locale: SupportedLocale, before?: number, unread = false, publicOnly = false) => request<import("@lifewood/domain").AnnouncementFeed>(`/announcements${publicOnly ? "/public" : ""}?unread=${unread}${before ? `&before=${before}` : ""}`, { locale }),
   dismiss: (id: string) => request<void>(`/announcements/${encodeURIComponent(id)}/dismiss`, { method: "POST" }),
-  list: (search: string, before?: number, status = "", placement = "") => request<import("@lifewood/domain").AnnouncementPage>(`/admin/announcements?status=${encodeURIComponent(status)}&placement=${encodeURIComponent(placement)}&search=${encodeURIComponent(search)}${before ? `&before=${before}` : ""}`),
+  list: (search: string, before?: number, status = "", placement = "", notice = "") => request<import("@lifewood/domain").AnnouncementPage>(`/admin/announcements?notice=${encodeURIComponent(notice)}&status=${encodeURIComponent(status)}&placement=${encodeURIComponent(placement)}&search=${encodeURIComponent(search)}${before ? `&before=${before}` : ""}`),
   save: (id: string, content: import("@lifewood/domain").AnnouncementInput) => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}`, {method:"PUT", body:JSON.stringify(content)}),
   transition: (id: string, version: number, action: "publish" | "withdraw") => request<import("@lifewood/domain").AnnouncementDocument>(`/admin/announcements/${id}/${action}`, {method:"POST",body:JSON.stringify({version})}),
 };
@@ -858,4 +859,18 @@ export const feedbackService={
  detail:(id:string)=>request<FeedbackDetail>(`/admin/feedback/${encodeURIComponent(id)}`),
  update:(id:string,input:{version:number;status:string;reply?:string})=>request<void>(`/admin/feedback/${encodeURIComponent(id)}`,{method:"PUT",body:JSON.stringify(input)}),
  notice:(id:number)=>request<{description:string;reply:string;status:string}>(`/notifications/${id}/feedback`),
+};
+
+export interface InvitationItem { id:string; organizationId:string; organization:string; note:string; creator:string; createdAt:number; expires:number; limit:number; used:number; status:string; suffix:string }
+export interface InvitationMember { id:string; name:string; email:string; joinedAt:number }
+export const invitationService = {
+ list:(q:string,status:string,organization:string,page:number)=>request<{items:InvitationItem[];total:number;page:number;pageSize:number}>(`/admin/invitations?${new URLSearchParams({q,status,organization,page:String(page)})}`),
+ create:(input:{organizationId:string;note:string;days:number;limit:number})=>request<{code:string;publicUrl?:string}>("/admin/invitations",{method:"POST",body:JSON.stringify(input)}),
+ reveal:(id:string)=>request<{code:string;publicUrl?:string}>(`/admin/invitations/${encodeURIComponent(id)}/reveal`,{method:"POST"}),
+ disable:(id:string)=>request<void>(`/admin/invitations/${encodeURIComponent(id)}/disable`,{method:"POST"}),
+ members:(id:string,page:number)=>request<{items:InvitationMember[];total:number;page:number;pageSize:number}>(`/admin/invitations/${encodeURIComponent(id)}/members?page=${page}`),
+ lookup:(code:string)=>request<{organization:string}>("/auth/invitations/lookup",{method:"POST",body:JSON.stringify({code})}),
+ inspect:(token:string)=>request<{organization:string;email?:string;displayName?:string}>("/auth/invitations/inspect",{method:"POST",body:JSON.stringify({code:token})}),
+ email:(code:string,email:string,locale:string,displayName?:string)=>request<void>("/auth/invitations/email",{method:"POST",body:JSON.stringify({code,email,locale,displayName})}),
+ register:(token:string,displayName:string,password:string)=>request<void>("/auth/invitations/register",{method:"POST",body:JSON.stringify({token,displayName,password})}),
 };

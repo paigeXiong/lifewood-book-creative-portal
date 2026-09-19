@@ -62,7 +62,8 @@ public sealed partial class VoiceSampleApiIntegrationTests
             response.EnsureSuccessStatusCode();
             Assert.True(response.Headers.CacheControl!.NoStore);
             using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            Assert.Equal(13, body.RootElement.GetArrayLength());
+            Assert.Equal(14, body.RootElement.GetArrayLength());
+            Assert.Contains(body.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == "invitation-registration");
             Assert.DoesNotContain(body.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == "mail-service");
             foreach (var article in body.RootElement.EnumerateArray())
             {
@@ -74,7 +75,8 @@ public sealed partial class VoiceSampleApiIntegrationTests
             using var admin = await ownerClient.GetAsync("/api/help?audience=admin&locale=" + locale);
             admin.EnsureSuccessStatusCode();
             using var adminBody = JsonDocument.Parse(await admin.Content.ReadAsStringAsync());
-            Assert.Equal(18, adminBody.RootElement.GetArrayLength());
+            Assert.Equal(19, adminBody.RootElement.GetArrayLength());
+            Assert.Contains(adminBody.RootElement.EnumerateArray(), article=>article.GetProperty("id").GetString()=="invitations");
             Assert.Contains(adminBody.RootElement.EnumerateArray(), article=>article.GetProperty("id").GetString()=="mail-templates");
         }
         foreach (var (locale, query, id) in new[] {
@@ -87,6 +89,11 @@ public sealed partial class VoiceSampleApiIntegrationTests
             Assert.Contains(result.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == id);
             using var publicResult = JsonDocument.Parse(await customer.GetStringAsync("/api/help?locale=" + locale + "&q=" + Uri.EscapeDataString(query)));
             Assert.DoesNotContain(publicResult.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == id);
+        }
+        foreach (var (locale, query) in new[] { ("zh-CN", "昵称"), ("en-US", "read-only") })
+        {
+            using var invitationHelp = JsonDocument.Parse(await customer.GetStringAsync("/api/help?locale=" + locale + "&q=" + Uri.EscapeDataString(query)));
+            Assert.Contains(invitationHelp.RootElement.EnumerateArray(), article => article.GetProperty("id").GetString() == "invitation-registration");
         }
         using var search = JsonDocument.Parse(await ownerClient.GetStringAsync("/api/help?audience=admin&locale=en-US&q=implicit%20TLS"));
         Assert.Equal("mail-service", Assert.Single(search.RootElement.EnumerateArray()).GetProperty("id").GetString());

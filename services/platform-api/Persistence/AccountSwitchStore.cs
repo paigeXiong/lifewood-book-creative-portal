@@ -4,7 +4,7 @@ using Lifewood.PlatformApi.Contracts;
 using Microsoft.Data.Sqlite;
 namespace Lifewood.PlatformApi.Persistence;
 
-internal sealed record SavedAccountDto(string Id, string DisplayName, string? Email, bool Current, DateTimeOffset ExpiresAt);
+internal sealed record SavedAccountDto(string Id, string DisplayName, string? Email, bool Current, DateTimeOffset ExpiresAt, bool RequiresLogin = false);
 internal sealed record SavedAccountsDto(SavedAccountDto[] Items, int Limit = 5);
 internal sealed record SwitchAccountRequest(string Id);
 internal sealed record LoginDeviceDto(string Id,string Browser,string Platform,bool Current,DateTimeOffset? CreatedAt,DateTimeOffset? LastSeen,DateTimeOffset ExpiresAt);
@@ -17,7 +17,7 @@ internal sealed class AccountSwitchStore(string connectionString, UserRepository
     private SqliteConnection Open() { var c = new SqliteConnection(connectionString); c.Open(); return c; }
     public void Initialize() {
         using var c = Open(); using var q = c.CreateCommand();
-        q.CommandText = "CREATE TABLE IF NOT EXISTS saved_account_sessions(device_hash TEXT NOT NULL,user_id TEXT NOT NULL,session_version INTEGER NOT NULL,expires_at TEXT NOT NULL,persistent INTEGER NOT NULL,browser_hash TEXT,PRIMARY KEY(device_hash,user_id)); CREATE INDEX IF NOT EXISTS ix_saved_account_expiry ON saved_account_sessions(expires_at);";
+        q.CommandText = "CREATE TABLE IF NOT EXISTS saved_account_bookmarks(device_hash TEXT NOT NULL,user_id TEXT NOT NULL,updated TEXT NOT NULL,PRIMARY KEY(device_hash,user_id)); CREATE TABLE IF NOT EXISTS saved_account_sessions(device_hash TEXT NOT NULL,user_id TEXT NOT NULL,session_version INTEGER NOT NULL,expires_at TEXT NOT NULL,persistent INTEGER NOT NULL,browser_hash TEXT,PRIMARY KEY(device_hash,user_id)); CREATE INDEX IF NOT EXISTS ix_saved_account_expiry ON saved_account_sessions(expires_at);";
         q.ExecuteNonQuery();
         q.CommandText="PRAGMA table_info(saved_account_sessions)";
         bool hasBinder=false;using(var reader=q.ExecuteReader())while(reader.Read())if(reader.GetString(1)=="browser_hash")hasBinder=true;
@@ -26,7 +26,7 @@ internal sealed class AccountSwitchStore(string connectionString, UserRepository
             q.CommandText="SELECT COUNT(*) FROM pragma_table_info('saved_account_sessions') WHERE name=$name";q.Parameters.Clear();q.Parameters.AddWithValue("$name",name);
             if(Convert.ToInt32(q.ExecuteScalar())==0){q.CommandText=$"ALTER TABLE saved_account_sessions ADD COLUMN {name} {type}";q.ExecuteNonQuery();}
         }
-        q.CommandText="UPDATE saved_account_sessions SET session_id=lower(hex(randomblob(16))) WHERE session_id IS NULL; CREATE UNIQUE INDEX IF NOT EXISTS ix_login_session_id ON saved_account_sessions(session_id);";q.ExecuteNonQuery();
+        q.CommandText="INSERT OR IGNORE INTO saved_account_bookmarks SELECT device_hash,user_id,expires_at FROM saved_account_sessions; UPDATE saved_account_sessions SET session_id=lower(hex(randomblob(16))) WHERE session_id IS NULL; CREATE UNIQUE INDEX IF NOT EXISTS ix_login_session_id ON saved_account_sessions(session_id);";q.ExecuteNonQuery();
     }
     private static string? Token(HttpContext context, bool create = false, string cookieName = CookieName) {
         if (context.Items[cookieName] is string cached) return cached;
@@ -50,10 +50,17 @@ internal sealed class AccountSwitchStore(string connectionString, UserRepository
     public SavedAccountsDto List(HttpContext context, CurrentUserDto current) {
         var items = new List<SavedAccountDto>();
         foreach (var session in Read(context)) if (users.Get(session.UserId,session.Version) is {} u) items.Add(new(u.Id,u.DisplayName,u.Email,u.Id==current.Id,session.ExpiresAt));
+        var token=Token(context);
+        if(token is not null) {
+            using var c=Open();using var q=c.CreateCommand();
+            q.CommandText="SELECT user_id FROM saved_account_bookmarks WHERE device_hash=$device ORDER BY updated DESC";q.Parameters.AddWithValue("$device",Hash(token));
+            var ids=new List<string>();using(var r=q.ExecuteReader())while(r.Read())ids.Add(r.GetString(0));
+            foreach(var id in ids)if(!items.Any(x=>x.Id==id)&&users.Get(id) is {} u)items.Add(new(u.Id,u.DisplayName,u.Email,u.Id==current.Id,DateTimeOffset.MinValue,u.Id!=current.Id));
+        }
         if (!items.Any(x=>x.Id==current.Id)) items.Insert(0,new(current.Id,current.DisplayName,current.Email,true,DateTimeOffset.UtcNow.AddHours(8)));
-        return new(items.OrderByDescending(x=>x.Current).ToArray());
+        return new(items.OrderByDescending(x=>x.Current).ThenBy(x=>x.RequiresLogin).Take(5).ToArray());
     }
-    public bool HasRoom(HttpContext context,string userId, string currentId) => Read(context).Select(x=>x.UserId).Append(currentId).Append(userId).Distinct().Count() <= 5;
+    public bool HasRoom(HttpContext context,string userId, string currentId) => users.Get(currentId) is {} current && List(context,current).Items.Select(x=>x.Id).Append(userId).Distinct().Count() <= 5;
     public string? Remember(HttpContext context, CurrentUserDto user, int version, DateTimeOffset expiresAt, bool persistent, bool requireExisting=false, string? presenceSession=null) {
         var token = Token(context,true)!;
         var existingBrowser = Token(context,false,"lw_account_browser");
@@ -75,15 +82,22 @@ internal sealed class AccountSwitchStore(string connectionString, UserRepository
         using var cap=c.CreateCommand();cap.Transaction=tx;
         cap.CommandText="DELETE FROM saved_account_sessions WHERE device_hash=$device AND (NOT EXISTS(SELECT 1 FROM users WHERE users.id=saved_account_sessions.user_id AND users.is_active=1 AND users.session_version=saved_account_sessions.session_version) OR (persistent=0 AND (browser_hash IS NULL OR browser_hash IS NOT $browser))); DELETE FROM saved_account_sessions WHERE rowid IN (SELECT rowid FROM saved_account_sessions WHERE device_hash=$device AND user_id<>$user ORDER BY expires_at DESC LIMIT -1 OFFSET 4)";
         var activeBrowser=Token(context,false,"lw_account_browser");cap.Parameters.AddWithValue("$browser",activeBrowser is null?DBNull.Value:Hash(activeBrowser));
-        cap.Parameters.AddWithValue("$device",Hash(token));cap.Parameters.AddWithValue("$user",user.Id);cap.ExecuteNonQuery();tx.Commit();
+        cap.Parameters.AddWithValue("$device",Hash(token));cap.Parameters.AddWithValue("$user",user.Id);cap.ExecuteNonQuery();
+        using var bookmark=c.CreateCommand();bookmark.Transaction=tx;
+        bookmark.CommandText="INSERT INTO saved_account_bookmarks VALUES($device,$user,$now) ON CONFLICT(device_hash,user_id) DO UPDATE SET updated=excluded.updated; DELETE FROM saved_account_bookmarks WHERE rowid IN (SELECT b.rowid FROM saved_account_bookmarks b WHERE b.device_hash=$device ORDER BY (b.user_id=$user) DESC,EXISTS(SELECT 1 FROM saved_account_sessions s WHERE s.device_hash=b.device_hash AND s.user_id=b.user_id) DESC,b.updated DESC LIMIT -1 OFFSET 5)";
+        bookmark.Parameters.AddWithValue("$device",Hash(token));bookmark.Parameters.AddWithValue("$user",user.Id);bookmark.Parameters.AddWithValue("$now",DateTimeOffset.UtcNow.ToString("O"));bookmark.ExecuteNonQuery();tx.Commit();
         var max = Read(context).Where(x=>x.Persistent).Select(x=>(DateTimeOffset?)x.ExpiresAt).Max();
-        context.Response.Cookies.Append(CookieName,token,new CookieOptions { HttpOnly=true,Secure=context.Request.IsHttps,SameSite=SameSiteMode.Strict,IsEssential=true,Path="/",Expires=max });
+        context.Response.Cookies.Append(CookieName,token,new CookieOptions { HttpOnly=true,Secure=context.Request.IsHttps,SameSite=SameSiteMode.Strict,IsEssential=true,Path="/",Expires=DateTimeOffset.UtcNow.AddYears(1) });
         return loginId;
     }
     public SavedLogin? Find(HttpContext context,string id) => Read(context).FirstOrDefault(x=>x.UserId==id);
+    public void LogoutCurrent(HttpContext context,string id) {
+        var token=Token(context);if(token is null)return;
+        using var c=Open();using var q=c.CreateCommand();q.CommandText="DELETE FROM saved_account_sessions WHERE device_hash=$device AND user_id=$user";q.Parameters.AddWithValue("$device",Hash(token));q.Parameters.AddWithValue("$user",id);q.ExecuteNonQuery();
+    }
     public void Remove(HttpContext context,string? id=null) {
         var token=Token(context);if(token is null)return;
-        using var c=Open();using var q=c.CreateCommand();q.CommandText="DELETE FROM saved_account_sessions WHERE device_hash=$device AND ($id IS NULL OR user_id=$id)";q.Parameters.AddWithValue("$device",Hash(token));q.Parameters.AddWithValue("$id",(object?)id??DBNull.Value);q.ExecuteNonQuery();
+        using var c=Open();using var q=c.CreateCommand();q.CommandText="DELETE FROM saved_account_sessions WHERE device_hash=$device AND ($id IS NULL OR user_id=$id); DELETE FROM saved_account_bookmarks WHERE device_hash=$device AND ($id IS NULL OR user_id=$id)";q.Parameters.AddWithValue("$device",Hash(token));q.Parameters.AddWithValue("$id",(object?)id??DBNull.Value);q.ExecuteNonQuery();
         if(id is null) {context.Response.Cookies.Delete(CookieName,new CookieOptions {Path="/"});context.Response.Cookies.Delete("lw_account_browser",new CookieOptions {Path="/"});}
     }
     public bool IsSessionActive(string user,string session,int version,bool touch=true){
@@ -94,7 +108,7 @@ internal sealed class AccountSwitchStore(string connectionString, UserRepository
         using var c=Open();using var q=c.CreateCommand();q.CommandText="UPDATE saved_account_sessions SET expires_at=$expiry WHERE user_id=$user AND session_id=$session AND session_version=$version AND julianday(expires_at)>julianday('now') AND EXISTS(SELECT 1 FROM users u WHERE u.id=$user AND u.is_active=1 AND u.session_version=$version)";
         q.Parameters.AddWithValue("$expiry",expiry.ToString("O"));q.Parameters.AddWithValue("$user",user);q.Parameters.AddWithValue("$session",session);q.Parameters.AddWithValue("$version",version);
         if(q.ExecuteNonQuery()!=1)return false;
-        var token=Token(context);if(token is not null){var max=Read(context).Where(x=>x.Persistent).Select(x=>(DateTimeOffset?)x.ExpiresAt).Max();context.Response.Cookies.Append(CookieName,token,new CookieOptions{HttpOnly=true,Secure=context.Request.IsHttps,SameSite=SameSiteMode.Strict,IsEssential=true,Path="/",Expires=max});}
+        var token=Token(context);if(token is not null){var max=Read(context).Where(x=>x.Persistent).Select(x=>(DateTimeOffset?)x.ExpiresAt).Max();context.Response.Cookies.Append(CookieName,token,new CookieOptions{HttpOnly=true,Secure=context.Request.IsHttps,SameSite=SameSiteMode.Strict,IsEssential=true,Path="/",Expires=DateTimeOffset.UtcNow.AddYears(1)});}
         return true;
     }
     public LoginDevicesDto Devices(string user,string current,int page){

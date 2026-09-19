@@ -1,11 +1,11 @@
 {
   "name": "@lifewood/i18n",
-  "version": "0.3.19",
+  "version": "0.3.20",
   "private": true,
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@lifewood/domain": "0.3.19",
+    "@lifewood/domain": "0.3.20",
     "i18next": "^25.5.2",
     "react-i18next": "^16.0.0"
   }

@@ -101,9 +101,9 @@ internal sealed partial class AnnouncementRepository(string connectionString)
         if(d is null)return "missing";if(d.Status!="draft" || d.Version!=version)return "conflict";
         using var c=db.CreateCommand();c.Transaction=tx;c.CommandText="DELETE FROM announcements WHERE id=$id";c.Parameters.AddWithValue("$id",id);c.ExecuteNonQuery();tx.Commit();return null;
     }
-    public AnnouncementPage List(long? before,string? search,string? status=null,string? placement=null) {
-        using var db=Open();using var c=db.CreateCommand();c.CommandText="SELECT document FROM announcements WHERE seq<$before AND ($status='' OR json_extract(document,'$.status')=$status) AND ($placement='' OR json_extract(document,'$.content.placement')=$placement) AND ($q='' OR instr(lower(json_extract(document,'$.content.title')),lower($q))>0 OR instr(lower(json_extract(document,'$.content.titleZh')),lower($q))>0 OR instr(lower(json_extract(document,'$.content.titleEn')),lower($q))>0) ORDER BY seq DESC LIMIT 21";
-        c.Parameters.AddWithValue("$status",status??"");c.Parameters.AddWithValue("$placement",placement??"");c.Parameters.AddWithValue("$before",before??long.MaxValue);c.Parameters.AddWithValue("$q",(search??"")[..Math.Min((search??"").Length,160)]);
+    public AnnouncementPage List(long? before,string? search,string? status=null,string? placement=null,string? notice=null) {
+        using var db=Open();using var c=db.CreateCommand();c.CommandText="SELECT document FROM announcements WHERE seq<$before AND ($notice='' OR id=$notice) AND ($status='' OR json_extract(document,'$.status')=$status) AND ($placement='' OR json_extract(document,'$.content.placement')=$placement) AND ($q='' OR instr(lower(json_extract(document,'$.content.title')),lower($q))>0 OR instr(lower(json_extract(document,'$.content.titleZh')),lower($q))>0 OR instr(lower(json_extract(document,'$.content.titleEn')),lower($q))>0) ORDER BY seq DESC LIMIT 21";
+        c.Parameters.AddWithValue("$notice",notice??"");c.Parameters.AddWithValue("$status",status??"");c.Parameters.AddWithValue("$placement",placement??"");c.Parameters.AddWithValue("$before",before??long.MaxValue);c.Parameters.AddWithValue("$q",(search??"")[..Math.Min((search??"").Length,160)]);
         using var reader=c.ExecuteReader();var list=new List<AnnouncementDocument>();while(reader.Read())list.Add(JsonSerializer.Deserialize(reader.GetString(0),AppJsonContext.Default.AnnouncementDocument)!);
         return new(list.Take(20).ToArray(),list.Count>20?list[19].Sequence:null);
     }

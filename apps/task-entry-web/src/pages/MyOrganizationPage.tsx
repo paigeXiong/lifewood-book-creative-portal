@@ -63,7 +63,7 @@ function OrganizationContent({ user, locale }: { user: CurrentUser; locale: Supp
         {data.items.length ? <ul className="my-org-members" aria-label={data.labels.members}>{data.items.map(member => <li key={member.id}>
           <Link className="my-org-member-link" to={member.isSelf ? `/${locale}/profile` : `/${locale}/organization/members/${encodeURIComponent(member.id)}${location.search}`} aria-label={t("organizationMember.view", { name: member.displayName })}>
           <MemberAvatar key={member.avatarUrl} name={member.displayName} url={member.avatarUrl} />
-          <div className="my-org-member-copy"><strong>{member.displayName}{member.isSelf && <small>{data.labels.you}</small>}</strong><span>{member.roleLabel}</span></div>
+          <div className="my-org-member-copy"><strong>{member.displayName}{member.isSelf && <small>{data.labels.you}</small>}</strong></div>
           </Link>
         </li>)}</ul> : <p className="my-org-empty" role="status">{data.labels.empty}</p>}
       </div>

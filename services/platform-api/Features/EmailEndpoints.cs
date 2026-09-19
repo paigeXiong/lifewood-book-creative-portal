@@ -73,11 +73,11 @@ internal static class EmailEndpoints
             } catch (MailRateLimitedException) { return SettingsFailure(c,429,"quota"); } catch (Exception exception) { return SettingsFailure(c, 502, MailFailureClassifier.Classify(exception)); }
             finally { store.Operations.Release(); }
         }).RequireRateLimiting("authentication");
-        api.MapGet("/admin/mail/status", (HttpContext c, EmailRepository repository, MailSettingsStore store, string? status, string? kind, int? page) => {
+        api.MapGet("/admin/mail/status", (HttpContext c, EmailRepository repository, MailSettingsStore store, string? status, string? kind, int? page, string? q) => {
             if (currentUser(c) is not {} user) return Results.Unauthorized();
             if (!user.Roles.Contains("owner")) return Results.StatusCode(403);
-            if ((!string.IsNullOrEmpty(status) && !EmailRepository.QueueStates.Contains(status)) || (!string.IsNullOrEmpty(kind) && !EmailRepository.QueueKinds.Contains(kind)) || page is < 1 or > 100000) return Failure(c, 400, "invalidFilter");
-            return Results.Ok(repository.QueueStatus(status, kind, page ?? 1) with {Rate=store.Limiter.Check(store.Settings.Current)});
+            if ((!string.IsNullOrEmpty(status) && !EmailRepository.QueueStates.Contains(status)) || (!string.IsNullOrEmpty(kind) && !EmailRepository.QueueKinds.Contains(kind)) || page is < 1 or > 100000 || q?.Length > 254) return Failure(c, 400, "invalidFilter");
+            return Results.Ok(repository.QueueStatus(status, kind, page ?? 1, q) with {Rate=store.Limiter.Check(store.Settings.Current)});
         });
         api.MapGet("/me/email", (HttpContext c, EmailRepository repository, string? locale) => {
             if(currentUser(c) is not {} user) return Results.Unauthorized();

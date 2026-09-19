@@ -21,7 +21,7 @@ for (const locale of ["zh-CN", "en-US"]) it(`scopes directory by account, search
   const render = (id: string) => <QueryClientProvider client={client}><MemoryRouter initialEntries={[`/${locale}/organization`]}><Routes><Route path="/:locale" element={<Outlet context={{ user: { id, organization: { id: "org" } } }} />}><Route path="organization" element={<MyOrganizationPage />} /></Route></Routes></MemoryRouter></QueryClientProvider>;
   try {
     await act(async () => root.render(render("a"))); await settle();
-    expect(host.textContent).toContain("Sample Org"); expect(host.textContent).toContain("Customer member");
+    expect(host.textContent).toContain("Sample Org"); expect(host.textContent).not.toContain("Customer member");
     expect(host.querySelector("img")?.getAttribute("src")).toBe(data.items[0].avatarUrl);
     const next = [...host.querySelectorAll("button")].find(x => x.textContent === i18n.t("common.next"))!;
     await act(async () => next.click()); await settle(); expect(get.mock.calls.at(-1)![0].page).toBe(2);

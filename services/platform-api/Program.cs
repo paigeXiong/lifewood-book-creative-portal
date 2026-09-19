@@ -252,6 +252,11 @@ builder.Services.AddSingleton(provider => new MailSettingsStore(dataDirectory, n
 builder.Services.AddSingleton(provider => provider.GetRequiredService<MailSettingsStore>().Settings);
 builder.Services.AddSingleton<IPlatformMailer, SmtpPlatformMailer>();
 builder.Services.AddSingleton(service => {
+    _ = service.GetRequiredService<EmailRepository>();
+    var invitations = new InvitationRepository(databaseConnection, service.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>());
+    invitations.Initialize(); return invitations;
+});
+builder.Services.AddSingleton(service => {
     var repository = new EmailRepository(databaseConnection, service.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(), service.GetRequiredService<MailSettings>(), users, notifications);
     repository.Initialize();
     return repository;
@@ -534,6 +539,7 @@ api.MapBackups(CurrentUser);
 api.MapFeedback(CurrentUser);
 api.MapMyOrganization(CurrentUser);
 api.MapEmail(CurrentUser);
+api.MapInvitations(CurrentUser);
 api.MapOutboundProxy(CurrentUser);
 api.MapOidc(CurrentUser);
 api.MapGet("/portals/{portal}", (string portal, string? locale, HttpContext context, RuntimeSettingsStore settings) => {
@@ -588,7 +594,7 @@ api.MapPost("/auth/login", async (LoginRequest? request, HttpContext context, Us
 api.MapPost("/auth/logout", async (HttpContext context) =>
 {
     if(CurrentUser(context) is {} departing) context.RequestServices.GetRequiredService<UserPresenceRepository>().EndSession(departing.Id, PresenceSession(context));
-    context.RequestServices.GetRequiredService<AccountSwitchStore>().Remove(context);
+    if(CurrentUser(context) is {} current) context.RequestServices.GetRequiredService<AccountSwitchStore>().LogoutCurrent(context,current.Id);
     await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.NoContent();
 });
@@ -618,6 +624,11 @@ api.MapPost("/auth/accounts/switch", async (SwitchAccountRequest request,HttpCon
     if(!await SignIn(c,user,saved.Persistent,saved.ExpiresAt,saved.Version))return Results.Unauthorized();
     return Results.Ok(user);
 }).RequireRateLimiting("authentication");
+api.MapPost("/auth/accounts/clear", async(HttpContext c,AccountSwitchStore store) => {
+    if(CurrentUser(c) is not {} user)return Results.Unauthorized();
+    c.RequestServices.GetRequiredService<UserPresenceRepository>().EndSession(user.Id,PresenceSession(c));
+    store.Remove(c);await c.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);return Results.NoContent();
+});
 api.MapDelete("/auth/accounts/{id}",(string id,HttpContext c,AccountSwitchStore store)=>{
     var current=CurrentUser(c);if(current is null)return Results.Unauthorized();
     if(current.Id==id)return Results.Conflict();store.Remove(c,id);return Results.NoContent();
@@ -752,7 +763,7 @@ api.MapGet("/admin/notifications/logs",(HttpContext c,NotificationRepository n,l
 api.MapPost("/admin/notifications/retry/{id:long}",(long id,HttpContext c,NotificationRepository n)=>CurrentUser(c) is {} u&&u.Roles.Contains("owner")?(n.Retry(id)?Results.NoContent():Results.Conflict()):Results.StatusCode(403));
 
 api.MapGet("/admin/announcements", (HttpContext context,AnnouncementRepository notices,long? before,string? search,string? status,string? placement) => {
-    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);return user is null?Results.Unauthorized():!Can(user,"admin.announcements.manage")?Results.Forbid():status is not (null or "" or "draft" or "published" or "withdrawn" or "scheduled") || placement is not (null or "" or "login" or "personal" or "banner") ? Results.BadRequest() : Results.Ok(notices.List(before,search,status,placement));
+    context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);return user is null?Results.Unauthorized():!Can(user,"admin.announcements.manage")?Results.Forbid():status is not (null or "" or "draft" or "published" or "withdrawn" or "scheduled") || placement is not (null or "" or "login" or "personal" or "banner") ? Results.BadRequest() : Results.Ok(notices.List(before,search,status,placement,context.Request.Query["notice"].ToString()));
 });
 api.MapGet("/admin/announcements/{id}/preview", (string id,long version,HttpContext context,AnnouncementRepository notices) => {
     context.Response.Headers.CacheControl="no-store";var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();
@@ -767,9 +778,9 @@ api.MapPut("/admin/announcements/{id}", (string id,AnnouncementInput? input,Http
     if(!Guid.TryParseExact(id,"N",out _))return Results.BadRequest();
     var error=notices.Save(id,input,out var saved);return error is null?Results.Ok(saved):Error(context,error=="conflict"?409:400,"announcement."+error,error=="conflict"?"announcements.conflict":"announcements.invalid","Invalid announcement or stale version.",false);
 });
-api.MapGet("/admin/announcements/jobs", (HttpContext context,AnnouncementRepository notices,int page=1) => {
+api.MapGet("/admin/announcements/jobs", (HttpContext context,AnnouncementRepository notices,int page=1,string? search=null,string? status=null) => {
     var user=CurrentUser(context);context.Response.Headers.CacheControl="no-store";
-    return user is null?Results.Unauthorized():!Can(user,"admin.announcements.manage")?Results.Forbid():Results.Ok(notices.Jobs(page,Locale(context)));
+    return user is null?Results.Unauthorized():!Can(user,"admin.announcements.manage")?Results.Forbid():status is not (null or "" or "pending" or "completed" or "cancelled" or "failed") || search?.Length>160 ? Results.BadRequest() : Results.Ok(notices.Jobs(page,Locale(context),search,status));
 });
 api.MapPost("/admin/announcements/{id}/schedule", (string id,ScheduleAnnouncementRequest input,HttpContext context,AnnouncementRepository notices) => {
     var user=CurrentUser(context);if(user is null)return Results.Unauthorized();if(!Can(user,"admin.announcements.manage"))return Results.Forbid();

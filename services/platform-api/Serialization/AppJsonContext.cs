@@ -8,6 +8,14 @@ namespace Lifewood.PlatformApi.Serialization;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(CreateInvitation))]
+[JsonSerializable(typeof(InvitationPage))]
+[JsonSerializable(typeof(InvitationSecret))]
+[JsonSerializable(typeof(InvitationMembers))]
+[JsonSerializable(typeof(InvitationLookup))]
+[JsonSerializable(typeof(InvitationCodeRequest))]
+[JsonSerializable(typeof(InvitationEmailRequest))]
+[JsonSerializable(typeof(InvitationRegistration))]
 [JsonSerializable(typeof(ScheduleAnnouncementRequest))]
 [JsonSerializable(typeof(AnnouncementJobsPage))]
 [JsonSerializable(typeof(MailBody))]

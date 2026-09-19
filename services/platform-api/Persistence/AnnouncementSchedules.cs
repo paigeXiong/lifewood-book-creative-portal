@@ -40,13 +40,21 @@ internal sealed partial class AnnouncementRepository
         using var c=db.CreateCommand();c.Transaction=tx;c.CommandText="UPDATE announcement_jobs SET status='failed',error='publish_failed',finished_at=$now WHERE announcement_id=$id AND status='pending'";
         c.Parameters.AddWithValue("$id",id);c.Parameters.AddWithValue("$now",DateTimeOffset.UtcNow.ToString("O"));c.ExecuteNonQuery();tx.Commit();
     }
-    public AnnouncementJobsPage Jobs(int page,string locale)
+    public AnnouncementJobsPage Jobs(int page,string locale,string? search=null,string? status=null)
     {
-        page=Math.Clamp(page,1,100000);using var db=Open();using var tx=db.BeginTransaction();using var c=db.CreateCommand();c.Transaction=tx;
-        c.CommandText="SELECT j.id,j.announcement_id,COALESCE(CASE WHEN $locale='en-US' THEN j.title_en ELSE j.title_zh END,json_extract(a.document,'$.content.title'),json_extract(a.document,$title),''),j.status,j.run_at,j.finished_at,j.error FROM announcement_jobs j LEFT JOIN announcements a ON a.id=j.announcement_id ORDER BY j.rowid DESC LIMIT 20 OFFSET $offset";
-        c.Parameters.AddWithValue("$locale",locale);c.Parameters.AddWithValue("$title",locale=="en-US"?"$.content.titleEn":"$.content.titleZh");c.Parameters.AddWithValue("$offset",(page-1)*20);
+        page=Math.Clamp(page,1,100000);
+        using var db=Open();using var tx=db.BeginTransaction();
+        const string title="COALESCE(CASE WHEN $locale='en-US' THEN j.title_en ELSE j.title_zh END,json_extract(a.document,'$.content.title'),json_extract(a.document,$title),'')";
+        var from=" FROM announcement_jobs j LEFT JOIN announcements a ON a.id=j.announcement_id WHERE ($status='' OR j.status=$status) AND ($q='' OR instr(lower("+title+"),lower($q))>0)";
+        using var c=db.CreateCommand();c.Transaction=tx;
+        c.Parameters.AddWithValue("$locale",locale);c.Parameters.AddWithValue("$title",locale=="en-US"?"$.content.titleEn":"$.content.titleZh");
+        c.Parameters.AddWithValue("$status",status??"");c.Parameters.AddWithValue("$q",(search??"").Trim());
+        c.CommandText="SELECT COUNT(*)"+from;var total=Convert.ToInt32(c.ExecuteScalar());
+        page=Math.Min(page,Math.Max(1,(total+19)/20));
+        c.CommandText="SELECT j.id,j.announcement_id,"+title+",j.status,j.run_at,j.finished_at,j.error"+from+" ORDER BY j.rowid DESC LIMIT 20 OFFSET $offset";
+        c.Parameters.AddWithValue("$offset",(page-1)*20);
         var items=new List<AnnouncementJob>();using(var r=c.ExecuteReader())while(r.Read())items.Add(new(r.GetString(0),r.GetString(1),r.GetString(2),r.GetString(3),DateTimeOffset.Parse(r.GetString(4)),r.IsDBNull(5)?null:DateTimeOffset.Parse(r.GetString(5)),r.IsDBNull(6)?null:r.GetString(6)));
-        using var count=db.CreateCommand();count.Transaction=tx;count.CommandText="SELECT COUNT(*),COALESCE(SUM(status='pending'),0),MIN(CASE WHEN status='pending' THEN run_at END) FROM announcement_jobs";
-        using var counts=count.ExecuteReader();counts.Read();return new(items.ToArray(),page,counts.GetInt32(0),counts.GetInt32(1),counts.IsDBNull(2)?null:DateTimeOffset.Parse(counts.GetString(2)));
+        using var count=db.CreateCommand();count.Transaction=tx;count.CommandText="SELECT COALESCE(SUM(status='pending'),0),MIN(CASE WHEN status='pending' THEN run_at END) FROM announcement_jobs";
+        using var counts=count.ExecuteReader();counts.Read();return new(items.ToArray(),page,total,counts.GetInt32(0),counts.IsDBNull(1)?null:DateTimeOffset.Parse(counts.GetString(1)));
     }
 }

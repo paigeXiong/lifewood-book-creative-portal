@@ -1,10 +1,10 @@
 {
   "name": "@lifewood/api-client",
-  "version": "0.3.19",
+  "version": "0.3.20",
   "private": true,
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@lifewood/domain": "0.3.19"
+    "@lifewood/domain": "0.3.20"
   }
 }

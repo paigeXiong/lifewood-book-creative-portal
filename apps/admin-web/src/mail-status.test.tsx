@@ -68,3 +68,20 @@ for(const locale of ["zh-CN","en-US"] as const) {
   expect([...host.querySelectorAll('[role="status"]')].some(x=>x.textContent?.includes(new Date(1800000000000).toLocaleString(locale)))).toBe(false);
  });
 }
+
+for (const locale of ["zh-CN", "en-US"] as const) {
+  it(`searches recipients with existing filters and restores history (${locale})`, async () => {
+    await mount(locale);
+    await act(async () => { await router.navigate(`/${locale}/settings/mail?status=sent&kind=verify&page=2`); }); await settle();
+    const input = host.querySelector<HTMLInputElement>('input[name="q"]')!;
+    input.value = "  owner@example.test  ";
+    await act(async () => { input.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); }); await settle();
+    expect(mailQueueService.list).toHaveBeenLastCalledWith("sent", "verify", 1, expect.anything(), "owner@example.test");
+    expect(router.state.location.search).not.toContain("page=");
+    expect(host.querySelector("tbody")?.textContent).toContain("t***@example.test");
+    await click("mailQueue.clear");
+    expect(router.state.location.search).toBe("");
+    await act(async () => { await router.navigate(-1); }); await settle();
+    expect(host.querySelector<HTMLInputElement>('input[name="q"]')!.value).toBe("owner@example.test");
+  });
+}

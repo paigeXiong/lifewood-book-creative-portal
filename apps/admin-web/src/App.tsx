@@ -47,6 +47,7 @@ useParams
 } from "react-router-dom";
 import { ToastHost } from "./Toast";
 
+const InvitationsPage = lazy(() => import("./InvitationsPage").then(m=>({default:m.InvitationsPage})));
 const MailTemplatePage = lazy(() => import("./MailTemplatePage").then(m => ({ default: m.MailTemplatePage })));
 const FeedbackPage = lazy(()=>import("./FeedbackPage").then(m=>({default:m.FeedbackPage})));
 const ProjectsPage = lazy(() => import("./ProjectsPage").then(module => ({ default: module.ProjectsPage })));
@@ -244,7 +245,7 @@ function AdminShell({
     reports: "productivity.reports",
     notifications: "notifications.title",
     feedback: "feedback.adminTitle", overview: "admin.nav.overview", projects: "admin.nav.projects",
-    users: "admin.nav.users", organizations: "admin.nav.organizations",
+    invitations: "invitation.title", users: "admin.nav.users", organizations: "admin.nav.organizations",
     automation: "automation.title", announcements: "announcements.manage", help: "help.title", audit: "admin.nav.audit", settings: "admin.nav.settings",
   };
   const [accountOpen, setAccountOpen] = useState(false);
@@ -295,7 +296,7 @@ function AdminShell({
     if (isSupportedLocale(next) && !languagePreference.isPending) languagePreference.mutate(next);
   };
   return (
-    <div className="admin-shell">
+    <div className="admin-shell" lang={locale}>
       <a className="skip-link" href="#main-content">
         {t("nav.skipToContent")}
       </a>
@@ -329,6 +330,7 @@ function AdminShell({
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="users" /></span>
                 <span className="nav-label">{t("admin.nav.users")}</span>
               </NavLink>
+              <NavLink to={localizedPath(locale, "/invitations")}><span className="nav-icon" aria-hidden="true"><AdminNavIcon name="users" /></span><span className="nav-label">{t("invitation.title")}</span></NavLink>
               <NavLink to={localizedPath(locale, "/organizations")}>
                 <span className="nav-icon" aria-hidden="true"><AdminNavIcon name="organizations" /></span>
                 <span className="nav-label">{t("admin.nav.organizations")}</span>
@@ -525,7 +527,7 @@ function AdminRoot() {
     );
   const area = location.pathname.split(`/${locale}/`)[1]?.split("/")[0] ?? "";
   const announcementPicker = area === "organizations" && new URLSearchParams(location.search).get("pick") === "announcement" && !!readNoticeDraft(location.state, me.data.id);
-  const required = announcementPicker ? "admin.announcements.manage" : area === "settings" && location.pathname.replace(/\/+$/, "").endsWith("/settings/announcements") ? "admin.announcements.manage" : ({ automation: "admin.announcements.manage", announcements: "admin.announcements.manage", feedback: "admin.feedback.manage", reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
+  const required = announcementPicker ? "admin.announcements.manage" : area === "settings" && location.pathname.replace(/\/+$/, "").endsWith("/settings/announcements") ? "admin.announcements.manage" : ({ automation: "admin.announcements.manage", announcements: "admin.announcements.manage", feedback: "admin.feedback.manage", reports: "admin.projects.read", workbench: "admin.projects.read", overview: "admin.overview.read", invitations: "admin.users.manage", users: "admin.users.manage", organizations: "admin.users.manage", audit: "admin.audit.read", settings: "admin.config.manage", voices: "admin.config.manage", projects: "admin.projects.read" } as Record<string,string>)[area];
   const home = me.data.permissions.includes("admin.overview.read") ? "overview" : "workbench";
   return (
     <><AccountLocaleRedirect locale={me.data.locale}/><AdminShell user={me.data} locale={locale}>
@@ -539,6 +541,7 @@ function AdminRoot() {
         <Route path="reports" element={<ReportsPage locale={locale}/>}/>
         <Route path="workbench" element={<WorkbenchPage locale={locale} permissions={me.data.permissions} userId={me.data.id}/>} />
         <Route path="projects" element={<ProjectsPage locale={locale} user={me.data} />} />
+        <Route path="invitations" element={<InvitationsPage key={me.data.id} locale={locale}/>}/>
         <Route path="users" element={<UsersPage locale={locale} currentUserId={me.data.id} />} />
         <Route path="feedback" element={<FeedbackPage key={me.data.id} userId={me.data.id} locale={locale}/>}/>
         <Route path="organizations" element={<OrganizationsPage key={me.data.id} userId={me.data.id} locale={locale} />} />

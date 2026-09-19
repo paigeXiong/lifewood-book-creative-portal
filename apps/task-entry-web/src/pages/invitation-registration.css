@@ -1,0 +1,13 @@
+.invitation-registration form > .button { width:100%; min-height:42px; }
+.invitation-registration .registration-pending { margin:0; }
+.invitation-registration label { gap:6px; margin:0; }
+.invitation-registration .registration-organization { background:#f0f5f2; padding:9px 12px; border-radius:8px; font-size:14px; }
+.invitation-registration .registration-verified { color:#24704f; font-size:14px; }
+.invitation-registration .registration-passwords { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+.invitation-registration p[role=status], .invitation-registration p[role=alert] { font-size:14px; }
+.invitation-registration > a { display:inline-block; margin-top:16px; font-size:14px; color:#527064; text-decoration:none; }
+.invitation-registration > a:hover { text-decoration:underline; }
+@media(max-width:420px) { .invitation-registration .registration-passwords { grid-template-columns:1fr; gap:0; } }
+
+.registration-recovery { display:flex; flex-wrap:wrap; gap:8px; }
+.invitation-registration .registration-passwords p { margin:0; }

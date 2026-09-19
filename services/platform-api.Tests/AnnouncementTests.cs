@@ -110,5 +110,19 @@ public sealed class AnnouncementTests:IDisposable {
   Sql("DROP TRIGGER reject_auto_audit");
   Assert.Null(repo.Transition(id,scheduled!.Version,true,out _,automated:true));Assert.Equal("completed",Assert.Single(repo.Jobs(1,"zh-CN").Items).Status);
  }
+ [Fact] public void JobFiltersUseSnapshotTitlesKeepGlobalTotalsAndClampPages(){
+  for(var i=0;i<23;i++){
+   var id=Guid.NewGuid().ToString("N");Assert.Null(repo.Save(id,Input() with {Title="Batch "+i,Body="Message"},out var draft));
+   Assert.Null(repo.Schedule(id,new(draft!.Version,DateTimeOffset.UtcNow.AddHours(1)),out var scheduled));
+   if(i==0)Assert.Null(repo.CancelSchedule(id,scheduled!.Version,out _));
+  }
+  var first=repo.Jobs(1,"en-US","batch","pending");Assert.Equal(22,first.Total);Assert.Equal(20,first.Items.Length);Assert.Equal(22,first.Pending);
+  var last=repo.Jobs(999,"en-US","batch","pending");Assert.Equal(2,last.Page);Assert.Equal(2,last.Items.Length);
+  var cancelled=repo.Jobs(1,"zh-CN","Batch 0","cancelled");Assert.Single(cancelled.Items);Assert.Equal(22,cancelled.Pending);Assert.NotNull(cancelled.NextRunAt);
+  Assert.Empty(repo.Jobs(1,"zh-CN","%","pending").Items);
+  var idToDelete=cancelled.Items[0].AnnouncementId;var draftToDelete=Assert.Single(repo.List(null,null,notice:idToDelete).Items);
+  Assert.Null(repo.DeleteDraft(idToDelete,draftToDelete.Version));Assert.Single(repo.Jobs(1,"en-US","Batch 0","cancelled").Items);
+  Assert.Empty(repo.List(null,null,notice:idToDelete).Items);
+ }
  public void Dispose(){Directory.Delete(root,true);}
 }

@@ -5,20 +5,63 @@
     "title": "Getting started and signing in",
     "summary": "From signing in to your first brief.",
     "steps": [
-      "Sign in with the account and password assigned by your administrator. Password recovery requires an email address verified in advance.",
+      "Sign in with an administrator-created account. If you have an invitation code, choose Register with invitation beside the sign-in heading to register in the same layout.",
       "Check your name, phone and language preference in profile settings. Signed-in routes follow your account language preference.",
       "Open Projects and choose New project. Creation requires permission and organization membership. Ask an administrator if the action is unavailable.",
       "Complete book information, characters, voice, style, references and creative direction, then review and submit. Follow the steps and required-field prompts shown on screen.",
-      "You can open customer help from the sign-in page without signing in. Administration documentation requires a signed-in account with admin access."
+      "You can open customer help from the sign-in page without signing in. Administration documentation requires a signed-in account with admin access.",
+      "Search help for “Invitation registration” for detailed steps and troubleshooting. Existing users can choose Forgot password below the password field, or expand Other login methods below the sign-in button."
     ],
     "faq": [
       {
         "question": "Can I register myself?",
-        "answer": "Accounts and organization membership are assigned by administrators. Third-party sign-in also requires an existing, linked platform account."
+        "answer": "Registration requires a valid organization invitation code. The code determines your organization and grants a customer member account. Existing accounts should sign in; invitations cannot move them to another organization. Third-party login still requires an existing linked platform account."
       }
     ],
     "image": "customer-projects",
-    "updated": "2026-09-18"
+    "updated": "2026-09-19"
+  },
+  {
+    "id": "invitation-registration",
+    "category": "Getting started",
+    "title": "Invitation registration and email verification",
+    "summary": "Enter your display name, email and organization code, verify your email, then set a password and register.",
+    "steps": [
+      "Ask an administrator for your organization’s invitation code. New codes contain 6 letters and are case-insensitive; previously issued long codes still work.",
+      "Choose Register with invitation beside the sign-in heading. Enter a display name (2–100 characters), email and invitation code together, then select Verify email. Register remains disabled and no account exists yet.",
+      "Check the organization shown on the page. If it is wrong, contact the administrator before continuing. Check your inbox and spam folder and open the verification link.",
+      "The link is valid for 10 minutes. It restores your display name and email and shows that the email is verified. The email is read-only. Set and confirm a password of 8–128 characters, then select Register.",
+      "After the account-created confirmation, select Sign in and use your new email and password. The account joins the invitation’s organization as a customer member.",
+      "To receive email notifications, enable them and choose topics in profile settings. Invitation registration verifies your email but does not automatically enable notifications."
+    ],
+    "faq": [
+      {
+        "question": "Does Verify email create my account?",
+        "answer": "No. Sending the email, opening the verification link and selecting Register are separate steps. Registration is complete only after the account-created confirmation."
+      },
+      {
+        "question": "What if the email does not arrive?",
+        "answer": "Check spelling, spam and mail rules. Retry after 60 seconds. The response does not reveal whether an account already exists. Existing users should sign in or recover their password; otherwise ask an administrator to check the mail queue."
+      },
+      {
+        "question": "What if the verification link no longer works?",
+        "answer": "Return to invitation registration and request another email. An expired link, expired or disabled invitation, inactive organization, exhausted capacity or existing email account can prevent registration."
+      },
+      {
+        "question": "Can I correct my email after verification?",
+        "answer": "No. Verification proves ownership only of the email associated with that link. Return to invitation registration and request verification for the correct email."
+      },
+      {
+        "question": "Does requesting verification reserve a slot?",
+        "answer": "No. A slot is consumed only when an account is successfully created. If several people compete for the last slot, only one registration succeeds. Others need to contact the administrator."
+      },
+      {
+        "question": "Can an existing account use an invitation to join another organization?",
+        "answer": "No. Invitations create new customer accounts; they cannot move existing accounts or increase their permissions. Contact an administrator."
+      }
+    ],
+    "image": null,
+    "updated": "2026-09-19"
   },
   {
     "id": "intake",
@@ -185,10 +228,14 @@
       {
         "question": "What if email never arrives?",
         "answer": "Check the address, spam folder and inbox rules, then wait briefly. Avoid repeated requests. Ask an administrator to inspect email status without sharing passwords or app credentials."
+      },
+      {
+        "question": "Do I need to verify again after invitation registration?",
+        "answer": "Successful invitation registration already verifies your email. You still need to enable email notifications and select topics to receive reminders."
       }
     ],
     "image": null,
-    "updated": "2026-09-18"
+    "updated": "2026-09-19"
   },
   {
     "id": "password",
@@ -196,7 +243,7 @@
     "title": "Password recovery and signed-in devices",
     "summary": "Recover through verified email and review sessions.",
     "steps": [
-      "Choose Forgot password on the sign-in page and enter your email. A uniform response avoids revealing whether an account exists.",
+      "Select Forgot password beside the remember-me option below the password field, then enter your account email. The response does not reveal whether the email is registered.",
       "Open the newest recovery message, enter a new password and confirm. A successful reset invalidates previous sessions; sign in again.",
       "Review signed-in devices in profile settings and revoke unfamiliar or unused sessions. Never forward recovery links."
     ],
@@ -208,10 +255,14 @@
       {
         "question": "What if a link is invalid?",
         "answer": "Links are single-use and expire. Changing email or password may invalidate them. Request a new link from the original entry point."
+      },
+      {
+        "question": "Why does a remembered account require sign-in?",
+        "answer": "Remembered identities are separate from login sessions. Expiry, password changes or revocation require password verification again and never restore access automatically. Normal sign-out ends only the current session. Clear all accounts removes the list and signs out. Clearing browser cookies or using another browser requires adding accounts again."
       }
     ],
     "image": null,
-    "updated": "2026-09-18"
+    "updated": "2026-09-19"
   },
   {
     "id": "sso",
